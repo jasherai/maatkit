@@ -74,7 +74,9 @@ SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMI
 $output = `$cmd $trunk/common/t/samples/binlogs/binlog009.txt`;
 is(
    $output,
-"select 1 from  test2.t  where `a`=1 and `b`=2 and `c`=3 /*tid1*/
+"USE `test2` /*tid1*/
+select 1 from  t  where `a`=1 and `b`=2 and `c`=3 /*tid1*/
+select 1 from  test2.t  where `a`=1 and `b`=2 and `c`=3 /*tid1*/
 ",
    "Rewrite INSERT without columns list (issue 1003)"
 );
@@ -82,5 +84,5 @@ is(
 # #############################################################################
 # Done.
 # #############################################################################
-# $sb->wipe_clean($dbh);
+$sb->wipe_clean($dbh);
 exit;

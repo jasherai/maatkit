@@ -3285,7 +3285,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 6234
+# SlavePrefetch package 6236
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3587,7 +3587,7 @@ sub in_window {
 }
 
 sub rewrite_query { 
-   my ( $self, $event ) = @_;
+   my ( $self, $event, %args ) = @_;
 
    if ( !$event->{arg} ) {
       $self->{stats}->{no_arg}++;
@@ -3610,7 +3610,7 @@ sub rewrite_query {
         && $self->{TableParser}
         && $self->{QueryParser} )
    {
-      my $new_arg = $self->inject_columns_list($event->{arg});
+      my $new_arg = $self->inject_columns_list($event->{arg}, %args);
       return unless $new_arg;
       $event->{arg} = $new_arg;
       return $self->rewrite_query($event);
@@ -3628,12 +3628,15 @@ sub rewrite_query {
 }
 
 sub inject_columns_list {
-   my ( $self, $query ) = @_; 
+   my ( $self, $query, %args ) = @_; 
    my $tp   = $self->{TableParser};
    my $qp   = $self->{QueryParser};
+   my $q    = $self->{Quoter};
    my $dbh  = $self->{dbh};
    return unless $tp && $qp;
    MKDEBUG && _d('Attempting to inject columns list into query');
+
+   my $default_db = $args{default_db};
 
    my @tbls = $qp->get_tables($query);
    if ( !@tbls ) {
@@ -3645,22 +3648,36 @@ sub inject_columns_list {
       return;
    }
 
+   if ( $q ) {
+      my ($db, $tbl) = $q->split_unquote($tbls[0]);
+      if ( !$db && $default_db ) {
+         MKDEBUG && _d('Using default db:', $default_db);
+         $tbls[0] = "$default_db.$tbl";
+      }
+   }
+
    my $tbl_cols = $self->{tbl_cols}->{$tbls[0]};
    if ( !$tbl_cols ) {
       my $sql = "SHOW CREATE TABLE $tbls[0]";
       MKDEBUG && _d($sql);
-      my $show_create = $dbh->selectrow_arrayref($sql)->[1];
-      if ( !$show_create ) {
-         MKDEBUG && _d("Failed to", $sql);
+      eval {
+         my $show_create = $dbh->selectrow_arrayref($sql)->[1];
+         if ( !$show_create ) {
+            MKDEBUG && _d("Failed to", $sql);
+            return;
+         }
+         my $tbl_struct = $tp->parse($show_create);
+         if ( !$tbl_struct ) {
+            MKDEBUG && _d("Failed to parse table struct");
+            return;
+         }
+         $tbl_cols = join(',', map { "`$_`" } @{$tbl_struct->{cols}});
+         $self->{tbl_cols}->{$tbls[0]} = $tbl_cols;
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
          return;
       }
-      my $tbl_struct = $tp->parse($show_create);
-      if ( !$tbl_struct ) {
-         MKDEBUG && _d("Failed to parse table struct");
-         return;
-      }
-      $tbl_cols = join(',', map { "`$_`" } @{$tbl_struct->{cols}});
-      $self->{tbl_cols}->{$tbls[0]} = $tbl_cols;
    }
    else {
       MKDEBUG && _d('Using cached columns for', $tbls[0]);
@@ -4123,6 +4140,7 @@ sub main {
       TableParser          => $o->get('inject-columns') ? $tp : undef,
       QueryParser          => $qp,
       QueryRewriter        => $qr,
+      Quoter               => $q,
    );
 
 
@@ -4248,7 +4266,10 @@ sub main {
    # Enqueue the rewritten query, processed by the threads.
    push @pipeline, sub {
       my ( %args ) = @_;
-      my $event = $spf->rewrite_query($args{event});
+      my $event = $spf->rewrite_query(
+         $args{event},
+         default_db => $args{event}->{db} || $default_db,
+      );
       if ( $event ) {
          # See comments above dequeue() regarding why we cannot
          # enqueue a hashref.
