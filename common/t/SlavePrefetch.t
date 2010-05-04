@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 66;
+use Test::More tests => 67;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -942,6 +942,7 @@ SKIP: {
       QueryRewriter   => $qr,
       TableParser     => $tp,
       QueryParser     => $qp,
+      Quoter          => $q,
    );
    my $event = $spf->rewrite_query(
       {
@@ -952,6 +953,18 @@ SKIP: {
       $event->{arg},
       "select 1 from  test.issue_94  where `a`=1 and `b`= 2 and `c`= 'your ad here'",
       'Rewrote INSERT without columns list'
+   );
+
+   $event = $spf->rewrite_query(
+      {
+         arg => "INSERT INTO issue_94 VALUES (1, 2, 'your ad here')",
+      },
+      default_db => 'test',
+   );
+   is(
+      $event->{arg},
+      "select 1 from  issue_94  where `a`=1 and `b`= 2 and `c`= 'your ad here'",
+      'Rewrote INSERT without columns list or db-qualified table'
    );
 
    $sb->wipe_clean($slave_dbh);
