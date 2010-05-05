@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 23;
+use Test::More tests => 29;
 
 use Quoter;
 use MaatkitTest;
@@ -89,5 +89,12 @@ is( $q->literal_like('foo'), "'foo'", 'LIKE foo');
 is( $q->literal_like('foo_bar'), "'foo\\_bar'", 'LIKE foo_bar');
 is( $q->literal_like('foo%bar'), "'foo\\%bar'", 'LIKE foo%bar');
 is( $q->literal_like('v_b%a c_'), "'v\\_b\\%a c\\_'", 'LIKE v_b%a c_');
+
+is( $q->join_quote('db', 'tbl'), '`db`.`tbl`', 'join_merge(db, tbl)' );
+is( $q->join_quote(undef, 'tbl'), '`tbl`', 'join_merge(undef, tbl)'  );
+is( $q->join_quote('db', 'foo.tbl'), '`foo`.`tbl`', 'join_merge(db, foo.tbl)' );
+is( $q->join_quote('`db`', '`tbl`'), '`db`.`tbl`', 'join_merge(`db`, `tbl`)' );
+is( $q->join_quote(undef, '`tbl`'), '`tbl`', 'join_merge(undef, `tbl`)'  );
+is( $q->join_quote('`db`', '`foo`.`tbl`'), '`foo`.`tbl`', 'join_merge(`db`, `foo`.`tbl`)' );
 
 exit;

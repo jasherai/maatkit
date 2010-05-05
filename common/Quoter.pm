@@ -71,6 +71,20 @@ sub literal_like {
    return "'$like'";
 }
 
+# The opposite of split_unquote.
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
