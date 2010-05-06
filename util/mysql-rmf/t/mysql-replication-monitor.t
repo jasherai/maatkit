@@ -20,6 +20,9 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
 
+$master_dbh->{InactiveDestroy} = 1;
+$slave_dbh->{InactiveDestroy}  = 1;
+
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
@@ -104,8 +107,7 @@ like(
 # not dropped and recreated.
 
 $master_dbh->do("insert into test.servers (server,dsn,mk_heartbeat_file) values ('master', '$dsn,P=12345', '/tmp/mk-heartbeat.master')");
-$master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, 0, 0, 1, 1, 0)");
-
+$master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, 0, 0, 1, 1)");
 
 mysql_replication_monitor::main(
    '--monitor', "$dsn,P=12345,t=test.servers",
@@ -114,7 +116,6 @@ mysql_replication_monitor::main(
    qw(--run-once --quiet)
 );
 
-
 $rows = $master_dbh->selectall_arrayref('select * from test.servers');
 is(
    scalar @$rows,
@@ -122,10 +123,12 @@ is(
    "--create-monitor-table didn't affect the existing table"
 );
 
+# Should be 2 rows in state table now: the one we manually inserted above
+# and the one inserted by calling main().
 $rows = $master_dbh->selectall_arrayref('select * from test.state');
 is(
    scalar @$rows,
-   1,
+   2,
    "--create-update-table didn't affect the existing table"
 );
 

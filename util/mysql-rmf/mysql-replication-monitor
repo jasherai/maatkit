@@ -2539,14 +2539,14 @@ Transformers->import qw(ts secs_to_time);
 $OUTPUT_AUTOFLUSH = 1;
 
 my $oktorun;
+my $quiet;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
-   undef *_log;  # required for tests
+   # Reset global vars else testing will break.
    $oktorun = 1;
-   my $q    = new Quoter();
-   my $ms   = new MasterSlave();
+   $quiet   = 0;
 
    # ##########################################################################
    # Get configuration information.
@@ -2565,6 +2565,7 @@ sub main {
    $dp->prop('set-vars', $o->get('set-vars'));
 
    # Check that both --monitor and --update specify a database and table.
+   my $q = new Quoter();
    foreach my $opt ( qw(monitor update) ) {
       my $dsn = $o->get($opt);
       my ($db, $tbl) = ($dsn->{D}, $dsn->{t});
@@ -2593,25 +2594,14 @@ sub main {
       }
    }
 
+   $quiet = $o->get('quiet');  # global for _log()
+
    $o->usage_or_errors();
 
    # ########################################################################
-   # Create sub to timestamp and format STDOUT output consistently.
-   # All output to STDOUT should be made by calling this sub.
+   # Make common modules to pass to various subroutines.
    # ########################################################################
-   if ( $o->get('quiet') ) {
-      *_log = sub {
-         my ( $msg ) = @_;
-         MKDEBUG && _d(ts(time), $msg);
-      };
-   }
-   else {
-      *_log = sub {
-         my ( $msg ) = @_;
-         my $ts = ts(time);
-         print "# $ts $msg\n";
-      };
-   }
+   my $ms = new MasterSlave();
 
    my %common_modules = (
       OptionParser => $o,
@@ -2619,6 +2609,26 @@ sub main {
       Quoter       => $q,
       MasterSlave  => $ms,
    );
+   
+   # ########################################################################
+   # Create monitor and update tables.  Terminate early if they can't be
+   # created.
+   # ########################################################################
+   foreach my $tbl ( qw(monitor update) ) {
+      if ( $o->get("create-$tbl-table") ) {
+         eval {
+            create_table(
+               tbl => $tbl,
+               %common_modules,
+            );
+         };
+         if ( $EVAL_ERROR ) {
+            warn "--create-$tbl-table failed: $EVAL_ERROR";
+            return 1;
+         }
+         print "Created $tbl table" unless $quiet;
+      }
+   }
 
    # ########################################################################
    # Ask for the password before daemonizing, while we still have a terminal.
@@ -2626,8 +2636,8 @@ sub main {
    if ( $o->get('ask-pass') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
       foreach my $opt ( qw(monitor update) ) {
-         my $dsn = $o->get($opt);
-         $dsn->{p} = $pass;
+         my $dsn       = $o->get($opt);
+         $dsn->{p}     = $pass;
          $o->get($opt) = $dsn;
       }
    }
@@ -2647,40 +2657,20 @@ sub main {
       $daemon->make_PID_file();
    }
 
-   _log("$PROGRAM_NAME started, observer $observer, PID $PID");
-
-   # ########################################################################
-   # Create monitor and update tables.
-   # ########################################################################
-   foreach my $tbl ( qw(monitor update) ) {
-      if ( $o->get("create-$tbl-table") ) {
-         eval {
-            create_table(
-               tbl => $tbl,
-               %common_modules,
-            );
-         };
-         if ( $EVAL_ERROR ) {
-            chomp $EVAL_ERROR;
-            _log("Failed to create $tbl table: $EVAL_ERROR");
-            return 1;
-         }
-         _log("$tbl table created");
-      }
-   }
-
    # #########################################################################
    # Ready to run.
    # #########################################################################
+   _log("$PROGRAM_NAME started, observer $observer, PID $PID");
+   
    my $run_time = $o->get('run-time');
    _log("Ready to run; run time: "
          . (  $o->get('run-once') ? 'once'
             : $run_time           ? secs_to_time($run_time)
             :                       'forever'));
 
-   my $start    = time();
-   my $end      = $run_time ? $start + $run_time : undef;
-   my $checkno  = 0;
+   my $start   = time();
+   my $end     = $run_time ? $start + $run_time : 0;
+   my $checkno = 0;
    while (                        # Quit if:
       $oktorun                    # instructed to quit
       && (!$end || time < $end) ) # or time is exceeded
@@ -2698,7 +2688,7 @@ sub main {
       );
 
       # ######################################################################
-      # Connect to --update DSN.
+      # Check monitored servers and update --update DSN.
       # ######################################################################
       if ( @monitored_servers ) {
          check_servers(
@@ -2712,6 +2702,9 @@ sub main {
          _log("No servers to monitor");
       }
 
+      # ######################################################################
+      # Sleep before next check or exit for --run-once.
+      # ######################################################################
       _log("End check number $checkno");
 
       if ( $o->get('run-once') ) {
@@ -2768,6 +2761,7 @@ sub get_monitored_servers {
       $dbh->disconnect();
       return;
    }
+   _log("Got " . (scalar @servers) . " servers");
 
    # Parse the server dsn strings into real dsn structs.
    foreach my $server ( @servers ) {
@@ -2910,42 +2904,39 @@ sub check_server {
    my $exit_status = 0;
 
    # First, ready our check log that the world may know of our exploits.
-   close STDOUT;
-   my $check_log;
-   my $check_logs = $o->get('check-logs');
-   if ( $check_logs =~ m/failed|all/ ) {
-      my $check_logs_dir = $o->get('check-logs-dir');
-      $check_log         = "$check_logs_dir/$observer.$PID";
-      if ( !open STDOUT, '>', $check_log ) {
-         # We can't reopen STDOUT to our check log.  Try to warn about
-         # this on STDERR then continue.  We can still work.
-         warn "Child process $PID failed to reopen STDOUT to "
+   # If check-logs=none we could just redirect STDOUT/STDERR >/dev/null
+   # and then we wouldn't have to delete the check log later, but if we
+   # do this and there's a code bug that causes a crash the error will
+   # disappear into /dev/null.  By always writing a check log and then
+   # deleting it later we can catch any code bugs/crashes even if
+   # check-logs=none.
+   local *STDOUT;
+   local *STDERR;
+   my $check_logs_dir = $o->get('check-logs-dir');
+   my $check_log      = "$check_logs_dir/$observer.$PID";
+   if ( !open STDOUT, '>', $check_log ) {
+      # We can't reopen STDOUT to our check log.  Try to warn about
+      # this on STDERR then continue.  We can still work.
+      warn "Child process $PID failed to reopen STDOUT to "
             . "check log $check_log: $OS_ERROR";
-      }
-      else {
-      }
    }
-   elsif ( $check_logs =~ m/none/ ) {
-      # Dupe STDOUT/STDERR to /dev/null.
-      # TODO: catch if this fails
-      open STDOUT, '>', '/dev/null';
-   }
-   # TODO: catch if this fails and restore original STDERR
-   close STDERR;
    open  STDERR, ">&STDOUT"
       or warn "Child process $PID failed dupe STDERR to STDOUT: $OS_ERROR";
+
+   $OUTPUT_AUTOFLUSH = 1;
 
    _log("$PROGRAM_NAME child process started, check log $check_log, observer $observer, PID $PID");
 
    # Get a dbh to the monitored server.
+   my $server_host = $dp->as_string($server->{dsn});
+   _log("Checking monitored server $server->{name} $server_host");
    my $server_dbh;
    eval {
       $server_dbh = get_cxn(dsn=>$server->{dsn}, %args);
    };
    if ( $EVAL_ERROR ) {
       chomp $EVAL_ERROR;
-      my $host = $dp->as_string($server->{dsn});
-      _log("Cannot connect to monitored server $host: $EVAL_ERROR");
+      _log("Cannot connect to monitored server: $EVAL_ERROR");
       return 1;
    }
 
@@ -2983,7 +2974,7 @@ sub check_server {
       %args,
    );
 
-   _log("Updating state table on --update " . $dp->as_string($update_dsn) . ":"
+   _log("Updating state table on --update " . $dp->as_string($update_dsn) . ": "
       . $sql);
    MKDEBUG && _d($update_dbh, $sql);
    eval {
@@ -2995,11 +2986,13 @@ sub check_server {
       $exit_status |= 1;
    }
 
-   _log("$PROGRAM_NAME child process ended");
+   _log("$PROGRAM_NAME child process ended, exit status $exit_status");
 
-   if ( $exit_status == 0 && $check_log ) {
-      close STDOUT;
-      close STDERR;
+   # Possibly delete our check log.
+   my $check_logs = $o->get('check-logs');
+   if (     $check_logs eq 'none'
+        || ($check_logs eq 'failed' && $exit_status == 0) )
+   {
       if ( !unlink $check_log ) {
          _log("Failed to delete check log $check_log: $OS_ERROR");
          $exit_status |= 1;
@@ -3034,9 +3027,17 @@ sub make_update_state_sql {
    # Add values from slave status.
    if ( my $slave_status = $args{slave_status} ) {
       foreach my $stat (
-         qw(master_host master_port master_log_file read_master_pos
+         qw(master_host master_port master_log_file read_master_log_pos
             seconds_behind_master slave_io_running slave_sql_running) ) {
-         push @vals, "$stat=" . $q->quote_val($slave_status->{$stat});
+         if ( $stat =~ m/_running$/ ) {
+            my $running = $slave_status->{$stat} || '';
+            push @vals, "$stat=" . (  $running eq 'Yes' ? 1
+                                    : $running eq 'No'  ? 0
+                                    :                    'NULL');
+         }
+         else {
+            push @vals, "$stat=" . $q->quote_val($slave_status->{$stat});
+         }
       }
    }
 
@@ -3059,6 +3060,7 @@ sub get_cxn {
    }
    my ($dsn, $o, $dp) = @args{@required_args};
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit=>1});
+   $dbh->{InactiveDestroy} = 1;  # Don't die on fork().
    MKDEBUG && _d('Connected dbh', $dbh);
    return $dbh;
 }
@@ -3074,6 +3076,18 @@ sub sig_int {
       _log("Exiting on SIG$signal");
       exit 1;
    }
+}
+
+sub _log {
+   my ( $msg ) = @_;
+   if ( $quiet ) {
+      MKDEBUG && _d(ts(time), $msg);
+   }
+   else {
+      my $ts = ts(time);
+      print "# $ts $msg\n";
+   }
+   return;
 }
 
 sub _d {
@@ -3138,7 +3152,7 @@ connecting to MySQL.
 
 =item --check-logs
 
-type: string: default: failed
+type: string; default: failed
 
 Save logs from child processes that check the L<"--monitor"> servers.
 
