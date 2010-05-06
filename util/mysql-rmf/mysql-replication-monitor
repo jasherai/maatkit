@@ -2594,6 +2594,11 @@ sub main {
       }
    }
 
+   if ( $o->get('check-logs') !~ m/all|none|failed/i ) {
+      $o->save_error("--check-logs=" . $o->get('check-logs') . " is invalid, "
+         . "value must be all, none or failed");
+   }
+
    $quiet = $o->get('quiet');  # global for _log()
 
    $o->usage_or_errors();
@@ -2626,7 +2631,7 @@ sub main {
             warn "--create-$tbl-table failed: $EVAL_ERROR";
             return 1;
          }
-         print "Created $tbl table" unless $quiet;
+         _log("Created $tbl table");
       }
    }
 
@@ -2668,9 +2673,10 @@ sub main {
             : $run_time           ? secs_to_time($run_time)
             :                       'forever'));
 
-   my $start   = time();
-   my $end     = $run_time ? $start + $run_time : 0;
-   my $checkno = 0;
+   my $start       = time();
+   my $end         = $run_time ? $start + $run_time : 0;
+   my $checkno     = 0;
+   my $exit_status = 0;
    while (                        # Quit if:
       $oktorun                    # instructed to quit
       && (!$end || time < $end) ) # or time is exceeded
@@ -2683,7 +2689,7 @@ sub main {
       # ######################################################################
       my @monitored_servers = get_monitored_servers(
          dsn   => $o->get('monitor'),
-         where => $o->get('monitor-where'),
+         where => $o->get('where'),
          %common_modules,
       );
 
@@ -2691,7 +2697,7 @@ sub main {
       # Check monitored servers and update --update DSN.
       # ######################################################################
       if ( @monitored_servers ) {
-         check_servers(
+         $exit_status |= check_servers(
             servers    => \@monitored_servers,
             update_dsn => $o->get('update'),
             observer   => $observer,
@@ -2718,7 +2724,7 @@ sub main {
    }
 
    _log("$PROGRAM_NAME ended");
-   return 0;
+   return $exit_status;
 } # End main()
 
 # ############################################################################
@@ -2845,11 +2851,11 @@ sub check_servers {
       while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
          MKDEBUG && _d('Process', $kid, 'exited with', $CHILD_ERROR);
          # Must right-shift to get the actual exit status of the child.
-         $exited_children{$kid}->{exit} = $CHILD_ERROR >> 8;
-         $exited_children{$kid}->{time} = time();
+         $exited_children{$kid} = $CHILD_ERROR >> 8;
       }
    };
 
+   my $exit_status = 0;
    foreach my $server ( @$servers ) {
       my $pid = fork();
       die "Failed to fork: $OS_ERROR" unless defined $pid;
@@ -2859,11 +2865,11 @@ sub check_servers {
       }
       else {                        # child
          $SIG{CHLD} = 'DEFAULT';
-         my $exit_status = check_server(
+         my $child_exit_status = check_server(
             server => $server,
             %args
          );
-         exit $exit_status;
+         exit $child_exit_status;
       }
    }
 
@@ -2872,7 +2878,8 @@ sub check_servers {
       my $reaped = 0;
       foreach my $pid ( keys %exited_children ) {
          _log("Child process $pid finished checking $kids{$pid}->{name}");
-         $reaped = 1;
+         $reaped       = 1;
+         $exit_status |= $exited_children{$pid};
          delete $kids{$pid};
          delete $exited_children{$pid};
       }
@@ -2889,7 +2896,7 @@ sub check_servers {
 
    _log("Done checking server");
 
-   return;
+   return $exit_status;
 }
 
 sub check_server {
@@ -2902,6 +2909,12 @@ sub check_server {
       = @args{@required_args};
 
    my $exit_status = 0;
+
+   # $quiet is global and we inherit it from the parent and determines
+   # if _log() prints or not but as a child proc our check log is always
+   # written and --check-logs controls whether the log is kept or not.
+   # So reset our global copy of $quiet; this won't affect the parent.
+   $quiet = 0;
 
    # First, ready our check log that the world may know of our exploits.
    # If check-logs=none we could just redirect STDOUT/STDERR >/dev/null
@@ -2954,6 +2967,12 @@ sub check_server {
       $exit_status |= 1;
    }
 
+   my $real_lag;
+   if ( $server->{heartbeat} ) {
+      $real_lag = get_real_lag(
+         $o->get('mk-heartbeat-dir') . "/$server->{heartbeat}");
+   }
+
    # Get a dbh to the update server.
    my $update_dbh;
    eval {
@@ -2971,6 +2990,7 @@ sub check_server {
       tbl           => $tbl,
       master_status => $master_status,
       slave_status  => $slave_status,
+      real_lag      => $real_lag,
       %args,
    );
 
@@ -3042,7 +3062,7 @@ sub make_update_state_sql {
    }
 
    # Add real_lag.
-   if ( $args{real_lag} ) {
+   if ( defined $args{real_lag} ) {
       push @vals, "real_lag=" . $q->quote_val($args{real_lag});
    }
 
@@ -3050,6 +3070,26 @@ sub make_update_state_sql {
    $sql    .= $vals;
 
    return $sql;
+}
+
+sub get_real_lag {
+   my ( $heartbeat_file ) = @_;
+   my $real_lag;
+   _log("Getting real lag from mk-heartbeat file $heartbeat_file");
+   if ( -f $heartbeat_file ) {
+      chomp($real_lag = `cat $heartbeat_file`);
+      if ( $real_lag ) {
+         _log("Real lag: $real_lag");
+         ($real_lag) = $real_lag =~ m/^\s*(\d+)/;
+      }
+      else {
+         _log("mk-heartbeat file is empty");
+      }
+   }
+   else {
+      _log("mk-heartbeat file does not exist");
+   }
+   return $real_lag;
 }
 
 sub get_cxn {
@@ -3126,9 +3166,109 @@ check every minute and run forever:
                             --daemonize                                   \
                             --log mysql-rmf.log
 
+Check servers once and exit:
+
+  mysql-replication-monitor --monitor h=localhost,t=rmf.monitored_servers \
+                            --update  h=master1,t=rmf.state               \
+                            --run-once
+
+Check only server "db2" every 10 minutes for 1 hour, save all check logs
+in /var/log/checks/:
+
+  mysql-replication-monitor --monitor h=localhost,t=rmf.monitored_servers \
+                            --where   "server='db2'"                      \
+                            --update  h=master1,t=rmf.state               \
+                            --run-time 1h                                 \
+                            --interval 10m                                \
+                            --check-logs all                              \
+                            --check-logs-dir /var/log/checks/
+
 =head1 DESCRIPTION
 
-It watches.
+mysql-replication-monitor is a tool for constantly monitoring and logging
+the state of replication of multiple MySQL servers.  Each host that runs
+the tool is an "observer" which checks a list of "monitored servers."  The
+list of monitored servers is selected from the table specified by the tool's
+required L<"--monitor"> option.  The tool forks a child process for each
+monitored server to check and log its SHOW MASTER STATUS, SHOW SLAVE STATUS
+and (optionally) mk-heartbeat real lag to the table specified by the tool's
+required L<"--update"> option.  By default the tool run forever, performing
+checks every minute on all the monitored servers.
+
+The L<"--monitor"> and L<"--update"> tables are usually shared so that all
+observers check the same monitored servers and update the same "state table"--
+the L<"--update"> table is also called the state table because it stores
+information about the state of replication on the monitored servers.  For
+example, consider this replication topology:
+
+  S1 <- M1 <-> M2 -> S2
+
+There are two slaves (S1, S2) and two masters (M1, M2) in a master-master
+setup.  If the tables are created and updated on M1 they will replicate to
+all the servers.  For full, redundant monitoring, every server is an
+observer that monitors every other server, including itself.  All observers
+update the state table on M1.  Each check will produce 16 new rows in the
+state table: S1 checking itself, M1, M2 and S2; M1 checking S1, itself, M2
+and S2; etc.
+
+Each update to the state table is actually an C<INESRT> statement.  This
+builds a history of the state of replication of the observered servers over
+time because each update is timestamped and records which observer was
+checking which monitored server.
+
+The tool is designed to run "forever" and retry after any failures.  Before
+each check the list of monitored server is selected from the L<"--monitor">
+table.  Therefore you can add and remove servers from this table and every
+observer will refesh its list at its next check.
+
+If, during a check, a connection cannot be made to a monitored server, the
+L<"--update"> table is not updated.  Instead, the child process that attempted
+the check will log something like "Cannot connect to monitored server: ..."
+in its check log.  Since check logs from failed checks are saved, you can
+review this log to see why the connection failed.  The failure to connect
+will also be apparent by the lack of new updates in the L<"--update"> table
+from the observer for the non-responsive server.  Similarly, if the child
+process cannot connect to the L<"--update"> server no new row will be inserted.
+
+As long as the child process doing a check can connect to both the monitored
+server and the L<"--update"> server, then it should update the state table
+with whatever SHOW MASTER STATUS, SHOW SLAVE STATUS, and (optionally)
+mk-heartbeat return for the monitored server.
+
+=head1 OUTPUT
+
+By default the tool's output is very verbose; the parent process prints
+information like:
+
+  # 2010-05-06T12:05:52 Creating update table
+  # 2010-05-06T12:05:52 Created update table
+  # 2010-05-06T12:05:52 mysql-replication-monitor started, observer dante, PID 9
+  # 2010-05-06T12:05:52 Ready to run; run time: once
+  # 2010-05-06T12:05:52 Start check number 1
+  # 2010-05-06T12:05:52 Getting servers to monitor from h=127.1,t=test.servers
+  # 2010-05-06T12:05:52 Got 1 servers
+  # 2010-05-06T12:05:52 Checking servers
+  # 2010-05-06T12:05:52 Forked process 15224 to check master
+  # 2010-05-06T12:05:52 Waiting for 1 processes
+  # 2010-05-06T12:05:52 Child process 15224 finished checking master
+  # 2010-05-06T12:05:52 Done checking server
+  # 2010-05-06T12:05:52 End check number 1
+  # 2010-05-06T12:05:52 Ending for --run-once
+  # 2010-05-06T12:05:52 mysql-replication-monitor ended
+
+Each child process that the parent process forks to perform checks on the
+monitored servers also writes verbose logs by default; these are called
+L<"--check-logs">.
+
+Specifying L<"--quiet"> disables all output from the parent process (check
+logs are still written and controlled by L<"--check-logs">) but you probably
+shouldn't do this because the tool may fail silently even though it continues
+to run.
+
+=head1 EXIT STATUS
+
+The tool exists 0 if there were no errors, else it exits 1 if either the
+parent or any child process ever had an error.
 
 =head1 OPTIONS
 
@@ -3263,9 +3403,9 @@ type: string
 
 Print all output to this file when daemonized.
 
-=item mk-heartbeat-dir
+=item --mk-heartbeat-dir
 
-type: string
+type: string; default: ./
 
 Directory that has mk-heartbeat files.
 
@@ -3285,22 +3425,6 @@ to monitor.  The table should already exist.  For each server, the
 update state table on the L<"--update"> DSN is updated.
 
 See also L<"--create-monitor-table">.
-
-=item --monitor-where
-
-type: string
-
-Filter the list of L<"--monitor"> servers by this C<WHERE> clause.
-
-By default all servers in the L<"--monitor"> table are monitored.  To
-select and monitor specific servers, specify a C<WHERE> clause (without
-the word C<WHERE>) with this option.
-
-For example, to L<"--monitor"> only server "db1", specify
-C<--where "server='db1'">.
-
-Valid C<WHERE> clauses depend on the table being used for L<"--monitor">.
-See L<"--create-monitor-table"> for the default table.
 
 =item --observer-name
 
@@ -3334,7 +3458,7 @@ Port number to use for connection.
 
 short form: -q
 
-Disable all output to STDOUT.
+Disable all output to STDOUT except L<"--check-logs">.
 
 =item --run-once
 
@@ -3345,7 +3469,7 @@ Check L<"--mointor"> servers and L<"--update"> state table once and exit.
 Normally the tool runs for L<"--run-time"> amount of time, checking the
 L<"--monitor"> servers and updating the L<"--update"> state table at
 each L<"--inteval">.  Specifying this option causes the tool to run, do
-its work and exit.  (It implies C<--run-time=0>.)
+its work and exit.
 
 =item --run-time
 
@@ -3388,6 +3512,23 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=item --where
+
+type: string
+
+Filter the list of L<"--monitor"> servers by this C<WHERE> clause.
+
+By default all servers in the L<"--monitor"> table are monitored.  To
+select and monitor specific servers, specify a C<WHERE> clause (without
+the word C<WHERE>) with this option.
+
+For example, to L<"--monitor"> only server "db1", specify
+C<--where "server='db1'">.
+
+Valid C<WHERE> clauses depend on the table being used for L<"--monitor">.
+See L<"--create-monitor-table"> for the default table.
+
 
 =back
 

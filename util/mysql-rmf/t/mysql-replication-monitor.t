@@ -30,14 +30,19 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave1';
 }
 else {
-   plan tests => 16;
+   plan tests => 23;
 }
 
 my $output;
 my $rows;
+my $retval;
+my $check_logs_dir = '/tmp/checks/';
 my $dsn  = "h=127.1,u=msandbox,p=msandbox";
 my $cmd  = "$trunk/util/mysql-rmf/mysql-replication-monitor";
-my @args = ();
+my @args = (qw(--check-logs all --check-logs-dir), $check_logs_dir);
+
+diag(`rm -rf $check_logs_dir >/dev/null 2>&1`);
+diag(`mkdir $check_logs_dir`);
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $master_dbh->do('DROP TABLE IF EXISTS test.servers');
@@ -74,7 +79,7 @@ like(
 # Test --create-*-table and --run-once.
 # #############################################################################
 my $timeout = wait_for(
-   sub { mysql_replication_monitor::main(
+   sub { mysql_replication_monitor::main(@args,
          '--monitor', "$dsn,P=12345,t=test.servers",
          '--update',  "$dsn,P=12345,t=test.state",
          qw(--create-monitor-table --create-update-table),
@@ -109,7 +114,7 @@ like(
 $master_dbh->do("insert into test.servers (server,dsn,mk_heartbeat_file) values ('master', '$dsn,P=12345', '/tmp/mk-heartbeat.master')");
 $master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, 0, 0, 1, 1)");
 
-mysql_replication_monitor::main(
+$retval = mysql_replication_monitor::main(@args,
    '--monitor', "$dsn,P=12345,t=test.servers",
    '--update',  "$dsn,P=12345,t=test.state",
    qw(--create-monitor-table --create-update-table),
@@ -138,7 +143,7 @@ $master_dbh->do("truncate table test.state");
 # Test --quiet.
 # #############################################################################
 $output = output(
-   sub { mysql_replication_monitor::main(
+   sub { mysql_replication_monitor::main(@args,
          '--monitor', "$dsn,P=12345,t=test.servers",
          '--update',  "$dsn,P=12345,t=test.state",
          qw(--run-once),
@@ -153,7 +158,7 @@ like(
 );
 
 $output = output(
-   sub { mysql_replication_monitor::main(
+   sub { mysql_replication_monitor::main(@args,
          '--monitor', "$dsn,P=12345,t=test.servers",
          '--update',  "$dsn,P=12345,t=test.state",
          qw(--run-once --quiet),
@@ -173,7 +178,7 @@ is(
 my $log = '/tmp/mysql-replication-monitor.log';
 diag(`rm -rf $log >/dev/null`);
 
-system("$cmd --monitor $dsn,P=12345,t=test.servers --update $dsn,P=12345,t=test.state --daemonize --log $log");
+system("$cmd --monitor $dsn,P=12345,t=test.servers --update $dsn,P=12345,t=test.state --daemonize --log $log --check-logs-dir /tmp/checks/");
 
 ok(
    -f $log,
@@ -214,8 +219,106 @@ like(
 diag(`rm -rf $log >/dev/null`);
 
 # #############################################################################
+# Test real_lag with mk-heartbeat.
+# #############################################################################
+$master_dbh->do('TRUNCATE TABLE test.servers');
+$master_dbh->do('TRUNCATE TABLE test.state');
+diag(`rm -rf $check_logs_dir/* >/dev/null 2>&1`);
+
+my $mkhb_update_pid  = '/tmp/mkhb-update.pid';
+my $mkhb_monitor_pid = '/tmp/mkhb-monitor.pid';
+my $mkhb_file        = '/tmp/mk-heartbeat.slave';
+
+$master_dbh->do("insert into test.servers (server,dsn,mk_heartbeat_file) values ('slave', '$dsn,P=12346', 'mk-heartbeat.slave')");
+
+system("$trunk/mk-heartbeat/mk-heartbeat -D test --update --create-table F=/tmp/12345/my.sandbox.cnf --daemonize --pid $mkhb_update_pid 1>/dev/null 2>/dev/null");
+
+system("$trunk/mk-heartbeat/mk-heartbeat -D test --monitor h=127.1,P=12346,u=msandbox,p=msandbox --pid $mkhb_monitor_pid --file $mkhb_file --daemonize 1>/dev/null 2>/dev/null");
+
+sleep 2;
+
+ok(
+   -f $mkhb_update_pid,
+   "mk-heartbeat --update is running"
+);
+
+ok(
+   -f $mkhb_monitor_pid,
+   "mk-heartbeat --update is running"
+);
+
+ok(
+   -f $mkhb_file,
+   "Heartbeat file created"
+);
+
+mysql_replication_monitor::main(@args,
+   '--monitor', "$dsn,P=12345,t=test.servers",
+   '--update',  "$dsn,P=12345,t=test.state",
+   qw(--mk-heartbeat-dir /tmp),
+   qw(--run-once --quiet));
+
+diag(`touch /tmp/mk-heartbeat-sentinel`);
+sleep 1;
+
+is(
+   $master_dbh->selectrow_arrayref("select real_lag from test.state where server='slave'")->[0],
+   0,
+   "Set real_lag in state table"
+);
+
+diag(`rm -rf /tmp/mk-heartbeat-sentinel`);
+diag(`rm -rf $mkhb_file`);
+
+
+# #############################################################################
+# Test --run-time and --interval.
+# #############################################################################
+$output = '/tmp/mrf.txt';
+
+# If that looks confusing it does this: runs main(), capturing output()
+# to file=>$output, all inside wait_for() on a 5s timer.  We want to test
+# that main() finishes in --run-time where --run-time is < 5s and test
+# that the output logged multiple checks given --interval 1.
+$timeout = wait_for(
+   sub {
+      output(
+         sub {
+            $retval = mysql_replication_monitor::main(@args,
+               '--monitor', "$dsn,P=12345,t=test.servers",
+               '--update',  "$dsn,P=12345,t=test.state",
+               qw(--run-time 3 --interval 1));
+         },
+         $output
+      ),
+   },
+   5,
+);
+
+ok(
+   !$timeout,
+   "Ran for --run-time 3"
+);
+
+is(
+   $retval,
+   0,
+   "Exit status 0"
+);
+
+# reuse $retval
+chomp($retval = `cat $output | grep -c 'End check number'`);
+ok(
+   $retval > 1 && $retval <= 3,
+   "Ran $retval checks for --run-time 3 --interval 1"
+);
+
+diag(`rm -rf $output >/dev/null`);
+
+# #############################################################################
 # Done.
 # #############################################################################
+diag(`rm -rf $check_logs_dir >/dev/null 2>&1`);
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
 exit;
