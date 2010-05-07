@@ -60,7 +60,7 @@ set_mysql_basedir() {
    # Auto-detect basedir if its not explicitly set.
    if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
       BASEDIR_AUTO_DETECTED=1
-      mysqld=`which mysqld`
+      mysqld=`which mysqld 2>/dev/null`
       if [ -n "$mysqld" ]; then
          _d "Found mysqld: $mysqld"
          MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help 2>/dev/null | grep 'basedir ' | awk '{print $2}'`
