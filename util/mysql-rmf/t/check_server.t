@@ -17,7 +17,6 @@ require "$trunk/util/mysql-rmf/mysql-replication-monitor";
 
 my $o  = new OptionParser(description=>'foo');
 my $q  = new Quoter();
-my $ms = new MasterSlave();
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
@@ -83,7 +82,6 @@ my %args = (
    OptionParser => $o,
    Quoter       => $q,
    DSNParser    => $dp,
-   MasterSlave  => $ms,
 );
 
 # First let's make sure it does crash when the update table doesn't exit.
