@@ -46,6 +46,8 @@ sub new {
 #   * A filehandle on the file, opened for reading.
 #   * The file name, or undef for STDIN.
 #   * The file size, or undef for STDIN.
+# You should use it like this:
+#  ( $fh, $name, $size ) = $next_fh->();
 # At the time of requesting the next file from the iterator, the code will skip
 # files that can't be opened, and just return the next one that can be.  This
 # way the calling code doesn't have to do any error handling: it either gets a
@@ -88,6 +90,7 @@ sub get_file_itr {
             return ( $fh, $fn, -s $fn );
          }
       }
+      return (); # Avoids $f being set to 0 in list context.
    };
 }
 

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 use FileIterator;
 use MaatkitTest;
@@ -53,6 +53,8 @@ is( $size, 587, "Got size for $name");
 ( $fh, $name, $size ) = $next_fh->();
 is( $name, 'samples/empty', "Got filename for $name");
 is( $size, 0, "Got size for $name");
+( $fh, $name, $size ) = $next_fh->();
+is( $fh, undef, 'Ran off the end of the list' );
 
 # #############################################################################
 # Done.
