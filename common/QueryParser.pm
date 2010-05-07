@@ -150,11 +150,21 @@ sub has_derived_table {
    return $match;
 }
 
-# Return a list of tables/databases and the name they're aliased to.
+# Return a data structure of tables/databases and the name they're aliased to.
+# Given the following query, SELECT * FROM db.tbl AS foo; the structure is:
+# { TABLE => { foo => tbl }, DATABASE => {} }
+# If $list is true, then a flat list of tables found in the query is returned
+# instead.  This is used for things that want to know what tables the query
+# touches, but don't care about aliases.
 sub get_aliases {
    my ( $self, $query, $list ) = @_;
-   return unless $query;
-   my $aliases;
+
+   # This is the basic result every query must return.
+   my $result = {
+      DATABASE => {},
+      TABLE    => {},
+   };
+   return $result unless $query;
 
    # These keywords may appear between UPDATE or SELECT and the table refs.
    # They need to be removed so that they are not mistaken for tables.
@@ -166,6 +176,7 @@ sub get_aliases {
 
    # Get the table references clause and the keyword that starts the clause.
    # See the comments below for why we need the starting keyword.
+   my @tbl_refs;
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -178,72 +189,77 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   if ( !$tbl_refs ) {
-      MKDEBUG && _d("No tables ref in", $query);
-      return $list ? [] : {};
-   }
+   if ( $tbl_refs ) {
 
-   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
-      # Remove optional columns def from INSERT/REPLACE.
-      $tbl_refs =~ s/\([^\)]+\)\s*//;
-   }
-
-   MKDEBUG && _d('tbl refs:', $tbl_refs);
-
-   # These keywords precede a table ref. They signal the start of a table
-   # ref, but to know where the table ref ends we need the after tbl ref
-   # keywords below.
-   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
-
-   # These keywords signal the end of a table ref and either 1) the start
-   # of another table ref, or 2) the start of an ON|USING part of a JOIN
-   # clause (which we want to skip over), or 3) the end of the string (\z).
-   # We need these after tbl ref keywords so that they are not mistaken
-   # for implicit aliases of the preceding table.
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
-
-   # This is required for cases like:
-   #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
-   # Because spaces may precede a tbl and a tbl may end with \z, then
-   # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
-   $tbl_refs =~ s/ = /=/g;
-
-   while (
-      $tbl_refs =~ m{
-         $before_tbl\b\s*
-            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
-         \s*$after_tbl
-      }xgio )
-   {
-      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d('Match table:', $tbl_ref);
-
-      # Handle subqueries.
-      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         # According the the manual
-         # http://dev.mysql.com/doc/refman/5.0/en/unnamed-views.html:
-         # "The [AS] name  clause is mandatory, because every table in a
-         # FROM clause must have a name."
-         # So if the tbl ref begins with 'AS', then we probably have a
-         # subquery.
-         MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef unless $list;
-         next;
+      if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+         # Remove optional columns def from INSERT/REPLACE.
+         $tbl_refs =~ s/\([^\)]+\)\s*//;
       }
 
-      if ( $list ) {
-         # Return tbls and their aliases as list instead of hashref.
-         $tbl_ref =~ s/^\s+//g;
-         $tbl_ref =~ s/\s+$//g;
-         push @$aliases, $tbl_ref;
-      }
-      else {
+      MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+      # These keywords precede a table ref. They signal the start of a table
+      # ref, but to know where the table ref ends we need the after tbl ref
+      # keywords below.
+      my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+      # These keywords signal the end of a table ref and either 1) the start
+      # of another table ref, or 2) the start of an ON|USING part of a JOIN
+      # clause (which we want to skip over), or 3) the end of the string (\z).
+      # We need these after tbl ref keywords so that they are not mistaken
+      # for implicit aliases of the preceding table.
+      my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+      # This is required for cases like:
+      #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
+      # Because spaces may precede a tbl and a tbl may end with \z, then
+      # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
+      $tbl_refs =~ s/ = /=/g;
+
+      while (
+         $tbl_refs =~ m{
+            $before_tbl\b\s*
+               ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+            \s*$after_tbl
+         }xgio )
+      {
+         my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+         MKDEBUG && _d('Match table:', $tbl_ref);
+         push @tbl_refs, $tbl_ref;
+         $alias = $self->trim_identifier($alias);
+
+         # Handle subqueries.
+         if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+            # According to the manual
+            # http://dev.mysql.com/doc/refman/5.0/en/unnamed-views.html:
+            # "The [AS] name  clause is mandatory, because every table in a
+            # FROM clause must have a name."
+            # So if the tbl ref begins with 'AS', then we probably have a
+            # subquery.
+            MKDEBUG && _d('Subquery', $tbl_ref);
+            $result->{TABLE}->{$alias} = undef;
+            next;
+         }
+
          my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-         $aliases->{$alias || $tbl} = $tbl;
-         $aliases->{DATABASE}->{$tbl} = $db if $db;
+         $db  = $self->trim_identifier($db);
+         $tbl = $self->trim_identifier($tbl);
+         $result->{TABLE}->{$alias || $tbl} = $tbl;
+         $result->{DATABASE}->{$tbl}        = $db if $db;
       }
    }
-   return $aliases;
+   else {
+      MKDEBUG && _d("No tables ref in", $query);
+   }
+
+   if ( $list ) {
+      # Return raw text of the tbls without aliases, instead of identifier
+      # mappings.  Include all identifier quotings and such.
+      return \@tbl_refs;
+   }
+   else {
+      return $result;
+   }
 }
 
 # Splits a compound statement and returns an array with each sub-statement.
@@ -477,6 +493,17 @@ sub extract_tables {
       push @tables, [ $db || $default_db, $tbl ];
    }
    return @tables;
+}
+
+# This is a special trim function that removes whitespace and identifier-quotes
+# (backticks, in the case of MySQL) from the string.
+sub trim_identifier {
+   my ($self, $str) = @_;
+   return unless defined $str;
+   $str =~ s/`//g;
+   $str =~ s/^\s+//;
+   $str =~ s/\s+$//;
+   return $str;
 }
 
 sub _d {
