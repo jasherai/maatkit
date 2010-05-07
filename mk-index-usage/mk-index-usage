@@ -375,7 +375,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6240
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -399,16 +404,11 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, $val, $is_numeric ) = @_;
+   my ( $self, $val ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
-
-   if ( !defined $is_numeric ) {
-      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
-   }
-
-   return $val if $is_numeric;
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    $val =~ s/(['\\])/\\$1/g;
    return "'$val'";
@@ -430,6 +430,19 @@ sub literal_like {
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
    return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
 }
 
 1;
@@ -1387,7 +1400,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5843
+# QueryParser package 6148
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryParser.pm
+#   trunk/common/t/QueryParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryParser;
 
@@ -1397,36 +1415,21 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
-# This regex finds things that look like database.table identifiers, based on
-# their proximity to keywords.  (?<!KEY\s) is a workaround for ON DUPLICATE KEY
-# UPDATE, which is usually followed by a column name.
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
          \(?                                   # Optional paren around tables
-         # Capture the identifier and any number of comma-join identifiers that
-         # follow it, optionally with aliases with or without the AS keyword
          ($tbl_ident
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
       }xio;
-# This regex is meant to match "derived table" queries, of the form
-# .. from ( select ...
-# .. join ( select ...
-# .. bar join foo, ( select ...
-# Unfortunately it'll also match this:
-# select a, b, (select ...
 our $has_derived = qr{
       \b(?:FROM|JOIN|,)
       \s*\(\s*SELECT
    }xi;
 
-# http://dev.mysql.com/doc/refman/5.1/en/sql-syntax-data-definition.html
-# We treat TRUNCATE as a dds but really it's a data manipulation statement.
 our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
 
-# http://dev.mysql.com/doc/refman/5.1/en/sql-syntax-data-manipulation.html
-# Data manipulation statements.
 our $data_manip_stmts = qr/(?:INSERT|UPDATE|DELETE|REPLACE)/i;
 
 sub new {
@@ -1434,25 +1437,20 @@ sub new {
    bless {}, $class;
 }
 
-# Returns a list of table names found in the query text.
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
    my ( $ddl_stmt ) = $query =~ m/^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
       if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
-         # Handles CREATE DATABASE, not to be confused with CREATE TABLE.
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
       }
       if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
-         # Handle CREATE TABLE ... SELECT.  In this case, the real tables
-         # come from the SELECT, not the CREATE.
          my ($select) = $query =~ m/\b(SELECT\b.+)/is;
          MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
          return $self->get_tables($select);
@@ -1462,13 +1460,8 @@ sub get_tables {
       return ($tbl);
    }
 
-   # These keywords may appear between UPDATE or SELECT and the table refs.
-   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # Another special case: LOCK TABLES tbl [[AS] alias] READ|WRITE, etc.
-   # We strip the LOCK TABLES stuff and append "FROM" to fake a SELECT
-   # statement and allow $tbl_regex to match below.
    if ( $query =~ /^\s*LOCK TABLES/i ) {
       MKDEBUG && _d('Special table type: LOCK TABLES');
       $query =~ s/^(\s*LOCK TABLES\s+)//;
@@ -1485,22 +1478,11 @@ sub get_tables {
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
 
-      # Some queries coming from certain ORM systems will have superfluous
-      # parens around table names, like SELECT * FROM (`mytable`);  We match
-      # these so the table names can be extracted more simply with regexes.  But
-      # in case of subqueries, this can cause us to match SELECT as a table
-      # name, for example, in SELECT * FROM (SELECT ....) AS X;  It's possible
-      # that SELECT is really a table name, but so unlikely that we just skip
-      # this case.
       next if $tbls =~ m/\ASELECT\b/i;
 
       foreach my $tbl ( split(',', $tbls) ) {
-         # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
 
-         # Sanity check for cases like when a column is named `from`
-         # and the regex matches junk.  Instead of complex regex to
-         # match around these rarities, this simple check will save us.
          if ( $tbl !~ m/[a-zA-Z]/ ) {
             MKDEBUG && _d('Skipping suspicious table name:', $tbl);
             next;
@@ -1512,41 +1494,28 @@ sub get_tables {
    return @tables;
 }
 
-# Returns true if it sees what looks like a "derived table", e.g. a subquery in
-# the FROM clause.
 sub has_derived_table {
    my ( $self, $query ) = @_;
-   # See the $tbl_regex regex above.
    my $match = $query =~ m/$has_derived/;
    MKDEBUG && _d($query, 'has ' . ($match ? 'a' : 'no') . ' derived table');
    return $match;
 }
 
-# Return a list of tables/databases and the name they're aliased to.
 sub get_aliases {
    my ( $self, $query, $list ) = @_;
    return unless $query;
    my $aliases;
 
-   # These keywords may appear between UPDATE or SELECT and the table refs.
-   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # These keywords may appear before JOIN. They need to be removed so
-   # that they are not mistaken for implicit aliases of the preceding table.
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
-   # Get the table references clause and the keyword that starts the clause.
-   # See the comments below for why we need the starting keyword.
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
          .+?                       # Table refs
       )
       (?:\s+|\z)                   # If the query does not end with the table
-                                   # refs then there must be at least 1 space
-                                   # between the last tbl ref and the next
-                                   # keyword
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
@@ -1556,28 +1525,15 @@ sub get_aliases {
    }
 
    if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
-      # Remove optional columns def from INSERT/REPLACE.
       $tbl_refs =~ s/\([^\)]+\)\s*//;
    }
 
    MKDEBUG && _d('tbl refs:', $tbl_refs);
 
-   # These keywords precede a table ref. They signal the start of a table
-   # ref, but to know where the table ref ends we need the after tbl ref
-   # keywords below.
    my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
 
-   # These keywords signal the end of a table ref and either 1) the start
-   # of another table ref, or 2) the start of an ON|USING part of a JOIN
-   # clause (which we want to skip over), or 3) the end of the string (\z).
-   # We need these after tbl ref keywords so that they are not mistaken
-   # for implicit aliases of the preceding table.
    my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
 
-   # This is required for cases like:
-   #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
-   # Because spaces may precede a tbl and a tbl may end with \z, then
-   # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
    $tbl_refs =~ s/ = /=/g;
 
    while (
@@ -1590,21 +1546,13 @@ sub get_aliases {
       my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
       MKDEBUG && _d('Match table:', $tbl_ref);
 
-      # Handle subqueries.
       if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         # According the the manual
-         # http://dev.mysql.com/doc/refman/5.0/en/unnamed-views.html:
-         # "The [AS] name  clause is mandatory, because every table in a
-         # FROM clause must have a name."
-         # So if the tbl ref begins with 'AS', then we probably have a
-         # subquery.
          MKDEBUG && _d('Subquery', $tbl_ref);
          $aliases->{$alias} = undef unless $list;
          next;
       }
 
       if ( $list ) {
-         # Return tbls and their aliases as list instead of hashref.
          $tbl_ref =~ s/^\s+//g;
          $tbl_ref =~ s/\s+$//g;
          push @$aliases, $tbl_ref;
@@ -1618,10 +1566,6 @@ sub get_aliases {
    return $aliases;
 }
 
-# Splits a compound statement and returns an array with each sub-statement.
-# Example:
-#    INSERT INTO ... SELECT ...
-# is split into two statements: "INSERT INTO ..." and "SELECT ...".
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -1630,35 +1574,22 @@ sub split {
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
 
-   # This splits a statement on the above verbs which means that the verb
-   # gets chopped out.  Capturing the verb (e.g. ($verb)) will retain it,
-   # but then it's disjointed from its statement.  Example: for this query,
-   #   INSERT INTO ... SELECT ...
-   # split returns ('INSERT', 'INTO ...', 'SELECT', '...').  Therefore,
-   # we must re-attach each verb to its statement; we do this later...
    my @split_statements = grep { $_ } split(m/\b($verbs\b(?!(?:\s*\()))/io, $query);
 
    my @statements;
    if ( @split_statements == 1 ) {
-      # This happens if the query has no verbs, so it's probably a single
-      # statement.
       push @statements, $query;
    }
    else {
-      # ...Re-attach verbs to their statements.
       for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
          push @statements, $split_statements[$i].$split_statements[$i+1];
 
-         # Variable-width negative look-behind assertions, (?<!), aren't
-         # fully supported so we split ON DUPLICATE KEY UPDATE.  This
-         # puts it back together.
          if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/i ) {
             $statements[-2] .= pop @statements;
          }
       }
    }
 
-   # Wrap stmts in <> to make it more clear where each one begins/ends.
    MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
    return @statements;
 }
@@ -1805,7 +1736,6 @@ sub parse {
    return unless $query;
    my $parsed = {};
 
-   # Flatten and clean query.
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
@@ -1816,19 +1746,28 @@ sub parse {
    my ($type) = $query =~ m/^(\w+)/;
    $parsed->{type} = lc $type;
 
-   # my @words = $query =~ m/
-   #   [A-Za-z_.]+\(.*?\)+   # Match FUNCTION(...)
-   #   |\(.*?\)+             # Match grouped items
-   #   |"(?:[^"]|\"|"")*"+   # Match double quotes
-   #   |'[^'](?:|\'|'')*'+   #   and single quotes
-   #   |`(?:[^`]|``)*`+      #   and backticks
-   #   |[^ ,]+
-   #   |,
-   #/gx;
 
    $parsed->{sub_queries} = [];
 
    return $parsed;
+}
+
+sub extract_tables {
+   my ( $self, %args ) = @_;
+   my $query      = $args{query};
+   my $default_db = $args{default_db};
+   my $q          = $self->{Quoter} || $args{Quoter};
+   return unless $query;
+   MKDEBUG && _d('Extracting tables');
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $self->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
 }
 
 sub _d {
@@ -1846,7 +1785,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6042
+# QueryRewriter package 6132
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2031,10 +1975,10 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
@@ -2108,7 +2052,7 @@ sub convert_to_select {
                     (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
@@ -2116,8 +2060,8 @@ sub convert_to_select {
                     \A.*?
                     (?:insert(?:\s+ignore)?|replace)\s+
                     (?:.*?\binto)\b(.*?)\s*
-                    set?\s*\b(.*?)\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select_with_set($1, $2)}exsi
@@ -3085,7 +3029,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5266
+# MySQLDump package 5998
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLDump.pm
+#   trunk/common/t/MySQLDump.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLDump;
 
@@ -3122,9 +3071,10 @@ EOF
 
 sub new {
    my ( $class, %args ) = @_;
-   $args{cache} = 1 unless defined $args{cache};
-   my $self = bless \%args, $class;
-   return $self;
+   my $self = {
+      cache => 0,  # Afaik no script uses this cache any longer because
+   };
+   return bless $self, $class;
 }
 
 sub dump {
@@ -3392,211 +3342,280 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 5266
+# SchemaIterator package 5473
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SchemaIterator.pm
+#   trunk/common/t/SchemaIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package MySQLFind;
+package SchemaIterator;
 
 use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use Data::Dumper;
-$Data::Dumper::Indent    = 0;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dumper quoter) ) {
+   foreach my $arg ( qw(Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   die "Do not pass me a dbh argument" if $args{dbh};
-   my $self = bless \%args, $class;
-   $self->{need_engine}
-      = (   $self->{engines}->{permit}
-         || $self->{engines}->{reject}
-         || $self->{engines}->{regexp} ? 1 : 0);
-   die "I need a parser argument"
-      if $self->{need_engine} && !defined $args{parser};
-   MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
-   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
-   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
-   if ( $args{useddl} ) {
-      MKDEBUG && _d('Will prefer DDL');
+   my $self = {
+      %args,
+      filter => undef,
+      dbs    => [],
+   };
+   return bless $self, $class;
+}
+
+sub make_filter {
+   my ( $self, $o ) = @_;
+   my @lines = (
+      'sub {',
+      '   my ( $dbh, $db, $tbl ) = @_;',
+      '   my $engine = undef;',
+   );
+
+
+   my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
+      if $o->has('databases');
+   my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
+      if $o->has('ignore-databases');
+   my @dbs_regex;
+   if ( $o->has('databases-regex') && (my $p = $o->get('databases-regex')) ) {
+      push @dbs_regex, "      return 0 unless \$db && (\$db =~ m/$p/o);";
    }
-   return $self;
-}
+   my @reject_dbs_regex;
+   if ( $o->has('ignore-databases-regex')
+        && (my $p = $o->get('ignore-databases-regex')) ) {
+      push @reject_dbs_regex, "      return 0 if \$db && (\$db =~ m/$p/o);";
+   }
+   if ( @permit_dbs || @reject_dbs || @dbs_regex || @reject_dbs_regex ) {
+      push @lines,
+         '   if ( $db ) {',
+            (@permit_dbs        ? @permit_dbs       : ()),
+            (@reject_dbs        ? @reject_dbs       : ()),
+            (@dbs_regex         ? @dbs_regex        : ()),
+            (@reject_dbs_regex  ? @reject_dbs_regex : ()),
+         '   }';
+   }
 
-sub init_timestamp {
-   my ( $self, $dbh ) = @_;
-   return if $self->{timestamp}->{$dbh}->{now};
-   my $sql = 'SELECT CURRENT_TIMESTAMP';
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
-}
+   if ( $o->has('tables') || $o->has('ignore-tables')
+        || $o->has('ignore-tables-regex') ) {
 
-sub find_databases {
-   my ( $self, $dbh ) = @_;
-   return grep {
-      $_ !~ m/^(information_schema|lost\+found)$/i
-   }  $self->_filter('databases', sub { $_[0] },
-         $self->{dumper}->get_databases(
-            $dbh,
-            $self->{quoter},
-            $self->{databases}->{like}));
-}
+      my $have_qtbl       = 0;
+      my $have_only_qtbls = 0;
+      my %qtbls;
 
-sub find_tables {
-   my ( $self, $dbh, %args ) = @_; 
+      my @permit_tbls;
+      my @permit_qtbls;
+      my %permit_qtbls;
+      if ( $o->get('tables') ) {
+         my %tbls;
+         map {
+            if ( $_ =~ m/\./ ) {
+               $permit_qtbls{$_} = 1;
+            }
+            else {
+               $tbls{$_} = 1;
+            }
+         } keys %{ $o->get('tables') };
+         @permit_tbls  = _make_filter('unless', '$tbl', \%tbls);
+         @permit_qtbls = _make_filter('unless', '$qtbl', \%permit_qtbls);
 
-   my @tables
-      = $self->_filter('tables', sub { $_[0]->{name} },
-         $self->_fetch_tbl_list($dbh, %args));
-
-   my %broken_table;
-
-   if ( $self->{need_engine} ) {
-      foreach my $tbl ( @tables ) {
-         next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
-         my $struct = $self->{parser}->parse(
-            $self->{dumper}->get_create_table(
-               $dbh, $self->{quoter}, $args{database}, $tbl_name));
-         $broken_table{$tbl_name} = 1 unless $struct;
-         $tbl->{engine} = $struct->{engine};
+         if ( @permit_qtbls ) {
+            push @lines,
+               '   my $qtbl   = ($db ? "$db." : "") . ($tbl ? $tbl : "");';
+            $have_qtbl = 1;
+         }
       }
-      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
-   }
 
-   for my $i ( 0..$#tables ) {
-      $tables[$i]->{name} =~ s/^[^.]*\.//;
-      
-      if ( $broken_table{$tables[$i]->{name}} ) {
-         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
-         delete $tables[$i];
+      my @reject_tbls;
+      my @reject_qtbls;
+      my %reject_qtbls;
+      if ( $o->get('ignore-tables') ) {
+         my %tbls;
+         map {
+            if ( $_ =~ m/\./ ) {
+               $reject_qtbls{$_} = 1;
+            }
+            else {
+               $tbls{$_} = 1;
+            }
+         } keys %{ $o->get('ignore-tables') };
+         @reject_tbls= _make_filter('if', '$tbl', \%tbls);
+         @reject_qtbls = _make_filter('if', '$qtbl', \%reject_qtbls);
+
+         if ( @reject_qtbls && !$have_qtbl ) {
+            push @lines,
+               '   my $qtbl   = ($db ? "$db." : "") . ($tbl ? $tbl : "");';
+         }
+      }
+
+      if ( keys %permit_qtbls  && !@permit_dbs ) {
+         my $dbs = {};
+         map {
+            my ($db, undef) = split(/\./, $_);
+            $dbs->{$db} = 1;
+         } keys %permit_qtbls;
+         MKDEBUG && _d('Adding restriction "--databases',
+               (join(',', keys %$dbs) . '"'));
+         if ( keys %$dbs ) {
+            $o->set('databases', $dbs);
+            return $self->make_filter($o);
+         }
+      }
+
+      my @tbls_regex;
+      if ( $o->has('tables-regex') && (my $p = $o->get('tables-regex')) ) {
+         push @tbls_regex, "      return 0 unless \$tbl && (\$tbl =~ m/$p/o);";
+      }
+      my @reject_tbls_regex;
+      if ( $o->has('ignore-tables-regex')
+           && (my $p = $o->get('ignore-tables-regex')) ) {
+         push @reject_tbls_regex,
+            "      return 0 if \$tbl && (\$tbl =~ m/$p/o);";
+      }
+
+      my @get_eng;
+      my @permit_engs;
+      my @reject_engs;
+      if ( ($o->has('engines') && $o->get('engines'))
+           || ($o->has('ignore-engines') && $o->get('ignore-engines')) ) {
+         push @get_eng,
+            '      my $sql = "SHOW TABLE STATUS "',
+            '              . ($db ? "FROM `$db`" : "")',
+            '              . " LIKE \'$tbl\'";',
+            '      MKDEBUG && _d($sql);',
+            '      eval {',
+            '         $engine = $dbh->selectrow_hashref($sql)->{engine};',
+            '      };',
+            '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
+            '      MKDEBUG && _d($tbl, "uses engine", $engine);',
+            '      $engine = lc $engine if $engine;',
+         @permit_engs
+            = _make_filter('unless', '$engine', $o->get('engines'), 1);
+         @reject_engs
+            = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
+      }
+
+      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
+           || @permit_engs || @reject_engs ) {
+         push @lines,
+            '   if ( $tbl ) {',
+               (@permit_tbls       ? @permit_tbls        : ()),
+               (@reject_tbls       ? @reject_tbls        : ()),
+               (@tbls_regex        ? @tbls_regex         : ()),
+               (@reject_tbls_regex ? @reject_tbls_regex  : ()),
+               (@permit_qtbls      ? @permit_qtbls       : ()),
+               (@reject_qtbls      ? @reject_qtbls       : ()),
+               (@get_eng           ? @get_eng            : ()),
+               (@permit_engs       ? @permit_engs        : ()),
+               (@reject_engs       ? @reject_engs        : ()),
+            '   }';
       }
    }
 
-   foreach my $crit ( @{$self->{tables}->{status}} ) {
-      my ($key, $test) = %$crit;
-      @tables
-         = grep {
-            $self->_test_date($_, $key, $test, $dbh)
-         } @tables;
-   }
+   push @lines,
+      '   MKDEBUG && _d(\'Passes filters:\', $db, $tbl, $engine, $dbh);',
+      '   return 1;',  '}';
 
-   return map { $_->{name} } @tables;
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('filter sub:', $code);
+   my $filter_sub= eval $code
+      or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
+
+   return $filter_sub;
 }
 
-sub find_views {
-   my ( $self, $dbh, %args ) = @_;
-   my @tables = $self->_fetch_tbl_list($dbh, %args);
-   @tables = grep { $_->{engine} eq 'VIEW' } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
-   return map { $_->{name} } @tables;
+sub set_filter {
+   my ( $self, $filter_sub ) = @_;
+   $self->{filter} = $filter_sub;
+   MKDEBUG && _d('Set filter sub');
+   return;
 }
 
-sub _use_db {
-   my ( $self, $dbh, $new ) = @_;
-   if ( !$new ) {
-      MKDEBUG && _d('No new DB to use');
-      return;
+sub get_db_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $self->{quoter}->quote($new);
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return $curr;
+   my ($dbh) = @args{@required_args};
+
+   my $filter = $self->{filter};
+   my @dbs;
+   eval {
+      my $sql = 'SHOW DATABASES';
+      MKDEBUG && _d($sql);
+      @dbs =  grep {
+         my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
+         $ok = 0 if $_ =~ m/information_schema|lost\+found/;
+         $ok;
+      } @{ $dbh->selectcol_arrayref($sql) };
+      MKDEBUG && _d('Found', scalar @dbs, 'databases');
+   };
+   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   return sub {
+      return shift @dbs;
+   };
 }
 
-sub _fetch_tbl_list {
-   my ( $self, $dbh, %args ) = @_;
-   die "database is required" unless $args{database};
+sub get_tbl_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $views) = @args{@required_args, 'views'};
 
-   my $curr_db = $self->_use_db($dbh, $args{database});
-
-   my @tables;
-   if ( scalar @{$self->{tables}->{status}} ) {
-      @tables = $self->{dumper}->get_table_status(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
+   my $filter = $self->{filter};
+   my @tbls;
+   if ( $db ) {
+      eval {
+         my $sql = 'SHOW /*!50002 FULL*/ TABLES FROM '
+                 . $self->{Quoter}->quote($db);
+         MKDEBUG && _d($sql);
+         @tbls = map {
+            $_->[0]
+         }
+         grep {
+            my ($tbl, $type) = @$_;
+            my $ok = $filter ? $filter->($dbh, $db, $tbl) : 1;
+            if ( !$views ) {
+               $ok = 0 if ($type || '') eq 'VIEW';
+            }
+            $ok;
+         }
+         @{ $dbh->selectall_arrayref($sql) };
+         MKDEBUG && _d('Found', scalar @tbls, 'tables in', $db);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
    }
    else {
-      @tables = $self->{dumper}->get_table_list(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
+      MKDEBUG && _d('No db given so no tables');
    }
-
-   @tables = map {
-      my %hash = %$_;
-      $hash{name} = join('.', $args{database}, $hash{name});
-      \%hash;
-   }
-   grep {
-      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
-   } @tables;
-
-   $self->_use_db($dbh, $curr_db);
-
-   return @tables;
+   return sub {
+      return shift @tbls;
+   };
 }
 
-sub _filter {
-   my ( $self, $thing, $sub, @vals ) = @_;
-   MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
-   my $permit = $self->{$thing}->{permit};
-   my $reject = $self->{$thing}->{reject};
-   my $regexp = $self->{$thing}->{regexp};
-   return grep {
-      my $val = $sub->($_);
-      $val = '' unless defined $val;
-      if ( $thing eq 'tables' ) {
-         (my $tbl = $val) =~ s/^.*\.//;
-         ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
-            && ( !$permit || $permit->{$val} || $permit->{$tbl} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-      else {
-         ( !$reject || !$reject->{$val} )
-            && ( !$permit || $permit->{$val} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-   } @vals;
-}
-
-sub _test_date {
-   my ( $self, $table, $prop, $test, $dbh ) = @_;
-   $prop = lc $prop;
-   if ( !defined $table->{$prop} ) {
-      MKDEBUG && _d($prop, 'is not defined');
-      return $self->{nullpass};
+sub _make_filter {
+   my ( $cond, $var_name, $objs, $lc ) = @_;
+   my @lines;
+   if ( scalar keys %$objs ) {
+      my $test = join(' || ',
+         map { "$var_name eq '" . ($lc ? lc $_ : $_) ."'" } keys %$objs);
+      push @lines, "      return 0 $cond $var_name && ($test);",
    }
-   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
-   die "Invalid date test $test for $prop" unless defined $num;
-   $self->init_timestamp($dbh);
-   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
-           . "INTERVAL $num SECOND)";
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
-   my $time = $self->{timestamp}->{$dbh}->{$num};
-   if ( $equality ) {
-      return ($equality eq '-' && $table->{$prop} gt $time)
-          || ($equality eq '+' && $table->{$prop} lt $time);
-   }
-   return $table->{$prop} eq $time;
+   return @lines;
 }
 
 sub _d {
@@ -3610,9 +3629,8 @@ sub _d {
 1;
 
 # ###########################################################################
-# End MySQLFind package
+# End SchemaIterator package
 # ###########################################################################
-
 
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
@@ -3638,11 +3656,12 @@ Transformers->import(qw(make_checksum));
 
 # Global variables.  Only really essential variables should be here.
 my $oktorun = 1;
-my $q  = new Quoter();
-my $qp = new QueryParser();
-my $qr = new QueryRewriter(QueryParser=>$qp);
-my $tp = new TableParser(Quoter => $q);
-my $vp = new VersionParser();
+my $q      = new Quoter();
+my $qp     = new QueryParser();
+my $qr     = new QueryRewriter(QueryParser=>$qp);
+my $tp     = new TableParser(Quoter => $q);
+my $vp     = new VersionParser();
+my $parser = new SlowLogParser();
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3653,19 +3672,18 @@ sub main {
    my $o = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] [FILE]',
-      description => q{analyzes the indexes used by queries.},
+      description => q{reads queries from a log and analyzes how they use }
+                   . q{indexes.},
    );
    $o->get_specs();
    $o->get_opts();
-
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
    $o->usage_or_errors();
 
-   my $parser = SlowLogParser->new();
-
-   my $event;
-
+   # Set up to read either a file, or STDIN.  Create a callback to get events
+   # from the slow query log file.  TODO: this won't permit reading multiple
+   # files.  I want an iterator provided by a module.
    my $fh;
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
@@ -3679,13 +3697,12 @@ sub main {
       if ( !open $fh, "<", $file ) {
          $fh = undef;
          warn "Cannot open $file: $OS_ERROR\n";
-         next EVENT;
       }
       MKDEBUG && _d('Reading', $file);
    }
    my $next_event = sub { return <$fh>; };
    my $tell = sub { return tell $fh; };
-
+   my $event;
    my $get_event = sub {
       return $parser->parse_event(
          event      => $event,  # new interface
@@ -3697,19 +3714,27 @@ sub main {
       );
    };
 
-   my %stats;
+   # Open the database connection.
    my $dbh = get_cxn(
       dsn => $dp->parse_options($o),
       OptionParser => $o,
       DSNParser    => $dp,
    );
 
-   my $i = 0;
-   my $sz = -s $file;
-   print "file size: $sz\n";
+   # This variable holds the accumulated information about the queries, tables,
+   # indexes, and so on.
+   my %stats;
+
+   # Set up for progress reports.  TODO: add a --progress option.
+   my $i     = 0;
+   my $sz    = -s $file;
    my $start = time();
+
+   # This is the main loop over the queries in the log.  For each query we are
+   # going to get the fingerprint and store what we learn about that query's
+   # EXPLAIN plan, keyed off its fingerprint.
    while ( $event = $get_event->() ) {
-      next unless $event->{arg};
+      next unless $event->{arg}; # The arg is the SQL.
       $event->{fingerprint} = $qr->fingerprint($event->{arg});
       eval {
          gather_stats_for_query($event, \%stats, $dbh);
@@ -3717,14 +3742,18 @@ sub main {
       if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
       }
+
+      # Print out the progress report every 10000 events.  TODO make that a
+      # command-line option.
       $i++;
       if ( $i % 10000 == 0 ) {
-         my $bytes = tell($fh);
+         my $bytes    = tell($fh);
          my $pct_done = sprintf '%.3f', $bytes/$sz*100;
-         my $remain = $sz - $bytes;
-         my $rate = $bytes / (time() - $start);
-         my $eta = sprintf '%d', $remain / $rate;
-         print "Current file position: $i events, $bytes done at $rate bytes/sec, $pct_done% done, ETA in $eta secs\n";
+         my $remain   = $sz - $bytes;
+         my $rate     = $bytes / (time() - $start);
+         my $eta      = sprintf '%d', $remain / $rate;
+         print "Current file position: $i events, $bytes done at $rate "
+            . "bytes/sec, $pct_done% done, ETA in $eta secs\n";
       }
    }
 
@@ -3753,27 +3782,22 @@ sub main {
    # But only if the table was used.  If the database is __UNKNOWN__ then guess
    # that it's the table we're looking for.
    my $du = new MySQLDump();
-   my $finder = new MySQLFind(
-      quoter    => $q,
-      useddl    => 1,
-      parser    => $tp,
-      dumper    => $du,
-      databases => {
-      },
-      tables => {
-      },
-      engines => {
-         views  => 0,
-      },
-   );
-
-   my $vp = new VersionParser();
+   my $si = new SchemaIterator(Quoter => $q);
+   $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
 
+   my $next_db = $si->get_db_itr(dbh => $dbh);
    DATABASE:
-   foreach my $database ( $finder->find_databases($dbh) ) {
+   while (my $database = $next_db->() ) {
+      MKDEBUG && _d('Getting tables from', $database);
+      my $next_tbl = $si->get_tbl_itr(
+         dbh   => $dbh,
+         db    => $database,
+         views => 0,
+      );
       TABLE:
-      foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
+      while ( my $table = $next_tbl->() ) {
+         MKDEBUG && _d('Got table', $table);
 
          # Skip it unless we've actually seen a query against this table.  Don't
          # auto-vivify!
@@ -3831,10 +3855,12 @@ sub gather_stats_for_query {
    my $id     = make_checksum($fingerprint);
    my $access  = $stats->{queries}->{$chksum};
    my $aliases = $stats->{parsed}->{$fingerprint}
-             ||= $qp->get_aliases($sel);
+             ||= $qp->get_aliases($sel); # TODO: we might need to get aliases
+             # from fingerprinted $sel.
    $aliases->{ID} = $id;
 
    if ( !$access ) { # We haven't seen exactly this query before.
+      # TODO: must permit skip-seen-before behavior.
       my @res;
       my $a = get_index_access($event, $dbh);
 
@@ -3875,6 +3901,7 @@ sub gather_stats_for_query {
 sub get_index_access {
    my ( $event, $dbh ) = @_;
    if ( $event->{arg} !~ m/^\s*select/i ) {
+      # TODO: this is duplicated.
       $event->{arg} = $qr->convert_to_select($event->{arg});
    }
    my $sql = "explain $event->{arg}";
@@ -3934,7 +3961,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-index-usage - Analyzes the index usage of queries.
+mk-index-usage - Read queries from a log and analyze how they use indexes.
 
 =head1 SYNOPSIS
 
@@ -3959,11 +3986,115 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-TODO.
+This tool connects to a MySQL database server, reads through a query log, and
+asks MySQL how it will use each query.  When it is finished, it prints out a
+report on the queries, tables, and indexes.  This lets you answer interesting
+questions such as "which indexes are unused?", "which queries have several
+possible execution plans?", and "which indexes are chosen instead of other
+indexes?"
+
+The query log needs to be in MySQL's slow query log format.  If you need to
+input a different format, you can use L<mk-query-digest> to translate the
+formats.  If you don't specify a filename, the tool reads from STDIN.
+
+The tool runs two stages.  In the first stage, it runs EXPLAIN on each query in
+the query log.  If the query is not a SELECT, it tries to transform it to a
+roughly equivalent SELECT query.  This is not a perfect process, but it is good
+enough to be useful.  In the second stage, the tool takes inventory of all the
+tables and indexes in your database, so it can compare the existing indexes to
+those that were actually used by the queries in the log.  More detail on each
+phase follows below.
+
+During the first phase, the tool transforms each query into a SELECT so it can
+run EXPLAIN against it.  If the query can't be transformed into a SELECT, the
+tool skips it.  Next, the tool generates a query fingerprint, which is explained
+in the L<mk-query-digest> documentation.  This is the abstract form of the
+query.  The fingerprint is then checksummed to form the query ID, which is also
+the same as the query ID in mk-query-digest.
+
+The tool skips the EXPLAIN step for queries that are exact duplicates of those
+seen before.  It assumes that the same query will generate the same EXPLAIN plan
+as it did previously (usually a safe assumption, and generally good for
+performance), and simply increments the count of all the related statistics that
+were derived before.  However, queries that have the same fingerprint but
+different checksums will be re-EXPLAINed.  Queries that have different literal
+constants can have different execution plans, and this is important to measure.
+
+After EXPLAIN-ing the query, it is necessary to try to map aliases in the query
+back to the original table names.  For example, consider the EXPLAIN plan for
+the following query:
+
+  SELECT * FROM tbl1 AS foo;
+
+The EXPLAIN output will show access to table C<foo>, and that must be translated
+back to C<tbl1>.  This process involves complex parsing.  It is generally very
+accurate, but there is some chance that it might not work right.  If you find
+cases where it fails, submit a bug report and a reproducible test case.
+
+The result of this stage is a data structure that contains index usage
+information for the queries in this log.  This data structure doesn't contain
+information about indexes that were not used, or tables that were not used.
+This is only the aggregated usage of the queries themselves.  This data
+structure has a few different parts:
+
+=over
+
+=item access
+
+For each database, for each table, for each index, for each query that used this
+index, we store the following information: the fingerprint of the query, the
+number of times this query used this index, the byte offset in the log where a
+sample of this query using this index can be located, and alternative indexes
+this query could have used (from the C<possible_keys> column in EXPLAIN).
+
+=item parsed
+
+This data structure contains the relationship between identifiers and aliases
+for each query fingerprint found in the file.
+
+=item queries
+
+Each query can potentially access many indexes in many tables.  For example, a
+JOIN query can access one or more indexes in each table it queries.  This part
+of the data structure has one entry for each distinct query (not fingerprint) in
+the log.  Each entry stores an array of the indexes that this query accessed,
+along with alternate indexes that could have been used (again, possible_keys).
+
+=back
+
+After compiling the above data structures with information about the queries and
+their index usage, the tool prints the first part of the output, which is
+documented in L<"OUTPUT">.  Then it moves to the second phase of operation.
+
+During the second phase, the tool iterates through every database and every
+table in the server.  It skips tables that were never accessed by any queries in
+the log.  This prevents it from considering that table's indexes to be unused
+merely because the workload that it analyzed didn't include queries against the
+table.  For each table that was accessed by queries in the log, for each index
+on that table, it checks whether the index was used by any queries, and prints
+out a second part of the report, also documented in L<"OUTPUT">.
 
 =head1 OUTPUT
 
-TODO.
+The tool prints a two-part report.  In the first part, it prints a summary of
+indexes used by the queries in the log, and how they were used.  For example, a
+single index's report might look like the following:
+
+  # Index: db1.tbl1.PRIMARY used by    1 queries
+  #        2 uses by 0x8490F1445D518C17 @ 39806784849 w/   0 alternates
+
+This output indicates that the primary key index on C<db1.tbl1> was used twice
+by a single query, whose ID is 0x8490F1445D518C17.  You can find a sample of
+this query at byte offset 39806784849 in the log file.  This query had no
+alternative to using this index; that is, when this query used this index,
+EXPLAIN showed nothing in possible_keys.
+
+The second part of the output shows unused indexes for each table; for example,
+
+  # db1.tbl1 unused indexes: idx_1, idx_2
+
+There is simply one line of text per table that has unused indexes.  Tables that
+don't have unused indexes are skipped.
 
 =head1 OPTIONS
 
