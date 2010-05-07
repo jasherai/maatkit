@@ -2869,7 +2869,7 @@ sub check_servers {
    my %exited_children;
    $SIG{CHLD} = sub {
       my $kid;
-      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+      while (($kid = waitpid(-1, &POSIX::WNOHANG)) > 0) {
          MKDEBUG && _d('Process', $kid, 'exited with', $CHILD_ERROR);
          # Must right-shift to get the actual exit status of the child.
          $exited_children{$kid} = $CHILD_ERROR >> 8;
