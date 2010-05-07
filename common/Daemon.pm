@@ -60,7 +60,8 @@ sub daemonize {
    }
 
    # I'm daemonized now.
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -150,7 +151,7 @@ sub make_PID_file {
    }
    $self->_make_PID_file();
    # This causes the PID file to be auto-removed when this obj is destroyed.
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -195,8 +196,19 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   # Remove the PID only if we're the child.
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   # Remove the PID file only if we created it.  There's two cases where
+   # it might be removed wrongly.  1) When the obj first daemonizes itself,
+   # the parent's copy of the obj will call this sub when it exits.  We
+   # don't remove it then because the child that continues to run won't
+   # have it.  2) When daemonized code forks its children get copies of
+   # the Daemon obj which will also call this sub when they exit.  We
+   # don't remove it then because the daemonized parent code won't have it.
+   # This trick works because $self->{PID_owner}=$PID is set once to the
+   # owner's $PID then this value is copied on fork.  But the "== $PID"
+   # here is the forked copy's PID which won't match the owner's PID.
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
