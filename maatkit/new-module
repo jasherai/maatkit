@@ -94,7 +94,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 12;
 
-use \$pkg_name;
+use $pkg_name;
 use MaatkitTest;
 
 use constant MKDEBUG => \$ENV{MKDEBUG} || 0;
@@ -105,7 +105,7 @@ use Data::Dumper;
 \$Data::Dumper::Quotekeys = 0;
 
 # #############################################################################
-# Real filenames.
+# Add your tests here.
 # #############################################################################
 
 # #############################################################################
