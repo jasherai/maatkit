@@ -2733,11 +2733,11 @@ sub main {
 
 sub get_monitored_servers {
    my ( %args ) = @_;
-   my @required_args = qw(dsn OptionParser DSNParser Quoter);
+   my @required_args = qw(dsn DSNParser Quoter OptionParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dsn, $o, $dp, $q) = @args{@required_args};
+   my ($dsn, $dp, $q) = @args{@required_args};
 
    my $host = $dp->as_string($dsn); 
    _log("Getting servers to monitor from $host");
@@ -2770,13 +2770,25 @@ sub get_monitored_servers {
    _log("Got " . (scalar @servers) . " servers");
 
    # Parse the server dsn strings into real dsn structs.
-   foreach my $server ( @servers ) {
-      my $dsn = $dp->parse($server->{dsn});
-      $server->{dsn} = $dsn;
+   for my $i ( 0..$#servers ) {
+      my $server = $servers[$i];
+      eval {
+         my $dsn = $dp->parse($server->{dsn});
+         $server->{dsn} = $dsn;
+      };
+      if ( $EVAL_ERROR ) {
+         chomp $EVAL_ERROR;
+         _log("Failed to parse server $server->{name} DSN $server->{dsn}: "
+            . $EVAL_ERROR);
+         _log("Server $server->{name} will not be checked");
+         delete $servers[$i];
+      }
    }
 
    $dbh->disconnect();
-   return @servers;
+
+   # Some servers may have been deleted.  Return only defined servers.
+   return grep { $_ } @servers;
 }
 
 sub get_servers_from_table {
@@ -2787,7 +2799,7 @@ sub get_servers_from_table {
    }
    my ($dbh, $tbl, $dp) = @args{@required_args};
 
-   my $sql = "SELECT server AS name, dsn, mk_heartbeat_file AS heartbeat "
+   my $sql = "SELECT server AS name, dsn, mk_heartbeat_file "
            . "FROM $tbl WHERE "
            . ($args{where} ? $args{where} : "1=1");
    MKDEBUG && _d($dbh, $sql);
@@ -2968,9 +2980,9 @@ sub check_server {
    }
 
    my $real_lag;
-   if ( $server->{heartbeat} ) {
+   if ( $server->{mk_heartbeat_file} ) {
       $real_lag = get_real_lag(
-         $o->get('mk-heartbeat-dir') . "/$server->{heartbeat}");
+         $o->get('mk-heartbeat-dir') . "/$server->{mk_heartbeat_file}");
    }
 
    # Get a dbh to the update server.
@@ -3161,27 +3173,30 @@ Check servers listed in `rmf`.`monitored_servers` on localhost,
 update `rmf`.`state` on master1, daemonize, log all output to mysql-rmf.log,
 check every minute and run forever:
 
-  mysql-replication-monitor --monitor h=localhost,t=rmf.monitored_servers \
-                            --update  h=master1,t=rmf.state               \
-                            --daemonize                                   \
-                            --log mysql-rmf.log
+   mysql-replication-monitor                        \
+      --monitor h=localhost,t=rmf.monitored_servers \
+      --update  h=master1,t=rmf.state               \
+      --daemonize                                  \
+      --log mysql-rmf.log
 
 Check servers once and exit:
 
-  mysql-replication-monitor --monitor h=localhost,t=rmf.monitored_servers \
-                            --update  h=master1,t=rmf.state               \
-                            --run-once
+   mysql-replication-monitor                        \
+      --monitor h=localhost,t=rmf.monitored_servers \
+      --update  h=master1,t=rmf.state               \
+      --run-once
 
 Check only server "db2" every 10 minutes for 1 hour, save all check logs
 in /var/log/checks/:
 
-  mysql-replication-monitor --monitor h=localhost,t=rmf.monitored_servers \
-                            --where   "server='db2'"                      \
-                            --update  h=master1,t=rmf.state               \
-                            --run-time 1h                                 \
-                            --interval 10m                                \
-                            --check-logs all                              \
-                            --check-logs-dir /var/log/checks/
+   mysql-replication-monitor                        \
+      --monitor h=localhost,t=rmf.monitored_servers \
+      --where   "server='db2'"                      \
+      --update  h=master1,t=rmf.state               \
+      --run-time 1h                                 \
+      --interval 10m                                \
+      --check-logs all                              \
+      --check-logs-dir /var/log/checks/
 
 =head1 DESCRIPTION
 
@@ -3265,6 +3280,73 @@ logs are still written and controlled by L<"--check-logs">) but you probably
 shouldn't do this because the tool may fail silently even though it continues
 to run.
 
+=head1 INTEGRATION WITH mk-heartbeat
+
+mysql-replication-monitor can integrate with already running instances of
+Maatkit's mk-heartbeat tool which measures and records "real" slave lag.
+Each instance of mk-heartbeat must be ran with its C<--file> option to
+save its output to a file that is accessible by the observer.  This base
+file name--just the file name, no paths/directories--is saved in the
+C<mk_heartbeat_file> column of the L<"--monitor"> table for the server
+that it applies to.  Therefore, mk-heartbeat file names are the same
+on every observer for each monitored server.
+
+For example, suppose the topology is:
+
+  S1 <- M -> S2
+
+There is one master (M) and two slave, each is an observer monitoring all
+three servers.  Real lag is monitored on the slaves, so the L<"--monitor">
+table has rows like:
+
+              server: master
+                 dsn: ...
+   mk_heartbeat_file: NULL
+
+              server: slave1
+                 dsn: ...
+   mk_heartbeat_file: slave1-heartbeat
+
+              server: slave2
+                 dsn: ...
+   mk_heartbeat_file: slave2-heartbeat
+
+Notice that the C<mk_heartbeat_file> column for the master server's row is
+NULL because it's not being monitored by mk-heartbeat.
+
+First, to create the heartbeat, mk-heartbeat is ran on just the master like:
+
+  mk-heartbeat -D repl --update h=master --daemonize
+
+(This assumes that you've already created the heartbeat table
+C<repl.heartbeat>.)  Then on each server, including the master, mk-heartbeat
+is ran like:
+
+  mk-heartbeat -D repl --monitor h=slave1           \
+                       --file /tmp/slave1-heartbeat \
+                       --daemonize
+
+  mk-heartbeat -D repl --monitor h=slave2           \
+                       --file /tmp/slave2-heartbeat \
+                       --daemonize
+
+Finally, since each server is saving its heartbeat files in C</tmp/>,
+mysql-replication-monitor is started with L<"--mk-heartbeat-dir">=C</tmp/>.
+
+When a check happens and the C<mk_heartbeat_file> column is not null,
+the tool looks for that file in the L<"--mk-heartbeat-dir">.  So each
+server/observer can save its heartbeat files to different directores, but
+since the L<"--monitor"> server values are shared, the heartbeat files
+must be the same on each server/observer.
+
+If mk-heartbeat integration is setup correctly, the L<"--check-logs"> (if
+they're kept) will contain output like,
+
+  # 2010-05-07T08:50:28 Getting real lag from mk-heartbeat file /tmp/mk-heartbeat.slave
+  # 2010-05-07T08:50:28 Real lag:    0s [  0.00s,  0.00s,  0.00s ]
+
+and the C<real_lag> column in the L<"--update"> table will not be null.
+
 =head1 EXIT STATUS
 
 The tool exists 0 if there were no errors, else it exits 1 if either the
@@ -3308,9 +3390,11 @@ child process's check log.
 There are three possible values for this option:
 
   VALUE   SAVES
-  ======  ================================================================
-  failed  Only check logs from child processes that failed or had an error
-  all     Every check log from both successeful and failed child processes
+  ======  ================================================
+  failed  Only check logs from child processes that failed
+          or had an error
+  all     Every check log from both successeful and failed
+          child processes
   none    Do not save any check logs
 
 The default value, failed, causes check logs from successful child processes to
@@ -3345,6 +3429,8 @@ will be created:
     PRIMARY KEY (`server`)
   )
 
+If the table cannot be created the tool will terminate with exit status 1.
+
 =item --create-update-table
 
 Create state update table on the L<"--update"> DSN if it does not exist.
@@ -3369,6 +3455,8 @@ be created:
     `real_lag`              INT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`server`, `ts`, `observer`)
   )
+
+If the table cannot be created the tool will terminate with exit status 1.
 
 =item --daemonize
 
@@ -3413,6 +3501,8 @@ Each L<"--monitor"> server may specify an mk-heartbeat file.  The file names
 should be the same on every observer but the directory they're stored in
 can be different on each observer.  This option specifies the directory for
 mk-heartbeat files on this observer.
+
+See L<"INTEGRATION WITH mk-heartbeat">.
 
 =item --monitor
 
@@ -3464,11 +3554,11 @@ Disable all output to STDOUT except L<"--check-logs">.
 
 group: Run time
 
-Check L<"--mointor"> servers and L<"--update"> state table once and exit.
+Check L<"--monitor"> servers and L<"--update"> state table once and exit.
 
 Normally the tool runs for L<"--run-time"> amount of time, checking the
 L<"--monitor"> servers and updating the L<"--update"> state table at
-each L<"--inteval">.  Specifying this option causes the tool to run, do
+each L<"--interval">.  Specifying this option causes the tool to run, do
 its work and exit.
 
 =item --run-time
@@ -3501,7 +3591,7 @@ This required DSN specifies the host and state table to update for each
 server listed in the monitored servers table on the L<"--monitor"> DSN.
 The state table should already exist.
 
-See also L<"--create-state-table">.
+See also L<"--create-monitor-table">.
 
 =item --user
 
