@@ -20,9 +20,6 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
 
-$master_dbh->{InactiveDestroy} = 1;
-$slave_dbh->{InactiveDestroy}  = 1;
-
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
@@ -32,6 +29,9 @@ elsif ( !$slave_dbh ) {
 else {
    plan tests => 23;
 }
+
+$master_dbh->{InactiveDestroy} = 1;
+$slave_dbh->{InactiveDestroy}  = 1;
 
 my $output;
 my $rows;

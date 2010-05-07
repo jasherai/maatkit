@@ -1404,7 +1404,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -1450,7 +1450,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -1528,7 +1529,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -1569,7 +1570,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
@@ -2599,6 +2602,11 @@ sub main {
          . "value must be all, none or failed");
    }
 
+   if ( $o->get('run-time') && $o->get('interval') > $o->get('run-time') ) {
+      $o->save_error("--interval=" . $o->get('interval') . " is greater than "
+         . "--run-time=" . $o->get('run-time'));
+   }
+
    $quiet = $o->get('quiet');  # global for _log()
 
    $o->usage_or_errors();
@@ -2677,9 +2685,10 @@ sub main {
    my $end         = $run_time ? $start + $run_time : 0;
    my $checkno     = 0;
    my $exit_status = 0;
-   while (                        # Quit if:
-      $oktorun                    # instructed to quit
-      && (!$end || time < $end) ) # or time is exceeded
+   while (                         # Quit if:
+      $oktorun                     # instructed to quit
+      && (!$end || time < $end)    # or time is exceeded
+      && !-f $o->get('sentinel') ) # or stop file exists
    {
       $checkno++;
       _log("Start check number $checkno");
@@ -2723,7 +2732,7 @@ sub main {
       sleep $sleep;
    }
 
-   _log("$PROGRAM_NAME ended");
+   _log("$PROGRAM_NAME ended, exit status $exit_status");
    return $exit_status;
 } # End main()
 
@@ -2889,7 +2898,8 @@ sub check_servers {
    while ( scalar keys %kids ) {
       my $reaped = 0;
       foreach my $pid ( keys %exited_children ) {
-         _log("Child process $pid finished checking $kids{$pid}->{name}");
+         _log("Child process $pid finished checking $kids{$pid}->{name}, "
+            . "exit status " . $exited_children{$pid});
          $reaped       = 1;
          $exit_status |= $exited_children{$pid};
          delete $kids{$pid};
@@ -3216,7 +3226,7 @@ the L<"--update"> table is also called the state table because it stores
 information about the state of replication on the monitored servers.  For
 example, consider this replication topology:
 
-  S1 <- M1 <-> M2 -> S2
+  S1 <- M1 <=> M2 -> S2
 
 There are two slaves (S1, S2) and two masters (M1, M2) in a master-master
 setup.  If the tables are created and updated on M1 they will replicate to
@@ -3567,6 +3577,12 @@ type: time; group: Run time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).  See also L<"--interval">.
+
+=item --sentinel
+
+type: string; default: /tmp/mysql-replication-monitor-sentinel
+
+Exit if this file exists.
 
 =item --set-vars
 
