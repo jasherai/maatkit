@@ -23,6 +23,14 @@ make_sandbox() {
       sed -i -e "s!MAATKIT_SANDBOX_BASEDIR!$MAATKIT_SANDBOX_BASEDIR!g" $file
    done
 
+   if [ -n "$BINLOG_FORMAT" ]; then
+      echo "binlog-format=$BINLOG_FORMAT" >> /tmp/$port/my.sandbox.cnf
+   fi
+
+   if [ -n "$SLAVE_EXEC_MODE" ]; then
+      echo "slave_exec_mode=$SLAVE_EXEC_MODE" >> /tmp/$port/my.sandbox.cnf
+   fi
+
    # Start the sandbox and check that it has InnoDB.
    /tmp/$port/start
    if [ $? -eq 0 ]; then
