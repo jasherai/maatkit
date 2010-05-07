@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+# Make a new module and a skeleton test for it.
+# new-module Foo
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+my $trunk = $ENV{MAATKIT_TRUNK};
+die "MAATKIT_TRUNK environment variable is not set." unless $trunk;
+
+my $pkg_name = shift @ARGV or die "Specify the package name";
+
+my $filename = "$trunk/common/$pkg_name.pm";
+open my $fh, ">", $filename
+   or die "Cannot open $filename: $OS_ERROR";
+
+print $fh <<EOF;
+# This program is copyright 2009-\@CURRENTYEAR\@ Percona Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+# ###########################################################################
+# $pkg_name package \$Revision\$
+# ###########################################################################
+package $pkg_name;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+\$Data::Dumper::Indent    = 1;
+\$Data::Dumper::Sortkeys  = 1;
+\$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => \$ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( \$class, %args ) = \@_;
+   my \$self = {
+      %args,
+   };
+   return bless \$self, \$class;
+}
+
+sub _d {
+   my (\$package, undef, \$line) = caller 0;
+   \@_ = map { (my \$temp = \$_) =~ s/\\n/\\n# /g; \$temp; }
+        map { defined \$_ ? \$_ : 'undef' }
+        \@_;
+   print STDERR "# \$package:\$line \$PID ", join(' ', \@_), "\\n";
+}
+
+1;
+
+# ###########################################################################
+# End $pkg_name package
+# ###########################################################################
+EOF
+
+close $fh;
+`svn add $filename`;
+`svn propset svn:keywords Revision $filename`;
+
+$filename = "$trunk/common/t/$pkg_name.t";
+open $fh, ">", $filename
+   or die "Cannot open $filename: $OS_ERROR";
+
+print $fh <<EOF;
+#!/usr/bin/perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless \$ENV{MAATKIT_TRUNK} && -d \$ENV{MAATKIT_TRUNK};
+   unshift \@INC, "\$ENV{MAATKIT_TRUNK}/common";
+};
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Test::More tests => 12;
+
+use \$pkg_name;
+use MaatkitTest;
+
+use constant MKDEBUG => \$ENV{MKDEBUG} || 0;
+
+use Data::Dumper;
+\$Data::Dumper::Indent    = 1;
+\$Data::Dumper::Sortkeys  = 1;
+\$Data::Dumper::Quotekeys = 0;
+
+# #############################################################################
+# Real filenames.
+# #############################################################################
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;
+EOF
+
+close $fh;
+`svn add $filename`;
