@@ -49,6 +49,17 @@ is(
    "slow002.txt --limit 3 saved results"
 );
 
+# issue 1008: sprintf formatting in log events crashes it.
+diag(`rm -rf $resdir/*`);
+mk_query_digest::main(@args, '--save-results', "$resdir/r1",
+   $sample.'slow043.txt');
+$diff = `diff $ressample/slow043.txt $resdir/r1 2>&1`;
+is(
+   $diff,
+   '',
+   "slow043.txt did not crash with its %d format code"
+);
+
 # #############################################################################
 # Done.
 # #############################################################################

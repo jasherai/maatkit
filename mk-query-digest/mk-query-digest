@@ -11911,7 +11911,7 @@ sub save_results {
    local $Data::Dumper::Quotekeys = 0;
    local $Data::Dumper::Purity    = 1;
 
-   printf $zfh Dumper($ea_info);
+   print $zfh Dumper($ea_info);
    close $zfh;
    close $fh if $fh;
 
