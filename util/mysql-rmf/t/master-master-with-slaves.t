@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More;
 
 use MaatkitTest;
 require "$trunk/util/mysql-rmf/mysql-replication-monitor";
@@ -46,6 +46,13 @@ my $m1 = get_cxn(2900);
 my $m2 = get_cxn(2901);
 my $s1 = get_cxn(2902);
 my $s2 = get_cxn(2903);
+
+if ( !($m1 && $m2 && $s1 && $s2) ) {
+   plan skip_all => 'Cannot connect to all sandbox servers';
+}
+else {
+   plan tests => 13;
+}
 
 my $output;
 my $rows;
@@ -118,7 +125,7 @@ is_deeply(
       ['perconabot', 'server-2903', 'mysql-bin.000001', '127.0.0.1', '2901', 'mysql-bin.000001', '0', '1', '1', '0'],
    ],
    'Updated state table for all servers'
-) or die;
+);
 
 $m1->do('truncate table repl.state');
 diag(`rm -rf /tmp/mrf.log /tmp/mrf.pid >/dev/null 2>&1`);
@@ -184,6 +191,36 @@ is_deeply(
    $rows,
    [],
    "No row in state table for dead M2"
+);
+
+diag(`rm -rf /tmp/mrf.log`);
+diag(`/tmp/2901/start >/dev/null`);
+
+# #############################################################################
+# Turn off slave2's io thread, see that this gets logged.
+# #############################################################################
+$m1->do('truncate table repl.state');
+diag(`rm -rf $check_logs_dir/*`);
+$s2->do('slave stop io_thread');
+
+$retval = system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
+
+$rows = $m1->selectall_arrayref('select slave_io_running, slave_sql_running from repl.state where server="server-2903"');
+is_deeply(
+   $rows,
+   [[0, 1]],
+   "Catches stopped slave IO thread"
+);
+
+$s2->do('slave start io_thread');
+sleep 1;
+$retval = system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
+
+$rows = $m1->selectall_arrayref('select slave_io_running, slave_sql_running from repl.state where server="server-2903" order by ts asc');
+is_deeply(
+   $rows,
+   [[0, 1], [1, 1]],
+   "Catches that slave IO thread started again"
 );
 
 # #############################################################################

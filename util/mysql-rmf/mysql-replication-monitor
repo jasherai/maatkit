@@ -2018,6 +2018,7 @@ sub main {
             servers    => \@monitored_servers,
             update_dsn => $o->get('update'),
             observer   => $observer,
+            replace    => $o->get('replace'),
             %common_modules,
          )
       }
@@ -2359,7 +2360,7 @@ sub make_update_state_sql {
    }
    my ($tbl, $observer, $server, $q) = @args{@required_args};
 
-   my $sql = "INSERT INTO $tbl SET "
+   my $sql = ($args{replace} ? "REPLACE" : "INSERT") . " INTO $tbl SET "
            . "observer='$observer', "
            . "server='$server->{name}', "
            . "ts=NOW(), ";
@@ -2613,6 +2614,20 @@ Specifying L<"--quiet"> disables all output from the parent process (check
 logs are still written and controlled by L<"--check-logs">) but you probably
 shouldn't do this because the tool may fail silently even though it continues
 to run.
+
+=head1 CHECK RESOLUTION
+
+Checks have a one second resolution because the C<ts> column of the
+L<"--update"> table has a one second resolution.  For normal runs this should
+be sufficient.  However, if two checks are back-to-back (e.g. two
+L<"--run-once"> runs) the second check will probably fail with duplicate key
+errors because the primary key of the state table covers columns
+C<server, ts, observer> and the timestamp will be the same for the two
+runs.  You can specify the L<"--replace"> option to use C<REPLACE> instead
+of C<INSERT> statements when updating the state table.  This prevents
+duplicate key errors but does not increase the resolution of checks
+beyond one second--i.e. there is currently no way to check and log the
+state of the monitored servers multiple times in less than one second.
 
 =head1 INTEGRATION WITH mk-heartbeat
 
@@ -2883,6 +2898,10 @@ Port number to use for connection.
 short form: -q
 
 Disable all output to STDOUT except L<"--check-logs">.
+
+=item --replace
+
+REPLACE INTO L<"--update"> table instead of INSERT.
 
 =item --run-once
 

@@ -29,7 +29,7 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave1';
 }
 else {
-   plan tests => 13;
+   plan tests => 14;
 }
 
 my $output;
@@ -252,6 +252,18 @@ is_deeply(
 ok(
    -f $check_log,
    "Kept successful check log with --check-logs=all"
+);
+
+
+# #############################################################################
+# Test that --replace makes REPLACE instead of INSErT statements.
+# #############################################################################
+diag(`rm $check_logs_dir/* >/dev/null 2>&1`);
+mysql_replication_monitor::check_server(%args, replace=>1);
+
+ok(
+   `grep 'REPLACE INTO' $check_logs_dir/*`,
+   "REPLACE"
 );
 
 # #############################################################################
