@@ -152,7 +152,7 @@ sub has_derived_table {
 
 # Return a data structure of tables/databases and the name they're aliased to.
 # Given the following query, SELECT * FROM db.tbl AS foo; the structure is:
-# { TABLE => { foo => tbl }, DATABASE => {} }
+# { TABLE => { foo => tbl }, DATABASE => { tbl => db } }
 # If $list is true, then a flat list of tables found in the query is returned
 # instead.  This is used for things that want to know what tables the query
 # touches, but don't care about aliases.
