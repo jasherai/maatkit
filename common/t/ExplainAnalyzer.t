@@ -15,7 +15,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use Test::More tests => 12;
+use Test::More tests => 7;
 
 use ExplainAnalyzer;
 use QueryRewriter;
@@ -126,6 +126,86 @@ is_deeply(
    'Normalizes an EXPLAIN',
 );
 
+is_deeply(
+   $exa->normalize(
+      [
+         { id            => 1,
+           select_type   => 'PRIMARY',
+           table         => undef,
+           type          => undef,
+           possible_keys => undef,
+           key           => undef,
+           key_len       => undef,
+           ref           => undef,
+           rows          => undef,
+           Extra         => 'No tables used',
+         },
+         { id            => 1,
+           select_type   => 'UNION',
+           table         => 'a',
+           type          => 'index',
+           possible_keys => undef,
+           key           => 'PRIMARY',
+           key_len       => '2',
+           ref           => undef,
+           rows          => 200,
+           Extra         => 'Using index',
+         },
+         { id            => undef,
+           select_type   => 'UNION RESULT',
+           table         => '<union1,2>',
+           type          => 'ALL',
+           possible_keys => undef,
+           key           => undef,
+           key_len       => undef,
+           ref           => undef,
+           rows          => undef,
+           Extra         => '',
+         },
+      ],
+   ),
+   [
+      { id            => 1,
+        select_type   => 'PRIMARY',
+        table         => undef,
+        type          => undef,
+        possible_keys => [],
+        key           => [],
+        key_len       => [],
+        ref           => [],
+        rows          => undef,
+        Extra         => {
+           'No tables used' => 1,
+        },
+      },
+      { id            => 1,
+        select_type   => 'UNION',
+        table         => 'a',
+        type          => 'index',
+        possible_keys => [],
+        key           => ['PRIMARY'],
+        key_len       => [2],
+        ref           => [],
+        rows          => 200,
+        Extra         => {
+         'Using index' => 1,
+        },
+      },
+      { id            => undef,
+        select_type   => 'UNION RESULT',
+        table         => '<union1,2>',
+        type          => 'ALL',
+        possible_keys => [],
+        key           => [],
+        key_len       => [],
+        ref           => [],
+        rows          => undef,
+        Extra         => {},
+      },
+   ],
+   'Normalizes a more complex EXPLAIN',
+);
+
 # #############################################################################
 # Tests for trimming indexes out of possible_keys.
 # #############################################################################
@@ -189,6 +269,58 @@ is_deeply(
       },
    ],
    'Translate an EXPLAIN and a query into simplified index usage',
+);
+
+# This is kind of a pathological case.
+is_deeply(
+   $exa->get_index_usage(
+      sql => "select 1 union select count(*) from actor a",
+      db  => 'sakila',
+      explain => $exa->normalize(
+         [
+            { id            => 1,
+              select_type   => 'PRIMARY',
+              table         => undef,
+              type          => undef,
+              possible_keys => undef,
+              key           => undef,
+              key_len       => undef,
+              ref           => undef,
+              rows          => undef,
+              Extra         => 'No tables used',
+            },
+            { id            => 1,
+              select_type   => 'UNION',
+              table         => 'a',
+              type          => 'index',
+              possible_keys => undef,
+              key           => 'PRIMARY',
+              key_len       => '2',
+              ref           => undef,
+              rows          => 200,
+              Extra         => 'Using index',
+            },
+            { id            => undef,
+              select_type   => 'UNION RESULT',
+              table         => '<union1,2>',
+              type          => 'ALL',
+              possible_keys => undef,
+              key           => undef,
+              key_len       => undef,
+              ref           => undef,
+              rows          => undef,
+              Extra         => '',
+            },
+         ],
+      ),
+   ),
+   [  {  db  => 'sakila',
+         tbl => 'actor',
+         idx => [qw(PRIMARY)],
+         alt => [],
+      },
+   ],
+   'Translate an EXPLAIN and a query for a harder case',
 );
 
 # #############################################################################

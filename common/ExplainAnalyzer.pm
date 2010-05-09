@@ -134,6 +134,7 @@ sub get_index_usage {
    my $lookup = $self->{QueryParser}->get_aliases($sql);
 
    foreach my $row ( @$explain ) {
+      next unless defined $row->{table} && @{$row->{key}};
       my $table = $lookup->{TABLE}->{$row->{table}} || $row->{table};
       my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
       push @result, {
