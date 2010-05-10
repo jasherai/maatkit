@@ -51,7 +51,7 @@ if ( !($m1 && $m2 && $s1 && $s2) ) {
    plan skip_all => 'Cannot connect to all sandbox servers';
 }
 else {
-   plan tests => 13;
+   plan tests => 14;
 }
 
 my $output;
@@ -145,11 +145,17 @@ ok(
 );
 
 sleep 3;
-$rows = $s2->selectall_arrayref('select * from repl.state order by server');
+$rows = $s2->selectall_arrayref('select connection_ok from repl.state order by server');
 # Sometimes the 3s run does 2 checks and sometimes it does 3.  
 ok(
    @$rows == 8 || @$rows == 12,
    "Updated state table several times"
+);
+
+is(
+   $rows->[0]->[0],
+   1,
+   "connection_ok=1"
 );
 
 ok(
@@ -186,11 +192,11 @@ ok(
    "Logged that M2 check failed, exit status 1"
 );
 
-$rows = $m1->selectall_arrayref('select * from repl.state where server="server-2901"');
+$rows = $m1->selectall_arrayref('select connection_ok from repl.state where server="server-2901"');
 is_deeply(
    $rows,
-   [],
-   "No row in state table for dead M2"
+   [[0]],
+   "connection_ok=0 row in state table for dead M2"
 );
 
 diag(`rm -rf /tmp/mrf.log`);
