@@ -1867,9 +1867,9 @@ sub main {
    # ##########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] --monitor DSN --update DSN',
-      description => 'updates the state table on the --update DSN for each '
-                   . 'server listed in the table on the --monitor DSN.'
+      prompt      => '[OPTION...] --servers DSN --state DSN',
+      description => 'updates the --state table for each server listed in '
+                   . 'the --servers DSN.'
 
    );
    $o->get_specs();
@@ -1878,9 +1878,9 @@ sub main {
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   # Check that both --monitor and --update specify a database and table.
+   # Check that both --servers and --state specify a database and table.
    my $q = new Quoter();
-   foreach my $opt ( qw(monitor update) ) {
+   foreach my $opt ( qw(servers state) ) {
       my $dsn = $o->get($opt);
       my ($db, $tbl) = ($dsn->{D}, $dsn->{t});
       if ( !$tbl ) {
@@ -1932,10 +1932,10 @@ sub main {
    );
    
    # ########################################################################
-   # Create monitor and update tables.  Terminate early if they can't be
+   # Create servers and state tables.  Terminate early if they can't be
    # created.
    # ########################################################################
-   foreach my $tbl ( qw(monitor update) ) {
+   foreach my $tbl ( qw(servers state) ) {
       if ( $o->get("create-$tbl-table") ) {
          eval {
             create_table(
@@ -2002,21 +2002,21 @@ sub main {
       _log("Start check number $checkno");
 
       # ######################################################################
-      # Get list of monitored servers from --monitor.
+      # Get list of monitored servers from --servers.
       # ######################################################################
       my @monitored_servers = get_monitored_servers(
-         dsn   => $o->get('monitor'),
+         dsn   => $o->get('servers'),
          where => $o->get('where'),
          %common_modules,
       );
 
       # ######################################################################
-      # Check monitored servers and update --update DSN.
+      # Check monitored servers and update --state DSN.
       # ######################################################################
       if ( @monitored_servers ) {
          $exit_status |= check_servers(
             servers    => \@monitored_servers,
-            update_dsn => $o->get('update'),
+            state_dsn  => $o->get('state'),
             observer   => $observer,
             replace    => $o->get('replace'),
             %common_modules,
@@ -2066,7 +2066,7 @@ sub get_monitored_servers {
    };
    if ( $EVAL_ERROR ) {
       chomp $EVAL_ERROR;
-      _log("Cannot connect to --monitor $host: $EVAL_ERROR");
+      _log("Cannot connect to --servers $host: $EVAL_ERROR");
       return;
    }
 
@@ -2140,14 +2140,14 @@ sub create_table {
    my $dbh;
    my $magic;
    my $db_tbl;
-   if ( $tbl =~ m/monitor|update/ ) {
+   if ( $tbl =~ m/servers|state/ ) {
       my $dsn = $o->get($tbl);
       $dbh    = get_cxn(dsn=>$dsn, %args);
       $db_tbl = $q->join_quote($dsn->{D}, $dsn->{t});
       $magic  = qr/MAGIC_${tbl}_table/;
    }
    else {
-      die "Invalid table: $tbl; must be either 'monitor' or 'update'"
+      die "Invalid table: $tbl; must be either 'servers' or 'state'"
    }
 
    _log("Creating $tbl table");
@@ -2161,7 +2161,7 @@ sub create_table {
 
 sub check_servers {
    my ( %args ) = @_;
-   my @required_args = qw(servers update_dsn observer Quoter DSNParser);
+   my @required_args = qw(servers state_dsn observer Quoter DSNParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -2232,11 +2232,11 @@ sub check_servers {
 
 sub check_server {
    my ( %args ) = @_;
-   my @required_args = qw(server update_dsn observer OptionParser Quoter DSNParser);
+   my @required_args = qw(server state_dsn observer OptionParser Quoter DSNParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($server, $update_dsn, $observer, $o, $q, $dp) = @args{@required_args};
+   my ($server, $state_dsn, $observer, $o, $q, $dp) = @args{@required_args};
 
    my $exit_status = 0;
 
@@ -2303,19 +2303,19 @@ sub check_server {
          $o->get('mk-heartbeat-dir') . "/$server->{mk_heartbeat_file}");
    }
 
-   # Get a dbh to the update server.
-   my $update_dbh;
+   # Get a dbh to the state server.
+   my $state_dbh;
    eval {
-      $update_dbh = get_cxn(dsn=>$update_dsn, %args);
+      $state_dbh = get_cxn(dsn=>$state_dsn, %args);
    };
    if ( $EVAL_ERROR ) {
       chomp $EVAL_ERROR;
-      my $host = $dp->as_string($update_dsn);
-      _log("Cannot connect to --update $host: $EVAL_ERROR");
+      my $host = $dp->as_string($state_dsn);
+      _log("Cannot connect to --state $host: $EVAL_ERROR");
       return 1;
    }
 
-   my $tbl = $q->join_quote($update_dsn->{D}, $update_dsn->{t});
+   my $tbl = $q->join_quote($state_dsn->{D}, $state_dsn->{t});
    my $sql = make_update_state_sql(
       tbl           => $tbl,
       master_status => $master_status,
@@ -2324,11 +2324,11 @@ sub check_server {
       %args,
    );
 
-   _log("Updating state table on --update " . $dp->as_string($update_dsn) . ": "
+   _log("Updating state table on --state " . $dp->as_string($state_dsn) . ": "
       . $sql);
-   MKDEBUG && _d($update_dbh, $sql);
+   MKDEBUG && _d($state_dbh, $sql);
    eval {
-      $update_dbh->do($sql);
+      $state_dbh->do($sql);
    };
    if ( $EVAL_ERROR ) {
       chomp $EVAL_ERROR;
@@ -2509,25 +2509,25 @@ update `rmf`.`state` on master1, daemonize, log all output to mysql-rmf.log,
 check every minute and run forever:
 
    mysql-replication-monitor                        \
-      --monitor h=localhost,t=rmf.monitored_servers \
-      --update  h=master1,t=rmf.state               \
-      --daemonize                                  \
+      --servers h=localhost,t=rmf.monitored_servers \
+      --state h=master1,t=rmf.state                 \
+      --daemonize                                   \
       --log mysql-rmf.log
 
 Check servers once and exit:
 
    mysql-replication-monitor                        \
-      --monitor h=localhost,t=rmf.monitored_servers \
-      --update  h=master1,t=rmf.state               \
+      --servers h=localhost,t=rmf.monitored_servers \
+      --state h=master1,t=rmf.state                 \
       --run-once
 
 Check only server "db2" every 10 minutes for 1 hour, save all check logs
 in /var/log/checks/:
 
    mysql-replication-monitor                        \
-      --monitor h=localhost,t=rmf.monitored_servers \
-      --where   "server='db2'"                      \
-      --update  h=master1,t=rmf.state               \
+      --servers h=localhost,t=rmf.monitored_servers \
+      --where "server='db2'"                        \
+      --state h=master1,t=rmf.state                 \
       --run-time 1h                                 \
       --interval 10m                                \
       --check-logs all                              \
@@ -2539,17 +2539,15 @@ mysql-replication-monitor is a tool for constantly monitoring and logging
 the state of replication of multiple MySQL servers.  Each host that runs
 the tool is an "observer" which checks a list of "monitored servers."  The
 list of monitored servers is selected from the table specified by the tool's
-required L<"--monitor"> option.  The tool forks a child process for each
+required L<"--servers"> option.  The tool forks a child process for each
 monitored server to check and log its SHOW MASTER STATUS, SHOW SLAVE STATUS
 and (optionally) mk-heartbeat real lag to the table specified by the tool's
-required L<"--update"> option.  By default the tool run forever, performing
+required L<"--state"> option.  By default the tool run forever, performing
 checks every minute on all the monitored servers.
 
-The L<"--monitor"> and L<"--update"> tables are usually shared so that all
-observers check the same monitored servers and update the same "state table"--
-the L<"--update"> table is also called the state table because it stores
-information about the state of replication on the monitored servers.  For
-example, consider this replication topology:
+The L<"--servers"> and L<"--state"> tables are usually shared so that all
+observers check the same monitored servers and update the same state table.
+For example, consider this replication topology:
 
   S1 <- M1 <=> M2 -> S2
 
@@ -2567,21 +2565,21 @@ time because each update is timestamped and records which observer was
 checking which monitored server.
 
 The tool is designed to run "forever" and retry after any failures.  Before
-each check the list of monitored server is selected from the L<"--monitor">
+each check the list of monitored server is selected from the L<"--servers">
 table.  Therefore you can add and remove servers from this table and every
 observer will refesh its list at its next check.
 
 If, during a check, a connection cannot be made to a monitored server, the
-L<"--update"> table is not updated.  Instead, the child process that attempted
+L<"--state"> table is not updated.  Instead, the child process that attempted
 the check will log something like "Cannot connect to monitored server: ..."
 in its check log.  Since check logs from failed checks are saved, you can
 review this log to see why the connection failed.  The failure to connect
-will also be apparent by the lack of new updates in the L<"--update"> table
+will also be apparent by the lack of new updates in the L<"--state"> table
 from the observer for the non-responsive server.  Similarly, if the child
-process cannot connect to the L<"--update"> server no new row will be inserted.
+process cannot connect to the L<"--state"> server no new row will be inserted.
 
 As long as the child process doing a check can connect to both the monitored
-server and the L<"--update"> server, then it should update the state table
+server and the L<"--state"> server, then it should update the state table
 with whatever SHOW MASTER STATUS, SHOW SLAVE STATUS, and (optionally)
 mk-heartbeat return for the monitored server.
 
@@ -2590,8 +2588,8 @@ mk-heartbeat return for the monitored server.
 By default the tool's output is very verbose; the parent process prints
 information like:
 
-  # 2010-05-06T12:05:52 Creating update table
-  # 2010-05-06T12:05:52 Created update table
+  # 2010-05-06T12:05:52 Creating state table
+  # 2010-05-06T12:05:52 Created state table
   # 2010-05-06T12:05:52 mysql-replication-monitor started, observer dante, PID 9
   # 2010-05-06T12:05:52 Ready to run; run time: once
   # 2010-05-06T12:05:52 Start check number 1
@@ -2618,7 +2616,7 @@ to run.
 =head1 CHECK RESOLUTION
 
 Checks have a one second resolution because the C<ts> column of the
-L<"--update"> table has a one second resolution.  For normal runs this should
+L<"--state"> table has a one second resolution.  For normal runs this should
 be sufficient.  However, if two checks are back-to-back (e.g. two
 L<"--run-once"> runs) the second check will probably fail with duplicate key
 errors because the primary key of the state table covers columns
@@ -2636,7 +2634,7 @@ Maatkit's mk-heartbeat tool which measures and records "real" slave lag.
 Each instance of mk-heartbeat must be ran with its C<--file> option to
 save its output to a file that is accessible by the observer.  This base
 file name--just the file name, no paths/directories--is saved in the
-C<mk_heartbeat_file> column of the L<"--monitor"> table for the server
+C<mk_heartbeat_file> column of the L<"--servers"> table for the server
 that it applies to.  Therefore, mk-heartbeat file names are the same
 on every observer for each monitored server.
 
@@ -2645,7 +2643,7 @@ For example, suppose the topology is:
   S1 <- M -> S2
 
 There is one master (M) and two slave, each is an observer monitoring all
-three servers.  Real lag is monitored on the slaves, so the L<"--monitor">
+three servers.  Real lag is monitored on the slaves, so the L<"--servers">
 table has rows like:
 
               server: master
@@ -2685,7 +2683,7 @@ mysql-replication-monitor is started with L<"--mk-heartbeat-dir">=C</tmp/>.
 When a check happens and the C<mk_heartbeat_file> column is not null,
 the tool looks for that file in the L<"--mk-heartbeat-dir">.  So each
 server/observer can save its heartbeat files to different directores, but
-since the L<"--monitor"> server values are shared, the heartbeat files
+since the values in the L<"--servers"> table are shared, the heartbeat files
 must be the same on each server/observer.
 
 If mk-heartbeat integration is setup correctly, the L<"--check-logs"> (if
@@ -2694,7 +2692,7 @@ they're kept) will contain output like,
   # 2010-05-07T08:50:28 Getting real lag from mk-heartbeat file /tmp/mk-heartbeat.slave
   # 2010-05-07T08:50:28 Real lag:    0s [  0.00s,  0.00s,  0.00s ]
 
-and the C<real_lag> column in the L<"--update"> table will not be null.
+and the C<real_lag> column in the L<"--state"> table will not be null.
 
 =head1 EXIT STATUS
 
@@ -2725,9 +2723,9 @@ connecting to MySQL.
 
 type: string; default: failed
 
-Save logs from child processes that check the L<"--monitor"> servers.
+Save logs from child processes that check the L<"--servers">.
 
-A child process is forked to check each L<"--monitor"> server in parallel.
+A child process is forked to check each server in L<"--servers"> in parallel.
 These child processes do not share STDOUT/STDERR with the parent process
 so, instead, they log to separate files under L<"--check-logs-dir">.  These
 files are named "observer-name.PID" where observer-name is L<"--observer-name">
@@ -2762,15 +2760,15 @@ type: Array; group: Connection
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --create-monitor-table
+=item --create-servers-table
 
-Create monitored servers table on the L<"--monitor"> DSN if it does not exist.
+Create monitored servers table on the L<"--servers"> DSN if it does not exist.
 
-If the monitored servers table is missing on the L<"--monitor">, specifying
-this option will cause it to be created.  The following MAGIC_monitor_table
-will be created:
+If the monitored servers table is missing on the L<"--servers">, specifying
+this option will cause it to be created.  The following MAGIC_servers_table
+will be created, with the table name replace by the one given in the DSN:
 
-  CREATE TABLE `monitored_servers` (
+  CREATE TABLE `servers` (
     `server`            VARCHAR(64) NOT NULL,
     `dsn`               VARCHAR(128) NOT NULL,
     `mk_heartbeat_file` VARCHAR(128),
@@ -2780,13 +2778,13 @@ will be created:
 
 If the table cannot be created the tool will terminate with exit status 1.
 
-=item --create-update-table
+=item --create-state-table
 
-Create state update table on the L<"--update"> DSN if it does not exist.
+Create state table on the L<"--state"> DSN if it does not exist.
 
-If the state table is missing on the L<"--update"> DSN, specifying
-this option will cause it to be created.  The following MAGIC_update_table will 
-be created:
+If the state table is missing on the L<"--state"> DSN, specifying
+this option will cause it to be created.  The following MAGIC_state_table will 
+be created, with the table name replace by the one given in the DSN:
 
   CREATE TABLE `state` (
     `observer`              VARCHAR(24) NOT NULL,
@@ -2832,7 +2830,7 @@ Connect to host.
 
 type: time; default: 1m; group: Run time
 
-How frequently to check the L<"--monitor"> servers.
+How frequently to check the L<"--servers">.
 
 =item --log
 
@@ -2846,24 +2844,12 @@ type: string; default: ./
 
 Directory that has mk-heartbeat files.
 
-Each L<"--monitor"> server may specify an mk-heartbeat file.  The file names
+The L<"--servers"> may specify an mk-heartbeat file.  The file names
 should be the same on every observer but the directory they're stored in
 can be different on each observer.  This option specifies the directory for
 mk-heartbeat files on this observer.
 
 See L<"INTEGRATION WITH mk-heartbeat">.
-
-=item --monitor
-
-type: DSN; group: Required
-
-Monitor each servers listed in the table on this DSN (required).
-
-This required DSN specifies the host and table which lists the servers
-to monitor.  The table should already exist.  For each server, the
-update state table on the L<"--update"> DSN is updated.
-
-See also L<"--create-monitor-table">.
 
 =item --observer-name
 
@@ -2901,18 +2887,17 @@ Disable all output to STDOUT except L<"--check-logs">.
 
 =item --replace
 
-REPLACE INTO L<"--update"> table instead of INSERT.
+REPLACE INTO L<"--state"> table instead of INSERT.
 
 =item --run-once
 
 group: Run time
 
-Check L<"--monitor"> servers and L<"--update"> state table once and exit.
+Check L<"--servers">, update L<"--state"> table once, then exit.
 
 Normally the tool runs for L<"--run-time"> amount of time, checking the
-L<"--monitor"> servers and updating the L<"--update"> state table at
-each L<"--interval">.  Specifying this option causes the tool to run, do
-its work and exit.
+L<"--servers"> and updating the L<"--state"> table at each L<"--interval">.
+Specifying this option causes the tool to run, do its work and exit.
 
 =item --run-time
 
@@ -2927,6 +2912,18 @@ type: string; default: /tmp/mysql-replication-monitor-sentinel
 
 Exit if this file exists.
 
+=item --servers
+
+type: DSN; group: Required
+
+Monitor each server listed in the table on this DSN (required).
+
+This required DSN specifies the host and table which lists the servers
+to monitor.  The table should already exist.  For each server, the L<"--state">
+table is updated.
+
+See L<"--create-servers-table"> for the minimum necessary table schema.
+
 =item --set-vars
 
 type: string; default: wait_timeout=10000; group: Connection
@@ -2940,17 +2937,17 @@ short form: -S; type: string; group: Connection
 
 Socket file to use for connection.
 
-=item --update
+=item --state
 
 type: DSN; group: Required
 
 Update the state table on this DSN (required).
 
 This required DSN specifies the host and state table to update for each
-server listed in the monitored servers table on the L<"--monitor"> DSN.
+server listed in the monitored servers table on the L<"--servers"> DSN.
 The state table should already exist.
 
-See also L<"--create-monitor-table">.
+See L<"--create-state-table"> for the minimum necessary table schema.
 
 =item --user
 
@@ -2966,18 +2963,17 @@ Show version and exit.
 
 type: string
 
-Filter the list of L<"--monitor"> servers by this C<WHERE> clause.
+Filter the list of L<"--servers"> by this C<WHERE> clause.
 
-By default all servers in the L<"--monitor"> table are monitored.  To
+By default all servers in the L<"--servers"> table are monitored.  To
 select and monitor specific servers, specify a C<WHERE> clause (without
 the word C<WHERE>) with this option.
 
-For example, to L<"--monitor"> only server "db1", specify
-C<--where "server='db1'">.
+For example, to select and update the L<"--state"> table for only server "db1",
+specify C<--where "server='db1'">.
 
-Valid C<WHERE> clauses depend on the table being used for L<"--monitor">.
-See L<"--create-monitor-table"> for the default table.
-
+Valid C<WHERE> clauses depend on the table being used for L<"--servers">.
+See L<"--create-servers-table"> for the default table.
 
 =back
 

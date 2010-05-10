@@ -67,7 +67,7 @@ my $server = {
    },
 };
 
-my $update_dsn = {
+my $state_dsn = {
    h => '127.1',
    P => 12345,
    u => 'msandbox',
@@ -77,7 +77,7 @@ my $update_dsn = {
 
 my %args = (
    server       => $server,
-   update_dsn   => $update_dsn,
+   state_dsn   => $state_dsn,
    observer     => 'daniel',
    OptionParser => $o,
    Quoter       => $q,
@@ -115,7 +115,7 @@ ok(
 like(
    `cat $check_log | grep exist`,
    qr/Table .+? doesn't exist/,
-   "INSERT failed because update table doesn't exist"
+   "INSERT failed because state table doesn't exist"
 );
 
 like(
@@ -145,9 +145,9 @@ ok(
 # #############################################################################
 output(sub {
    mysql_replication_monitor::main(
-      '--monitor', "$dsn,P=12345,t=test.servers",
-      '--update',  "$dsn,P=12345,t=test.state",
-      qw(--create-monitor-table --create-update-table),
+      '--servers', "$dsn,P=12345,t=test.servers",
+      '--state',  "$dsn,P=12345,t=test.state",
+      qw(--create-servers-table --create-state-table),
       qw(--run-once)
    );
 });

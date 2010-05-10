@@ -68,8 +68,8 @@ diag(`mkdir $check_logs_dir`);
 $m1->do('drop database if exists repl');
 $m1->do('create database repl');
 
-# Create the monitor and update tables.
-`$cmd --create-monitor-table --create-update-table --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once --quiet`;
+# Create the servers and state tables.
+`$cmd --create-servers-table --create-state-table --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once --quiet`;
 
 my $sql = "insert into repl.servers values ";
 my @vals;
@@ -111,7 +111,7 @@ ok(
 );
 
 # Run the tool.
-$output = `$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once`;
+$output = `$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once`;
 
 # We can't select the ts or any log pos related columsn because
 # they're non-deterministic.
@@ -130,7 +130,7 @@ is_deeply(
 $m1->do('truncate table repl.state');
 diag(`rm -rf /tmp/mrf.log /tmp/mrf.pid >/dev/null 2>&1`);
 
-system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --daemonize --pid /tmp/mrf.pid --log /tmp/mrf.log --run-time 3 --interval 1 >/dev/null 2>&1");
+system("$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --daemonize --pid /tmp/mrf.pid --log /tmp/mrf.log --run-time 3 --interval 1 >/dev/null 2>&1");
 
 sleep 1;
 
@@ -173,7 +173,7 @@ diag(`rm -rf $check_logs_dir/*`);
 
 diag(`/tmp/2901/stop >/dev/null`);
 
-$retval = system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
+$retval = system("$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
 
 is(
    $retval >> 8,
@@ -203,7 +203,7 @@ $m1->do('truncate table repl.state');
 diag(`rm -rf $check_logs_dir/*`);
 $s2->do('slave stop io_thread');
 
-$retval = system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
+$retval = system("$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
 
 $rows = $m1->selectall_arrayref('select slave_io_running, slave_sql_running from repl.state where server="server-2903"');
 is_deeply(
@@ -214,7 +214,7 @@ is_deeply(
 
 $s2->do('slave start io_thread');
 sleep 1;
-$retval = system("$cmd --monitor $dsn,P=2900,t=repl.servers --update $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
+$retval = system("$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
 
 $rows = $m1->selectall_arrayref('select slave_io_running, slave_sql_running from repl.state where server="server-2903" order by ts asc');
 is_deeply(

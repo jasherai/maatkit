@@ -53,26 +53,26 @@ $master_dbh->do('DROP TABLE IF EXISTS test.state');
 # #############################################################################
 like(
    `$cmd`,
-   qr/Required option --monitor must be specified/,
-   "Requires --monitor"
+   qr/Required option --servers must be specified/,
+   "Requires --servers"
 );
 
 like(
    `$cmd`,
-   qr/Required option --update must be specified/,
-   "Requires --update"
+   qr/Required option --state must be specified/,
+   "Requires --state"
 );
 
 like(
-   `$cmd --update h=foo,D=foo,t=foo --monitor localhost`,
-   qr/--monitor DSN does not specify a table/,
-   "Requires --monitor DSN to have database and table"
+   `$cmd --state h=foo,D=foo,t=foo --servers localhost`,
+   qr/--servers DSN does not specify a table/,
+   "Requires --servers DSN to have database and table"
 );
 
 like(
-   `$cmd --monitor h=foo,D=foo,t=foo --update localhost`,
-   qr/--update DSN does not specify a table/,
-   "Requires --update DSN to have database and table"
+   `$cmd --servers h=foo,D=foo,t=foo --state localhost`,
+   qr/--state DSN does not specify a table/,
+   "Requires --state DSN to have database and table"
 );
 
 # #############################################################################
@@ -80,9 +80,9 @@ like(
 # #############################################################################
 my $timeout = wait_for(
    sub { mysql_replication_monitor::main(@args,
-         '--monitor', "$dsn,P=12345,t=test.servers",
-         '--update',  "$dsn,P=12345,t=test.state",
-         qw(--create-monitor-table --create-update-table),
+         '--servers', "$dsn,P=12345,t=test.servers",
+         '--state',  "$dsn,P=12345,t=test.state",
+         qw(--create-servers-table --create-state-table),
          qw(--run-once --quiet)
       );
    },
@@ -98,13 +98,13 @@ is(
 like(
    $master_dbh->selectrow_arrayref('show create table test.servers')->[1],
    qr/create table/i,
-   '--create-monitor-table'
+   '--create-servers-table'
 );
 
 like(
    $master_dbh->selectrow_arrayref('show create table test.state')->[1],
    qr/create table/i,
-   '--create-update-table'
+   '--create-state-table'
 );
 
 # Insert a row into each table, run --create-*-table again and make sure
@@ -115,9 +115,9 @@ $master_dbh->do("insert into test.servers (server,dsn,mk_heartbeat_file) values 
 $master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, 0, 0, 1, 1)");
 
 $retval = mysql_replication_monitor::main(@args,
-   '--monitor', "$dsn,P=12345,t=test.servers",
-   '--update',  "$dsn,P=12345,t=test.state",
-   qw(--create-monitor-table --create-update-table),
+   '--servers', "$dsn,P=12345,t=test.servers",
+   '--state',  "$dsn,P=12345,t=test.state",
+   qw(--create-servers-table --create-state-table),
    qw(--run-once --quiet)
 );
 
@@ -125,7 +125,7 @@ $rows = $master_dbh->selectall_arrayref('select * from test.servers');
 is(
    scalar @$rows,
    1,
-   "--create-monitor-table didn't affect the existing table"
+   "--create-servers-table didn't affect the existing table"
 );
 
 # Should be 2 rows in state table now: the one we manually inserted above
@@ -134,7 +134,7 @@ $rows = $master_dbh->selectall_arrayref('select * from test.state');
 is(
    scalar @$rows,
    2,
-   "--create-update-table didn't affect the existing table"
+   "--create-state-table didn't affect the existing table"
 );
 
 $master_dbh->do("truncate table test.state");
@@ -144,8 +144,8 @@ $master_dbh->do("truncate table test.state");
 # #############################################################################
 $output = output(
    sub { mysql_replication_monitor::main(@args,
-         '--monitor', "$dsn,P=12345,t=test.servers",
-         '--update',  "$dsn,P=12345,t=test.state",
+         '--servers', "$dsn,P=12345,t=test.servers",
+         '--state',  "$dsn,P=12345,t=test.state",
          qw(--run-once),
       );
    }
@@ -159,8 +159,8 @@ like(
 
 $output = output(
    sub { mysql_replication_monitor::main(@args,
-         '--monitor', "$dsn,P=12345,t=test.servers",
-         '--update',  "$dsn,P=12345,t=test.state",
+         '--servers', "$dsn,P=12345,t=test.servers",
+         '--state',  "$dsn,P=12345,t=test.state",
          qw(--run-once --quiet),
       );
    }
@@ -178,7 +178,7 @@ is(
 my $log = '/tmp/mysql-replication-monitor.log';
 diag(`rm -rf $log >/dev/null`);
 
-system("$cmd --monitor $dsn,P=12345,t=test.servers --update $dsn,P=12345,t=test.state --daemonize --log $log --check-logs-dir /tmp/checks/");
+system("$cmd --servers $dsn,P=12345,t=test.servers --state $dsn,P=12345,t=test.state --daemonize --log $log --check-logs-dir /tmp/checks/");
 
 ok(
    -f $log,
@@ -253,8 +253,8 @@ ok(
 );
 
 mysql_replication_monitor::main(@args,
-   '--monitor', "$dsn,P=12345,t=test.servers",
-   '--update',  "$dsn,P=12345,t=test.state",
+   '--servers', "$dsn,P=12345,t=test.servers",
+   '--state',  "$dsn,P=12345,t=test.state",
    qw(--mk-heartbeat-dir /tmp),
    qw(--run-once --quiet));
 
@@ -285,8 +285,8 @@ $timeout = wait_for(
       output(
          sub {
             $retval = mysql_replication_monitor::main(@args,
-               '--monitor', "$dsn,P=12345,t=test.servers",
-               '--update',  "$dsn,P=12345,t=test.state",
+               '--servers', "$dsn,P=12345,t=test.servers",
+               '--state',  "$dsn,P=12345,t=test.state",
                qw(--run-time 3 --interval 1));
          },
          $output

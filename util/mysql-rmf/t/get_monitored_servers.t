@@ -40,11 +40,11 @@ $master_dbh->do('DROP TABLE IF EXISTS test.servers');
 $master_dbh->do('USE test');
 
 # #############################################################################
-# get_monitored_server() gets the servers from the --monitor table and
+# get_monitored_server() gets the servers from the --servers table and
 # returns them an array of hashref.
 # #############################################################################
 
-my $monitor_dsn = {
+my $servers_dsn = {
    h => '127.1',
    P => 12345,
    u => 'msandbox',
@@ -54,7 +54,7 @@ my $monitor_dsn = {
 };
 
 my %args = (
-   dsn          => $monitor_dsn,
+   dsn          => $servers_dsn,
    OptionParser => $o,
    Quoter       => $q,
    DSNParser    => $dp,
@@ -62,14 +62,14 @@ my %args = (
 
 my @servers;
 
-# Test how it handles not having the monitor table.
+# Test how it handles not having the servers table.
 output(
    sub { @servers = mysql_replication_monitor::get_monitored_servers(%args) }
 );
 is_deeply(
    \@servers,
    [],
-   "Doesn't crash if monitor table doesn't exist"
+   "Doesn't crash if servers table doesn't exist"
 );
 
 my $sql = "CREATE TABLE `servers` (
