@@ -4120,8 +4120,7 @@ sub main {
 
             # See if we've EXPLAIN'ed this checksum before.  If so, just
             # increment counters with the saved info from $exa.  If not, EXPLAIN
-            # and increment counters, then save to $exa.  TODO: configure
-            # identical queries to be re-EXPLAIN-able.
+            # and increment counters, then save to $exa.
             my $access = $exa->get_usage_for($chk, $cur_db);
             if ( !$access ) {
 
@@ -4144,7 +4143,6 @@ sub main {
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
-            # TODO: note any problems.
             die $EVAL_ERROR;
          }
       }
@@ -4200,12 +4198,6 @@ sub _d {
 }
 
 1; # Because this is a module as well as a script.
-
-# TODO: add a --progress option.
-# TODO: handle queries against views!
-# TODO: will I repeatedly run "explain administrator command: ping" ?
-# TODO: make it add stats about how many times it tried to get index usage for
-# each query, so we can verify that it doesn't repeat itself.
 
 # #############################################################################
 # Documentation.
