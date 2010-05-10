@@ -2014,13 +2014,31 @@ sub main {
       # Check monitored servers and update --state DSN.
       # ######################################################################
       if ( @monitored_servers ) {
-         $exit_status |= check_servers(
-            servers    => \@monitored_servers,
-            state_dsn  => $o->get('state'),
-            observer   => $observer,
-            replace    => $o->get('replace'),
-            %common_modules,
-         )
+
+         # Try to connect to state server.  Hopefully it's alive because
+         # if not we're out of luck and it's not worth checking the monitored
+         # servers if we can't save the results... yet: TODO: save results
+         # until a state server comes back online.
+         eval {
+            my $state_dbh = get_cxn(dsn=>$o->get('state'), %common_modules);
+            $state_dbh->disconnect();
+         };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            my $host = $dp->as_string($o->get('state'));
+            _log("Cannot connect to --state $host: $EVAL_ERROR");
+
+            $exit_status |= 1;
+         }
+         else {
+            $exit_status |= check_servers(
+               servers    => \@monitored_servers,
+               state_dsn  => $o->get('state'),
+               observer   => $observer,
+               replace    => $o->get('replace'),
+               %common_modules,
+            )
+         }
       }
       else {
          _log("No servers to monitor");

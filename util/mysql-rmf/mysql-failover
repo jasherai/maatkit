@@ -2017,6 +2017,7 @@ sub main {
          new_master_dbh  => $new_master_dbh,
          state_dbh       => $state_dbh,
          state_tbl       => $state_tbl,
+         where           => $o->get('where'),
          limit           => $o->get('limit'),
          %common_modules
       );
@@ -2177,9 +2178,10 @@ sub get_server_state {
    my ($server, $dbh, $tbl) = @args{@required_args};
 
    my $sql = "SELECT * FROM $tbl WHERE server='$server' AND observer=? "
+           . ($args{where} ? "AND $args{where} " : "")
            . "ORDER BY ts DESC "
            . ($args{limit} ? "LIMIT $args{limit} " : "");
-   MKDEBUG && _d($dbh, $sql);
+   _log($sql);
    my $sth = $dbh->prepare($sql);
 
    $sql = "SELECT DISTINCT observer FROM $tbl";
@@ -2508,6 +2510,15 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=item --where
+
+type: string
+
+Filter L<"--state"> results by this C<WHERE> clause.
+
+For example, to select only monitor observations made within the last hour:
+C<--where "ts > CURRENT_TIMESTAMP - INTERVAL 1 HOUR">.
 
 =back
 
