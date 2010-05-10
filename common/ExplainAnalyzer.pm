@@ -139,7 +139,15 @@ sub get_index_usage {
    my $lookup = $self->{QueryParser}->get_aliases($sql);
 
    foreach my $row ( @$explain ) {
-      next unless defined $row->{table} && @{$row->{key}};
+
+      # Filter out any row that doesn't access a (real) table.  However, a row
+      # that accesses a table but not an index is still interesting, so we do
+      # not filter that out.
+      next if !defined $row->{table}
+         # Tables named like <union1,2> are just internal temp tables, not real
+         # tables that we can analyze.
+         || $row->{table} =~ m/^<(derived|union)\d/;
+
       my $table = $lookup->{TABLE}->{$row->{table}} || $row->{table};
       my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
       push @result, {

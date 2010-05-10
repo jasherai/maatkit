@@ -15,7 +15,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 use ExplainAnalyzer;
 use QueryRewriter;
@@ -321,6 +321,36 @@ is_deeply(
       },
    ],
    'Translate an EXPLAIN and a query for a harder case',
+);
+
+# Here's a query that uses a table but no indexes in it.
+is_deeply(
+   $exa->get_index_usage(
+      sql => "select * from film_text",
+      db  => 'sakila',
+      explain => $exa->normalize(
+         [
+            { id            => 1,
+              select_type   => 'SIMPLE',
+              table         => 'film_text',
+              type          => 'ALL',
+              possible_keys => undef,
+              key           => undef,
+              key_len       => undef,
+              ref           => undef,
+              rows          => 1000,
+              Extra         => '',
+            },
+         ],
+      ),
+   ),
+   [  {  db  => 'sakila',
+         tbl => 'film_text',
+         idx => [],
+         alt => [],
+      },
+   ],
+   'Translate an EXPLAIN for a query that uses no indexes',
 );
 
 # #############################################################################
