@@ -15,7 +15,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use Test::More tests => 7;
+use Test::More tests => 9;
 
 use ExplainAnalyzer;
 use QueryRewriter;
@@ -322,6 +322,32 @@ is_deeply(
    ],
    'Translate an EXPLAIN and a query for a harder case',
 );
+
+# #############################################################################
+# Methods to save and retrieve index usage for a specific query and database.
+# #############################################################################
+is_deeply(
+   $exa->get_usage_for('0xdeadbeef', 'sakila'),
+   undef,
+   'No usage recorded for 0xdeadbeef');
+
+$exa->save_usage_for('0xdeadbeef', 'sakila',
+   [  {  db  => 'sakila',
+         tbl => 'actor',
+         idx => [qw(PRIMARY)],
+         alt => [],
+      },
+   ]);
+
+is_deeply(
+   $exa->get_usage_for('0xdeadbeef','sakila'),
+   [  {  db  => 'sakila',
+         tbl => 'actor',
+         idx => [qw(PRIMARY)],
+         alt => [],
+      },
+   ],
+   'Got saved usage for 0xdeadbeef');
 
 # #############################################################################
 # Done.

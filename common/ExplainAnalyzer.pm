@@ -29,6 +29,11 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
+# This class is a container for some utility methods for getting and
+# manipulating EXPLAIN data to find out interesting things about it.  It also
+# has methods to save and retrieve information, so it actually has state itself
+# if used in this way -- it is not a data-less collection of methods.
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(QueryRewriter QueryParser) ) {
@@ -147,6 +152,36 @@ sub get_index_usage {
    }
 
    return \@result;
+}
+
+# This method retrieves information about how a query uses indexes, if it
+# has been saved through save_usage_for().  It is basically a cache for
+# remembering "oh, I've seen exactly this query before.  No need to re-EXPLAIN
+# and all that stuff."  The information returned is in the same form as that of
+# get_index_usage().  If no usage has been saved for the arguments, the return
+# value is undef.  The arguments are:
+# - The query's checksum (not the fingerprint's checksum)
+# - The database connection's default database.  If a query is run against two
+#   different databases, it might use different tables and indexes.
+sub get_usage_for {
+   my ( $self, $checksum, $db ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   if ( exists $self->{usage}->{$db} # Don't auto-vivify
+     && exists $self->{usage}->{$db}->{$checksum} )
+   {
+      return $self->{usage}->{$db}->{$checksum};
+   }
+   else {
+      return undef;
+   }
+}
+
+# This methods saves the query's index usage patterns for later retrieval with
+# get_usage_for().  See that method for an explanation of the arguments.
+sub save_usage_for {
+   my ( $self, $checksum, $db, $usage ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   $self->{usage}->{$db}->{$checksum} = $usage;
 }
 
 sub _d {
