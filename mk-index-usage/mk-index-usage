@@ -4279,9 +4279,7 @@ cases where it fails, submit a bug report and a reproducible test case.
 
 After it reads all the events in the log, the tool prints out DROP statements
 for every index that was not used.  It skips indexes for tables that were never
-accessed by any queries in the log.  This prevents it from considering that
-table's indexes to be unused merely because the workload that it analyzed
-didn't include queries against the table.
+accessed by any queries in the log, to avoid false-positive results.
 
 =head1 OPTIONS
 
