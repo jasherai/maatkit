@@ -1,0 +1,3 @@
+ALTER TABLE `sakila`.`film_text`
+   DROP KEY `PRIMARY`,
+   DROP KEY `idx_title_description`;

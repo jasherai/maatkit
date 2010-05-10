@@ -1,11 +1,5 @@
 #!/usr/bin/env perl
 
-# TODO: index-merge will fail to parse alternates correctly
-# TODO: why do I have to say --host localhost to avoid cxn error?
-# TODO: will I repeatedly run "explain administrator command: ping" ?
-# TODO: make it add stats about how many times it tried to get index usage for
-# each query, so we can verify that it doesn't repeat itself.
-
 # This program is copyright 2007-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -1400,7 +1394,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 6148
+# QueryParser package 6262
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryParser.pm
@@ -1503,13 +1497,18 @@ sub has_derived_table {
 
 sub get_aliases {
    my ( $self, $query, $list ) = @_;
-   return unless $query;
-   my $aliases;
+
+   my $result = {
+      DATABASE => {},
+      TABLE    => {},
+   };
+   return $result unless $query;
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
+   my @tbl_refs;
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -1519,51 +1518,55 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   if ( !$tbl_refs ) {
-      MKDEBUG && _d("No tables ref in", $query);
-      return $list ? [] : {};
-   }
+   if ( $tbl_refs ) {
 
-   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
-      $tbl_refs =~ s/\([^\)]+\)\s*//;
-   }
-
-   MKDEBUG && _d('tbl refs:', $tbl_refs);
-
-   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
-
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
-
-   $tbl_refs =~ s/ = /=/g;
-
-   while (
-      $tbl_refs =~ m{
-         $before_tbl\b\s*
-            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
-         \s*$after_tbl
-      }xgio )
-   {
-      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d('Match table:', $tbl_ref);
-
-      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef unless $list;
-         next;
+      if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+         $tbl_refs =~ s/\([^\)]+\)\s*//;
       }
 
-      if ( $list ) {
-         $tbl_ref =~ s/^\s+//g;
-         $tbl_ref =~ s/\s+$//g;
-         push @$aliases, $tbl_ref;
-      }
-      else {
+      MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+      my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+      my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+      $tbl_refs =~ s/ = /=/g;
+
+      while (
+         $tbl_refs =~ m{
+            $before_tbl\b\s*
+               ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+            \s*$after_tbl
+         }xgio )
+      {
+         my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+         MKDEBUG && _d('Match table:', $tbl_ref);
+         push @tbl_refs, $tbl_ref;
+         $alias = $self->trim_identifier($alias);
+
+         if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+            MKDEBUG && _d('Subquery', $tbl_ref);
+            $result->{TABLE}->{$alias} = undef;
+            next;
+         }
+
          my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-         $aliases->{$alias || $tbl} = $tbl;
-         $aliases->{DATABASE}->{$tbl} = $db if $db;
+         $db  = $self->trim_identifier($db);
+         $tbl = $self->trim_identifier($tbl);
+         $result->{TABLE}->{$alias || $tbl} = $tbl;
+         $result->{DATABASE}->{$tbl}        = $db if $db;
       }
    }
-   return $aliases;
+   else {
+      MKDEBUG && _d("No tables ref in", $query);
+   }
+
+   if ( $list ) {
+      return \@tbl_refs;
+   }
+   else {
+      return $result;
+   }
 }
 
 sub split {
@@ -1768,6 +1771,15 @@ sub extract_tables {
       push @tables, [ $db || $default_db, $tbl ];
    }
    return @tables;
+}
+
+sub trim_identifier {
+   my ($self, $str) = @_;
+   return unless defined $str;
+   $str =~ s/`//g;
+   $str =~ s/^\s+//;
+   $str =~ s/\s+$//;
+   return $str;
 }
 
 sub _d {
@@ -3633,19 +3645,350 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# FileIterator package 6249
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/FileIterator.pm
+#   trunk/common/t/FileIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package FileIterator;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub get_file_itr {
+   my ( $self, @filenames ) = @_;
+
+   my @final_filenames;
+   FILENAME:
+   foreach my $fn ( @filenames ) {
+      if ( !defined $fn ) {
+         warn "Skipping undefined filename";
+         next FILENAME;
+      }
+      if ( $fn ne '-' ) {
+         if ( !-e $fn || !-r $fn ) {
+            warn "$fn does not exist or is not readable";
+            next FILENAME;
+         }
+      }
+      push @final_filenames, $fn;
+   }
+
+   if ( !@filenames ) {
+      push @final_filenames, '-';
+      MKDEBUG && _d('Auto-adding "-" to the list of filenames');
+   }
+
+   MKDEBUG && _d('Final filenames:', @final_filenames);
+   return sub {
+      while ( @final_filenames ) {
+         my $fn = shift @final_filenames;
+         MKDEBUG && _d('Filename:', $fn);
+         if ( $fn eq '-' ) { # Magical STDIN filename.
+            return (*STDIN, undef, undef);
+         }
+         open my $fh, '<', $fn or warn "Cannot open $fn: $OS_ERROR";
+         if ( $fh ) {
+            return ( $fh, $fn, -s $fn );
+         }
+      }
+      return (); # Avoids $f being set to 0 in list context.
+   };
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End FileIterator package
+# ###########################################################################
+
+# ###########################################################################
+# ExplainAnalyzer package 6269
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ExplainAnalyzer.pm
+#   trunk/common/t/ExplainAnalyzer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package ExplainAnalyzer;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(QueryRewriter QueryParser) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub explain_query {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh sql) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($sql, $dbh) = @args{qw(sql dbh)};
+   if ( $sql !~ m/^\s*select/i ) {
+      $sql = $self->{QueryRewriter}->convert_to_select($sql);
+   }
+   return $dbh->selectall_arrayref("EXPLAIN $sql", { Slice => {} });
+}
+
+sub normalize {
+   my ( $self, $explain ) = @_;
+   my @result; # Don't modify the input.
+
+   foreach my $row ( @$explain ) {
+      $row = { %$row }; # Make a copy -- don't modify the input.
+
+      foreach my $col ( qw(key possible_keys key_len ref) ) {
+         $row->{$col} = [ split(/,/, $row->{$col} || '') ];
+      }
+
+      $row->{Extra} = {
+         map {
+            my $var = $_;
+
+            if ( my($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
+               $key => [ split(/,/, $vals) ];
+            }
+
+            else {
+               $var => 1;
+            }
+         }
+         split(/; /, $row->{Extra}) # Split on semicolons.
+      };
+
+      push @result, $row;
+   }
+
+   return \@result;
+}
+
+sub get_alternate_indexes {
+   my ( $self, $keys, $possible_keys ) = @_;
+   my %used = map { $_ => 1 } @$keys;
+   return [ grep { !$used{$_} } @$possible_keys ];
+}
+
+sub get_index_usage {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(sql explain) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($sql, $explain) = @args{qw(sql explain)};
+   my @result;
+
+   my $lookup = $self->{QueryParser}->get_aliases($sql);
+
+   foreach my $row ( @$explain ) {
+
+      next if !defined $row->{table}
+         || $row->{table} =~ m/^<(derived|union)\d/;
+
+      my $table = $lookup->{TABLE}->{$row->{table}} || $row->{table};
+      my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
+      push @result, {
+         db  => $db,
+         tbl => $table,
+         idx => $row->{key},
+         alt => $self->get_alternate_indexes(
+                  $row->{key}, $row->{possible_keys}),
+      };
+   }
+
+   return \@result;
+}
+
+sub get_usage_for {
+   my ( $self, $checksum, $db ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   if ( exists $self->{usage}->{$db} # Don't auto-vivify
+     && exists $self->{usage}->{$db}->{$checksum} )
+   {
+      return $self->{usage}->{$db}->{$checksum};
+   }
+   else {
+      return undef;
+   }
+}
+
+sub save_usage_for {
+   my ( $self, $checksum, $db, $usage ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   $self->{usage}->{$db}->{$checksum} = $usage;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ExplainAnalyzer package
+# ###########################################################################
+
+# ###########################################################################
+# IndexUsage package 6272
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/IndexUsage.pm
+#   trunk/common/t/IndexUsage.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package IndexUsage;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+      tables_for  => {}, # Keyed off db
+      indexes_for => {}, # Keyed off db->tbl
+   };
+   return bless $self, $class;
+}
+
+sub add_indexes {
+   my ( $self, $db, $tbl, $indexes ) = @_;
+   die "I need a db, table, and index"
+      if grep { !defined } ($db, $tbl, $indexes);
+   $self->{tables_for}->{$db}->{$tbl} = 0;
+   foreach my $index ( @$indexes ) {
+      $self->{indexes_for}->{$db}->{$tbl}->{$index} = 0;
+   }
+}
+
+sub add_table_usage {
+   my ( $self, $db, $tbl ) = @_;
+   die "I need a db and table" unless defined $db && defined $tbl;
+   ++$self->{tables_for}->{$db}->{$tbl};
+}
+
+sub add_index_usage {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(usage) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($id, $chk, $pos_in_log, $usage) = @args{qw(id chk pos_in_log usage)};
+   foreach my $access ( @$usage ) {
+      my ($db, $tbl, $idx, $alt) = @{$access}{qw(db tbl idx alt)};
+      foreach my $index ( @$idx ) {
+         $self->{indexes_for}->{$db}->{$tbl}->{$index}++;
+      }
+   }
+}
+
+sub find_unused_indexes {
+   my ( $self, $callback ) = @_;
+   die "I need a callback" unless $callback;
+
+   my %indexes_for = %{$self->{indexes_for}};
+   my %tables_for  = %{$self->{tables_for}};
+
+   foreach my $database ( sort keys %indexes_for ) {
+      my %tables = %{$indexes_for{$database}};
+      TABLE:
+      foreach my $table ( sort keys %tables ) {
+         next TABLE unless $tables_for{$database}->{$table}; # Skip unused
+         my %indexes = %{$tables{$table}};
+         my @unused_indexes;
+         foreach my $index ( sort keys %indexes ) {
+            if (!$indexes{$index}) { # The count of times accessed/used
+               push @unused_indexes, $index;
+            }
+         }
+         if ( @unused_indexes ) {
+            $callback->(
+               {  db  => $database,
+                  tbl => $table,
+                  idx => \@unused_indexes,
+               }
+            );
+         }
+      }
+   }
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End IndexUsage package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
 #
-# Check at the end of this package for the call to main() which actually runs
-# the program.
+# Check just above main() for the call to main() which actually runs the
+# program.
 # ###########################################################################
 package mk_index_usage;
 
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
-use Time::HiRes qw(time usleep);
-use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
@@ -3658,11 +4001,17 @@ Transformers->import(qw(make_checksum));
 my $oktorun = 1;
 my $q      = new Quoter();
 my $qp     = new QueryParser();
-my $qr     = new QueryRewriter(QueryParser=>$qp);
+my $qr     = new QueryRewriter(QueryParser => $qp);
 my $tp     = new TableParser(Quoter => $q);
 my $vp     = new VersionParser();
 my $parser = new SlowLogParser();
+my $fi     = new FileIterator();
+my $du     = new MySQLDump();
+my $si     = new SchemaIterator(Quoter => $q);
+my $iu     = new IndexUsage();
+my $exa    = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
 
+if ( !caller ) { exit main(@ARGV); } # Run the program.
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
@@ -3681,114 +4030,25 @@ sub main {
    $dp->prop('set-vars', $o->get('set-vars'));
    $o->usage_or_errors();
 
-   # Set up to read either a file, or STDIN.  Create a callback to get events
-   # from the slow query log file.  TODO: this won't permit reading multiple
-   # files.  I want an iterator provided by a module.
-   my $fh;
-   if ( @ARGV == 0 ) {
-      push @ARGV, '-'; # Magical STDIN filename.
-   }
-   my $file = shift @ARGV;
-   if ( $file eq '-' ) {
-      $fh = *STDIN;
-      MKDEBUG && _d('Reading STDIN');
-   }
-   else {
-      if ( !open $fh, "<", $file ) {
-         $fh = undef;
-         warn "Cannot open $file: $OS_ERROR\n";
-      }
-      MKDEBUG && _d('Reading', $file);
-   }
-   my $next_event = sub { return <$fh>; };
-   my $tell = sub { return tell $fh; };
-   my $event;
-   my $get_event = sub {
-      return $parser->parse_event(
-         event      => $event,  # new interface
-         next_event => $next_event,
-         tell       => $tell,
-         oktorun    => sub { return 1 },
-         misc       => {},
-         stats      => {},
-      );
-   };
-
    # Open the database connection.
    my $dbh = get_cxn(
-      dsn => $dp->parse_options($o),
+      dsn          => $dp->parse_options($o),
       OptionParser => $o,
       DSNParser    => $dp,
    );
 
-   # This variable holds the accumulated information about the queries, tables,
-   # indexes, and so on.
-   my %stats;
-
-   # Set up for progress reports.  TODO: add a --progress option.
-   my $i     = 0;
-   my $sz    = -s $file;
-   my $start = time();
-
-   # This is the main loop over the queries in the log.  For each query we are
-   # going to get the fingerprint and store what we learn about that query's
-   # EXPLAIN plan, keyed off its fingerprint.
-   while ( $event = $get_event->() ) {
-      next unless $event->{arg}; # The arg is the SQL.
-      $event->{fingerprint} = $qr->fingerprint($event->{arg});
-      eval {
-         gather_stats_for_query($event, \%stats, $dbh);
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
-      }
-
-      # Print out the progress report every 10000 events.  TODO make that a
-      # command-line option.
-      $i++;
-      if ( $i % 10000 == 0 ) {
-         my $bytes    = tell($fh);
-         my $pct_done = sprintf '%.3f', $bytes/$sz*100;
-         my $remain   = $sz - $bytes;
-         my $rate     = $bytes / (time() - $start);
-         my $eta      = sprintf '%d', $remain / $rate;
-         print "Current file position: $i events, $bytes done at $rate "
-            . "bytes/sec, $pct_done% done, ETA in $eta secs\n";
-      }
-   }
-
-   my $s = $stats{access};
-   print Dumper \%stats;
-
-   # Print info about all the usage we found in this run.
-   foreach my $db ( sort keys %$s ) {
-      my $db_hash = $s->{$db};
-      foreach my $tbl ( sort keys %$db_hash ) {
-         my $tbl_hash = $db_hash->{$tbl};
-         foreach my $index ( sort keys %$tbl_hash ) {
-            my $index_hash = $tbl_hash->{$index};
-            printf "\n# Index: $db.$tbl.$index used by %4d queries\n", scalar(keys %$index_hash);
-            foreach my $query ( reverse sort { $index_hash->{$a}->{cnt} <=> $index_hash->{$b}->{cnt} } keys %$index_hash ) {
-               my $q_hash = $index_hash->{$query};
-               my @alternates = split(/,/, $q_hash->{possible_keys});
-               printf "%8d uses by 0x%s @ %8d w/ %3d alternates %s\n",
-                  $q_hash->{cnt}, $query, $q_hash->{pos_in_log}, scalar(@alternates), $q_hash->{possible_keys};
-            }
-         }
-      }
-   }
-
-   # For every table in every database, print whether each index was used or not.
-   # But only if the table was used.  If the database is __UNKNOWN__ then guess
-   # that it's the table we're looking for.
-   my $du = new MySQLDump();
-   my $si = new SchemaIterator(Quoter => $q);
+   # ########################################################################
+   # Populate the IndexUsage object with indexes.  Also get a list of all
+   # databases and tables before going on to parse the queries.  This will be
+   # important when we see a query without any default database, and we have to
+   # guess which database to USE for EXPLAIN-ing it.
+   # ########################################################################
+   my %tables_for;
    $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-
    my $next_db = $si->get_db_itr(dbh => $dbh);
    DATABASE:
-   while (my $database = $next_db->() ) {
+   while ( my $database = $next_db->() ) {
       MKDEBUG && _d('Getting tables from', $database);
       my $next_tbl = $si->get_tbl_itr(
          dbh   => $dbh,
@@ -3798,127 +4058,120 @@ sub main {
       TABLE:
       while ( my $table = $next_tbl->() ) {
          MKDEBUG && _d('Got table', $table);
-
-         # Skip it unless we've actually seen a query against this table.  Don't
-         # auto-vivify!
-         my $stats_for_table;
-         if ( $s->{$database} ) {
-            $stats_for_table = $s->{$database}->{$table};
-         }
-         else {
-            $stats_for_table = $s->{__UNKNOWN__}->{$table};
-         }
-         next TABLE unless $stats_for_table;
-            
-         my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
-         my $engine   = $tp->get_engine($ddl) || next TABLE;
-         my ($keys, $clustered_key) = $tp->get_keys($ddl, {version => $version });
-         my @unused;
-         foreach my $key ( keys %$keys ) {
-            if (!$stats_for_table->{$key}) {
-               push @unused, $key;
-            }
-         }
-         if ( @unused ) {
-            print "# $database.$table unused indexes: " . join(', ', @unused) .
-            "\n";
-         }
+         $tables_for{$database}->{$table} = 1;
+         my $ddl       = $du->get_create_table(
+                         $dbh, $q, $database, $table)->[1];
+         my ($indexes) = $tp->get_keys($ddl, {version => $version });
+         $iu->add_indexes($database, $table, [ keys %$indexes ]);
       }
    }
 
+   # ########################################################################
+   # This keeps track of the $dbh's current DB, so we know when to USE a
+   # different database.
+   # ########################################################################
+   my $cur_db = '';
+
+   # ########################################################################
+   # This is the main loop over the input filenames.
+   # ########################################################################
+   my $next_file = $fi->get_file_itr(@ARGV);
+   my ( $fh, $filename, $filesize ) = $next_file->();
+   FILE:
+   while ( defined $fh ) {
+
+      # Create a callback to get events from the slow query log file.
+      my $next_event = sub { return <$fh>; };
+      my $tell = sub { return tell $fh; };
+      my $event;
+      my $get_event = sub {
+         return $parser->parse_event(
+            event      => $event,
+            next_event => $next_event,
+            tell       => $tell,
+            oktorun    => sub { return 1 },
+            misc       => {},
+            stats      => {},
+         );
+      };
+
+      # #####################################################################
+      # This is the main loop over the queries in the log.  For each query we
+      # are going to store what we learn about that query's EXPLAIN plan, keyed
+      # off its fingerprint.
+      # #####################################################################
+      EVENT:
+      while ( $event = $get_event->() ) {
+         my $arg = $event->{arg} or next EVENT; # The arg is the SQL.
+         my $fingerprint
+            = $event->{fingerprint} = $qr->fingerprint($arg);
+         eval {
+
+            # Checksum the query and get the query's ID.
+            my $chk = make_checksum($arg);
+            my $id  = make_checksum($fingerprint);
+
+            # Do we need to USE a new database before we EXPLAIN the query?
+            my $new_db = $event->{db} || $event->{Schema};
+            if ( $new_db && $new_db ne $cur_db ) {
+               $dbh->do('USE ' . $q->quote($new_db));
+               $cur_db = $new_db;
+            }
+
+            # See if we've EXPLAIN'ed this checksum before.  If so, just
+            # increment counters with the saved info from $exa.  If not, EXPLAIN
+            # and increment counters, then save to $exa.  TODO: configure
+            # identical queries to be re-EXPLAIN-able.
+            my $access = $exa->get_usage_for($chk, $cur_db);
+            if ( !$access ) {
+
+               my $explain = $exa->explain_query(
+                  dbh => $dbh,
+                  sql => $arg,
+               );
+               $access = $exa->get_index_usage(
+                  sql     => $arg,
+                  db      => $cur_db,
+                  explain => $exa->normalize($explain),
+               );
+               $exa->save_usage_for($chk, $cur_db, $access);
+            }
+            foreach my $row ( @$access ) {
+               $iu->add_table_usage($row->{db}, $row->{tbl});
+               $iu->add_index_usage(usage => $access);
+            }
+
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
+            # TODO: note any problems.
+            die $EVAL_ERROR;
+         }
+      }
+
+      ( $fh, $filename, $filesize ) = $next_file->();
+   }
+
+   # ########################################################################
+   # All done!  Now just print out the unused indexes.
+   # ########################################################################
+   $iu->find_unused_indexes(
+      sub {
+         my ( $unused ) = @_; # Hashref.
+         print "ALTER TABLE ", $q->quote($unused->{db}, $unused->{tbl}),
+            join(',',
+               map { "\n   DROP KEY " . $q->quote($_) } @{$unused->{idx}}),
+            ";\n";
+      }
+   );
 
    $dbh->disconnect;
-
    return 0;
 } # End main().
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
-sub gather_stats_for_query {
-   my ( $event, $stats, $dbh ) = @_;
-   my ( $arg, $fingerprint ) = ($event->{arg}, $event->{fingerprint});
-
-   # Figure out what database.table.index(es) the query accesses.  We don't
-   # re-EXPLAIN identical queries again and again.  We assume that identical
-   # queries will have the same EXPLAIN.  TODO: this might not be true, let it
-   # be configurable.
-   my $sel = $arg;
-   if ( $arg !~ m/^\s*select/i ) {
-      $sel = $qr->convert_to_select($arg);
-   }
-   if ( $sel !~ m/^\s*select/ ) {
-      return;
-   }
-
-   my $chksum = make_checksum($arg);
-   my $id     = make_checksum($fingerprint);
-   my $access  = $stats->{queries}->{$chksum};
-   my $aliases = $stats->{parsed}->{$fingerprint}
-             ||= $qp->get_aliases($sel); # TODO: we might need to get aliases
-             # from fingerprinted $sel.
-   $aliases->{ID} = $id;
-
-   if ( !$access ) { # We haven't seen exactly this query before.
-      # TODO: must permit skip-seen-before behavior.
-      my @res;
-      my $a = get_index_access($event, $dbh);
-
-      # But $a is not in exactly the format we need, yet.  We have to transform
-      # the table names according to the aliases in the query.  For example, $a
-      # might say {table=>foo,key=>bar,possible_keys=>'a,b,c'}.  But if foo is
-      # just an alias, then we really need to see the original name.  And we
-      # need to add the database in, too.
-      foreach my $row ( @$a ) {
-         my $table = $aliases->{$row->{table}};
-         next unless $table;
-         my $db    = $aliases->{DATABASE}->{$table};
-         push @res, {
-            db    => (defined $db ? $db : '__UNKNOWN__'),
-            table => $table,
-            index => $row->{key},
-            possible_keys => $row->{possible_keys},
-         };
-      }
-
-      $access = $stats->{queries}->{$chksum} = \@res;
-   }
-
-   # Now that we've figured it out, add those stats into the stats hash for all
-   # the applicable indexes.
-   foreach my $a ( @$access ) {
-      # The below line will auto-vivify all of the hash elements up to the last
-      # one.
-      my $s = $stats->{access}->{$a->{db}}->{$a->{table}}->{$a->{index}}->{$id} ||= {
-         possible_keys => ($a->{possible_keys} || ''),
-         pos_in_log    => $event->{pos_in_log},
-      };
-      $s->{cnt}++;
-   }
-
-}
-
-sub get_index_access {
-   my ( $event, $dbh ) = @_;
-   if ( $event->{arg} !~ m/^\s*select/i ) {
-      # TODO: this is duplicated.
-      $event->{arg} = $qr->convert_to_select($event->{arg});
-   }
-   my $sql = "explain $event->{arg}";
-   my $exp = $dbh->selectall_arrayref($sql, { Slice => {} });
-   my @res = ();
-   foreach my $row ( @$exp ) {
-      next unless defined $row->{table}
-         && defined $row->{key};
-      $row->{possible_keys} = join(',', grep {$_ ne $row->{key}} split(/,/, ($row->{possible_keys} || '')));
-      push @res, {
-         table => $row->{table},
-         key   => $row->{key},
-         possible_keys => $row->{possible_keys},
-      };
-   }
-   return \@res;
-}
 
 sub get_cxn {
    my ( %args ) = @_;
@@ -3946,12 +4199,13 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
-# ############################################################################
-# Run the program.
-# ############################################################################
-if ( !caller ) { exit main(@ARGV); }
-
 1; # Because this is a module as well as a script.
+
+# TODO: add a --progress option.
+# TODO: handle queries against views!
+# TODO: will I repeatedly run "explain administrator command: ping" ?
+# TODO: make it add stats about how many times it tried to get index usage for
+# each query, so we can verify that it doesn't repeat itself.
 
 # #############################################################################
 # Documentation.
@@ -3974,8 +4228,9 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-This is an unreleased tool with very limited functionality.  Don't use it for
-production tasks yet unless you know Perl well.
+This tool is read-only.  It tries to read a log of queries and EXPLAIN them.  It
+also gathers information about all tables in all databases.  It should be very
+low-risk.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
@@ -3988,37 +4243,26 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 This tool connects to a MySQL database server, reads through a query log, and
 asks MySQL how it will use each query.  When it is finished, it prints out a
-report on the queries, tables, and indexes.  This lets you answer interesting
-questions such as "which indexes are unused?", "which queries have several
-possible execution plans?", and "which indexes are chosen instead of other
-indexes?"
+report on indexes that the queries didn't use.
 
 The query log needs to be in MySQL's slow query log format.  If you need to
 input a different format, you can use L<mk-query-digest> to translate the
 formats.  If you don't specify a filename, the tool reads from STDIN.
 
-The tool runs two stages.  In the first stage, it runs EXPLAIN on each query in
-the query log.  If the query is not a SELECT, it tries to transform it to a
-roughly equivalent SELECT query.  This is not a perfect process, but it is good
-enough to be useful.  In the second stage, the tool takes inventory of all the
-tables and indexes in your database, so it can compare the existing indexes to
-those that were actually used by the queries in the log.  More detail on each
-phase follows below.
-
-During the first phase, the tool transforms each query into a SELECT so it can
-run EXPLAIN against it.  If the query can't be transformed into a SELECT, the
-tool skips it.  Next, the tool generates a query fingerprint, which is explained
-in the L<mk-query-digest> documentation.  This is the abstract form of the
-query.  The fingerprint is then checksummed to form the query ID, which is also
-the same as the query ID in mk-query-digest.
+The tool runs two stages.  In the first stage, the tool takes inventory of all
+the tables and indexes in your database, so it can compare the existing indexes
+to those that were actually used by the queries in the log.  In the second
+stage, it runs EXPLAIN on each query in the query log.  If the query is not a
+SELECT, it tries to transform it to a roughly equivalent SELECT query.  This is
+not a perfect process, but it is good enough to be useful.
 
 The tool skips the EXPLAIN step for queries that are exact duplicates of those
 seen before.  It assumes that the same query will generate the same EXPLAIN plan
 as it did previously (usually a safe assumption, and generally good for
-performance), and simply increments the count of all the related statistics that
-were derived before.  However, queries that have the same fingerprint but
-different checksums will be re-EXPLAINed.  Queries that have different literal
-constants can have different execution plans, and this is important to measure.
+performance), and simply increments the count of times that the indexes were
+used.  However, queries that have the same fingerprint but different checksums
+will be re-EXPLAINed.  Queries that have different literal constants can have
+different execution plans, and this is important to measure.
 
 After EXPLAIN-ing the query, it is necessary to try to map aliases in the query
 back to the original table names.  For example, consider the EXPLAIN plan for
@@ -4031,70 +4275,13 @@ back to C<tbl1>.  This process involves complex parsing.  It is generally very
 accurate, but there is some chance that it might not work right.  If you find
 cases where it fails, submit a bug report and a reproducible test case.
 
-The result of this stage is a data structure that contains index usage
-information for the queries in this log.  This data structure doesn't contain
-information about indexes that were not used, or tables that were not used.
-This is only the aggregated usage of the queries themselves.  This data
-structure has a few different parts:
-
-=over
-
-=item access
-
-For each database, for each table, for each index, for each query that used this
-index, we store the following information: the fingerprint of the query, the
-number of times this query used this index, the byte offset in the log where a
-sample of this query using this index can be located, and alternative indexes
-this query could have used (from the C<possible_keys> column in EXPLAIN).
-
-=item parsed
-
-This data structure contains the relationship between identifiers and aliases
-for each query fingerprint found in the file.
-
-=item queries
-
-Each query can potentially access many indexes in many tables.  For example, a
-JOIN query can access one or more indexes in each table it queries.  This part
-of the data structure has one entry for each distinct query (not fingerprint) in
-the log.  Each entry stores an array of the indexes that this query accessed,
-along with alternate indexes that could have been used (again, possible_keys).
-
-=back
-
-After compiling the above data structures with information about the queries and
-their index usage, the tool prints the first part of the output, which is
-documented in L<"OUTPUT">.  Then it moves to the second phase of operation.
-
-During the second phase, the tool iterates through every database and every
-table in the server.  It skips tables that were never accessed by any queries in
-the log.  This prevents it from considering that table's indexes to be unused
-merely because the workload that it analyzed didn't include queries against the
-table.  For each table that was accessed by queries in the log, for each index
-on that table, it checks whether the index was used by any queries, and prints
-out a second part of the report, also documented in L<"OUTPUT">.
-
 =head1 OUTPUT
 
-The tool prints a two-part report.  In the first part, it prints a summary of
-indexes used by the queries in the log, and how they were used.  For example, a
-single index's report might look like the following:
-
-  # Index: db1.tbl1.PRIMARY used by    1 queries
-  #        2 uses by 0x8490F1445D518C17 @ 39806784849 w/   0 alternates
-
-This output indicates that the primary key index on C<db1.tbl1> was used twice
-by a single query, whose ID is 0x8490F1445D518C17.  You can find a sample of
-this query at byte offset 39806784849 in the log file.  This query had no
-alternative to using this index; that is, when this query used this index,
-EXPLAIN showed nothing in possible_keys.
-
-The second part of the output shows unused indexes for each table; for example,
-
-  # db1.tbl1 unused indexes: idx_1, idx_2
-
-There is simply one line of text per table that has unused indexes.  Tables that
-don't have unused indexes are skipped.
+After it reads all the events in the log, the tool prints out DROP statements
+for every index that was not used.  It skips indexes for tables that were never
+accessed by any queries in the log.  This prevents it from considering that
+table's indexes to be unused merely because the workload that it analyzed
+didn't include queries against the table.
 
 =head1 OPTIONS
 
