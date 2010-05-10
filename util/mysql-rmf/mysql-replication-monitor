@@ -2271,6 +2271,8 @@ sub check_server {
    _log("$PROGRAM_NAME child process started, check log $check_log, observer $observer, PID $PID");
 
    # Get a dbh to the monitored server.
+   my $connection_ok = 1;
+   my ($master_status, $slave_status);
    my $server_host = $dp->as_string($server->{dsn});
    _log("Checking monitored server $server->{name} $server_host");
    my $server_dbh;
@@ -2280,21 +2282,23 @@ sub check_server {
    if ( $EVAL_ERROR ) {
       chomp $EVAL_ERROR;
       _log("Cannot connect to monitored server: $EVAL_ERROR");
-      return 1;
+      $connection_ok = 0;
+      $exit_status  |= 1;
    }
+   else {
+      # Get master and slave status from the monitored server.
+      $master_status = get_status('master', $server_dbh);
+      _log("Got master status: " . ($master_status ? 'yes' : 'no'));
 
-   # Get master and slave status from the monitored server.
-   my $master_status = get_status('master', $server_dbh);
-   _log("Got master status: " . ($master_status ? 'yes' : 'no'));
+      $slave_status = get_status('slave', $server_dbh);
+      _log("Got slave status: " . ($slave_status ? 'yes' : 'no'));
 
-   my $slave_status = get_status('slave', $server_dbh);
-   _log("Got slave status: " . ($slave_status ? 'yes' : 'no'));
+      $server_dbh->disconnect();
 
-   $server_dbh->disconnect();
-
-   if ( !$master_status && !$slave_status ) {
-      _log("Got neither master nor slave status");
-      $exit_status |= 1;
+      if ( !$master_status && !$slave_status ) {
+         _log("Got neither master nor slave status");
+         $exit_status |= 1;
+      }
    }
 
    my $real_lag;
@@ -2315,12 +2319,14 @@ sub check_server {
       return 1;
    }
 
+   # Update the state table.
    my $tbl = $q->join_quote($state_dsn->{D}, $state_dsn->{t});
    my $sql = make_update_state_sql(
       tbl           => $tbl,
       master_status => $master_status,
       slave_status  => $slave_status,
       real_lag      => $real_lag,
+      connection_ok => $connection_ok,
       %args,
    );
 
@@ -2394,6 +2400,11 @@ sub make_update_state_sql {
    # Add real_lag.
    if ( defined $args{real_lag} ) {
       push @vals, "real_lag=" . $q->quote_val($args{real_lag});
+   }
+   
+   # Add connection_ok.
+   if ( defined $args{connection_ok} ) {
+      push @vals, "connection_ok=" . $q->quote_val($args{connection_ok});
    }
 
    my $vals = join(', ', @vals);
@@ -2570,13 +2581,13 @@ table.  Therefore you can add and remove servers from this table and every
 observer will refesh its list at its next check.
 
 If, during a check, a connection cannot be made to a monitored server, the
-L<"--state"> table is not updated.  Instead, the child process that attempted
-the check will log something like "Cannot connect to monitored server: ..."
-in its check log.  Since check logs from failed checks are saved, you can
-review this log to see why the connection failed.  The failure to connect
-will also be apparent by the lack of new updates in the L<"--state"> table
-from the observer for the non-responsive server.  Similarly, if the child
-process cannot connect to the L<"--state"> server no new row will be inserted.
+L<"--state"> table is updated with C<NULL> values for the master and slave
+status values (C<position>, C<slave_io_running>, etc.), C<connection_ok> is
+set to zero and the child process that attempted the check will log something
+like "Cannot connect to monitored server: ..." in its check log.  Since check
+logs from failed checks are saved, you can review this log to see why the
+connection failed.  If the child process cannot connect to the L<"--state">
+server no new row will be inserted.
 
 As long as the child process doing a check can connect to both the monitored
 server and the L<"--state"> server, then it should update the state table
@@ -2800,6 +2811,7 @@ be created, with the table name replace by the one given in the DSN:
     `slave_io_running`      TINYINT UNSIGNED DEFAULT NULL,
     `slave_sql_running`     TINYINT UNSIGNED DEFAULT NULL,
     `real_lag`              INT UNSIGNED DEFAULT NULL,
+    `connection_ok`         TINYINT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`server`, `ts`, `observer`)
   )
 
