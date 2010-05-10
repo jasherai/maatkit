@@ -70,13 +70,11 @@ sub add_table_usage {
 
 # This method accepts information about how a query used an index, and saves it
 # for later retrieval.  The arguments are as follows:
-#  id          The query ID as defined by mk-query-digest
-#  chk         The checksum of the raw SQL
-#  pos_in_log  The byte offset in the log where this query was found
-#  usage       The usage information, same as output from ExplainAnalyzer
+#  usage       The usage information, in the same format as the output from
+#              ExplainAnalyzer::get_index_usage()
 sub add_index_usage {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(id chk pos_in_log usage) ) {
+   foreach my $arg ( qw(usage) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my ($id, $chk, $pos_in_log, $usage) = @args{qw(id chk pos_in_log usage)};

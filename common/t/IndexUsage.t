@@ -38,9 +38,6 @@ $iu->add_table_usage(qw(sakila   othertbl));    # But not sakila.film!
 
 # Some of those queries also use indexes.
 $iu->add_index_usage(
-   id         => '0xdeadbeef',
-   chk        => '0xbeefdead',
-   pos_in_log => 12345,
    usage      => [
       {  db  => 'sakila',
          tbl => 'film_actor',
