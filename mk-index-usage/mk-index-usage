@@ -4143,7 +4143,7 @@ sub main {
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
-            die $EVAL_ERROR;
+            warn $EVAL_ERROR;
          }
       }
 
