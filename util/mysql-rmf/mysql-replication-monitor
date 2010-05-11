@@ -2402,7 +2402,8 @@ sub make_update_state_sql {
    if ( my $slave_status = $args{slave_status} ) {
       foreach my $stat (
          qw(master_host master_port master_log_file read_master_log_pos
-            seconds_behind_master slave_io_running slave_sql_running) ) {
+            relay_master_log_file exec_master_log_pos seconds_behind_master
+            slave_io_running slave_sql_running) ) {
          if ( $stat =~ m/_running$/ ) {
             my $running = $slave_status->{$stat} || '';
             push @vals, "$stat=" . (  $running eq 'Yes' ? 1
@@ -2819,12 +2820,14 @@ be created, with the table name replace by the one given in the DSN:
     `observer`              VARCHAR(24) NOT NULL,
     `server`                VARCHAR(64) NOT NULL,
     `ts`                    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `file`                  VARCHAR(64) DEFAULT NULL,
+    `file`                  VARCHAR(128) DEFAULT NULL,
     `position`              INT UNSIGNED DEFAULT NULL,
     `master_host`           VARCHAR(64) DEFAULT NULL,
     `master_port`           SMALLINT UNSIGNED DEFAULT NULL,
-    `master_log_file`       VARCHAR(64) DEFAULT NULL,
+    `master_log_file`       VARCHAR(128) DEFAULT NULL,
     `read_master_log_pos`   INT UNSIGNED DEFAULT NULL,
+    `relay_master_log_file` VARCHAR(128) DEFAULT NULL,
+    `exec_master_log_pos`   INT UNSIGNED DEFAULT NULL,
     `seconds_behind_master` INT UNSIGNED DEFAULT NULL,
     `slave_io_running`      TINYINT UNSIGNED DEFAULT NULL,
     `slave_sql_running`     TINYINT UNSIGNED DEFAULT NULL,
