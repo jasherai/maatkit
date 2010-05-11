@@ -1864,11 +1864,11 @@ sub main {
    my $o = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] --servers DSN --state DSN '
-                   . '--dead-master SERVER --new-master SERVER',
-      description => 'replaces --dead-master SERVER in the replication '
-                   . 'topology with --new-master SERVER using server '
-                   . 'information from --servers DSN and replication state '
-                   . 'information from --state DSN.'
+                   . '--dead-master SERVER --new-master SERVER '
+                   . '--live-master SERVER',
+      description => 'replaces --dead-master with --new-master, connected to '
+                   . '--live-master as a master-master, row-based, idempotent '
+                   . 'replication pair.'
 
    );
    $o->get_specs();
@@ -1931,14 +1931,16 @@ sub main {
    # Connect to --servers.
    # #########################################################################
    _log("Connecting to --servers " . $dp->as_string($o->get('servers')));
-   my $servers_dbh;
-   my $servers_dsn = $o->get('servers');
-   my $servers_tbl = $q->join_quote($servers_dsn->{D}, $servers_dsn->{t});
+   my $servers = {
+      dbh => undef,
+      dsn => $o->get('servers'),
+      tbl => $q->join_quote($o->get('servers')->{D}, $o->get('servers')->{t}),
+   };
    eval {
-      $servers_dbh = get_cxn(dsn=>$servers_dsn, %common_modules);
+      $servers->{dbh} = get_cxn(dsn=>$servers->{dsn}, %common_modules);
    };
    if ( $EVAL_ERROR ) {
-      _log("Cannot connect to --servers " . $dp->as_string($servers_dsn)
+      _log("Cannot connect to --servers " . $dp->as_string($servers->{dsn})
          . ": $EVAL_ERROR");
       return 1;
    }
@@ -1947,14 +1949,16 @@ sub main {
    # Connect to --state.
    # #########################################################################
    _log("Connecting to --state " . $dp->as_string($o->get('state')));
-   my $state_dbh;
-   my $state_dsn = $o->get('state');
-   my $state_tbl = $q->join_quote($state_dsn->{D}, $state_dsn->{t});
+   my $state = {
+      dbh => undef,
+      dsn => $o->get('state'),
+      tbl => $q->join_quote($o->get('state')->{D}, $o->get('state')->{t}),
+   };
    eval {
-      $state_dbh = get_cxn(dsn=>$state_dsn, %common_modules);
+      $state->{dbh} = get_cxn(dsn=>$state->{dsn}, %common_modules);
    };
    if ( $EVAL_ERROR ) {
-      _log("Cannot connect to --state " . $dp->as_string($state_dsn)
+      _log("Cannot connect to --state " . $dp->as_string($state->{dsn})
          . ": $EVAL_ERROR");
       return 1;
    }
@@ -1962,19 +1966,23 @@ sub main {
    # #########################################################################
    # Connect to --new-master.
    # #########################################################################
-   _log("Connecting to --new-master " . $o->get('new-master'));
-   my $new_master_dbh;
+   my $new_master = {
+      name => $o->get('new-master'),
+      dsn  => undef,
+      dbh  => undef,
+   };
+   _log("Connecting to --new-master $new_master->{name}");
    eval {
-      $new_master_dbh = get_server_dbh(
-         servers_dbh => $servers_dbh,
-         servers_tbl => $servers_tbl,
-         server      => $o->get('new-master'),
+      my ($dbh, $dsn) = get_cxn_from_servers(
+         servers => $servers,
+         name    => $new_master->{name},
          %common_modules,
       );
+      $new_master->{dbh} = $dbh;
+      $new_master->{dsn} = $dsn;
    };
    if ( $EVAL_ERROR ) {
-      _log("Cannot connect to --new-master " . $o->get('new-master')
-         . ": $EVAL_ERROR");
+      _log("Cannot connect to --new-master $new_master->{name}: $EVAL_ERROR");
       return 1;
    }
 
@@ -1982,18 +1990,21 @@ sub main {
    # Try to connect to dead master.  If we can't, that's ok.  If we can,
    # we'll use the dbh in the sanity checks performed next.
    # #########################################################################
-   my $dead_master_dbh;
+   my $dead_master = {
+      name => $o->get('dead-master'),
+      dsn  => undef,
+      dbh  => undef,
+   };
    if ( $o->get('connect-to-dead-master') ) {
       _log("Attempting connection to --dead-master " . $o->get('dead-master'));
       eval {
-         my $servers_dsn  = $o->get('servers');
-         my $servers_tbl  = $q->join_quote($servers_dsn->{D},$servers_dsn->{t});
-         $dead_master_dbh = get_server_dbh(
-            servers_dbh => $servers_dbh,
-            servers_tbl => $servers_tbl,
-            server      => $o->get('dead-master'),
+         my ($dbh, $dsn) = get_cxn_from_servers(
+            servers => $servers,
+            name    => $dead_master->{name},
             %common_modules,
          );
+         $dead_master->{dbh} = $dbh;
+         $dead_master->{dsn} = $dsn;
       };
       if ( $EVAL_ERROR ) {
          chomp $EVAL_ERROR;
@@ -2008,23 +2019,21 @@ sub main {
    # #########################################################################
    # Sanity check the dead master.
    # #########################################################################
-   my $completely_dead = 1;
-   my $new_master_ok   = 1;
-   if ( $o->get('sanity-checks') ) {
-      ($completely_dead, $new_master_ok) = sanity_checks(
-         dead_master     => $o->get('dead-master'),
-         dead_master_dbh => $dead_master_dbh,
-         new_master_dbh  => $new_master_dbh,
-         state_dbh       => $state_dbh,
-         state_tbl       => $state_tbl,
-         where           => $o->get('where'),
-         limit           => $o->get('limit'),
+   my $completely_dead = 1;  # dead master is completely dead
+   my $new_master_ok   = 1;  # new master is alive and isn't a master yet
+   if ( $o->get('check-masters') ) {
+      ($completely_dead, $new_master_ok) = check_masters(
+         dead_master => $dead_master,
+         new_master  => $new_master,
+         state       => $state,
+         where       => $o->get('where'),
+         limit       => $o->get('limit'),
          %common_modules
       );
+      _log("Check masters results:\n"
+         . "#\tdead master completely dead: ".($completely_dead ? 'yes' : 'no')
+         . "\n#\tnew master ok: " . ($new_master_ok ? 'yes' : 'no'));
    }
-   _log("Sanity check results:\n"
-      . "#\tdead master completely dead: " . ($completely_dead ? 'yes' : 'no')
-      . "\n#\tnew master ok: " . ($new_master_ok ? 'yes' : 'no'));
 
    # #########################################################################
    # If the dead master is in fact dead, or --force is specified, begin the
@@ -2039,13 +2048,13 @@ sub main {
       _log("Forcing failover");
    }
 
-   _log("Beginning failover procedure");
    eval {
       failover(
-         dead_master_dbh => $dead_master_dbh,
-         new_master_dbh  => $new_master_dbh,
-         state_dbh       => $state_dbh,
-         state_tbl       => $state_tbl,
+         dead_master => $dead_master,
+         new_master  => $new_master,
+         servers     => $servers,
+         state       => $state,
+         dry_run     => $o->get('dry-run'),
          %common_modules
       );
    };
@@ -2053,7 +2062,8 @@ sub main {
       _log("Failover procedure failed: $EVAL_ERROR");
       return 1;
    }
-   _log("Failover procedure complete");
+   _log("Failover procedure complete"
+      . ($o->get('dry-run') ? ' (DRY RUN)' : '' ));
 
    return 0;
 } # End main()
@@ -2061,39 +2071,20 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
-sub get_server_dbh {
+sub check_masters {
    my ( %args ) = @_;
-   my @required_args = qw(servers_dbh servers_tbl server DSNParser OptionParser);
+   my @required_args = qw(dead_master new_master state);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dbh, $tbl, $server, $dp) = @args{@required_args};
+   my ($dead_master, $new_master, $state) = @args{@required_args};
 
-   my $sql = "SELECT server, dsn FROM $tbl WHERE server='$server' ";
-   MKDEBUG && _d($dbh, $sql);
-   my $row = $dbh->selectrow_arrayref($sql);
-   die "No server '$server' in table $tbl" unless $row;
-   die "Server '$server' in table $tbl does not have a DSN" unless $row->[1];
+   my $completely_dead = 1;  # dead master is completely dead
+   my $new_master_ok   = 1;  # new master is alive and isn't a master yet
 
-   my $dsn = $dp->parse($row->[1]);
-   _log("Server '$server' DSN: " . $dp->as_string($dsn));
-   return get_cxn(dsn=>$dsn, %args);
-}
-
-sub sanity_checks {
-   my ( %args ) = @_;
-   my @required_args = qw(state_dbh state_tbl dead_master);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my ($state_dbh, $state_tbl) = @args{@required_args};
-
-   my $completely_dead = 1;
-   my $new_master_ok   = 1;
-
-   if ( $args{dead_master_dbh} ) {
-      _log("Sanity checking dead master");
-      if ( is_alive_as('master-master', $args{dead_master_dbh}) ) {
+   if ( $dead_master->{dbh} ) {
+      _log("Checking dead master");
+      if ( is_alive_as('master-master', $dead_master) ) {
          _log("Dead master appear to be alive as a master-master");
          $completely_dead = 0;
       }
@@ -2102,10 +2093,16 @@ sub sanity_checks {
       }
    }
 
-   _log("Sanity checking state of dead master reported by observers");
-   my $observed = get_server_state(server=>$args{dead_master}, %args);
+   _log("Checking state of dead master reported by observers");
+   my $observed = get_observed_server_state(
+      name  => $dead_master->{name},
+      state => $state,
+      %args
+   );
+
    print_observations($observed->{observations});
-   if ( $observed->{state}->{master} || $observed->{state}->{slave} ) {
+
+   if ( $observed->{master_alive} || $observed->{slave_alive} ) {
       _log("Dead master appears to be alive to some observers");
       $completely_dead = 0;
    }
@@ -2113,24 +2110,29 @@ sub sanity_checks {
       _log("Dead master appears to be dead to all observers");
    }
 
-   if ( $args{new_master_dbh} ) {
-      _log("Sanity checking new master");
-      if ( is_alive_as('master', $args{check_new_master}) ) {
-         _log("New master appears to be a master already");
-         $new_master_ok = 0;
-      }
+   if ( $new_master->{dbh} ) {
+      _log("Checking new master");
+      # TODO:
+      #if ( is_alive_as('master', $new_master) ) {
+      #   _log("New master appears to be a master already");
+      #   $new_master_ok = 0;
+      #}
+   }
+   else {
+      _log("No new master DBH");
+      $new_master_ok = 0;
    }
 
    return $completely_dead, $new_master_ok;
 }
 
 sub is_alive_as {
-   my ( $as, $dbh ) = @_;
-   return unless $dbh;
+   my ( $as, $server ) = @_;
    return unless $as;
+   return unless $server;
 
    if ( $as =~ m/master/ ) {
-      my $master_status = get_status('master', $dbh);
+      my $master_status = get_status('master', $server);
       if (    !$master_status
            || !$master_status->{file}
            || !$master_status->{position} )
@@ -2140,7 +2142,7 @@ sub is_alive_as {
    }
 
    if ( $as =~ m/slave|master-master/ ) {
-      my $slave_status  = get_status('slave', $dbh);
+      my $slave_status  = get_status('slave', $server);
       if (    !$slave_status
            || $slave_status->{slave_sql_running} =~ m/no/i
            || $slave_status->{slave_io_running}  =~ m/no/i )
@@ -2153,13 +2155,13 @@ sub is_alive_as {
 }
 
 sub get_status {
-   my ( $what, $dbh ) = @_;
+   my ( $what, $server ) = @_;
    return unless $what;
-   return unless $dbh;
+   return unless $server;
 
-   my $sql = "SHOW " . uc($what) . " STATUS";
-   MKDEBUG && _d($dbh, $sql);
-   my $status = $dbh->selectrow_hashref($sql);
+   my $sql = "SHOW " . uc($what) . " STATUS /* $server->{name} */";
+   _log($sql);
+   my $status = $server->{dbh}->selectrow_hashref($sql);
    if ( $status && %$status ) {
       # lowercase the keys
       $status = { map { lc($_) => $status->{$_} } keys %$status };
@@ -2169,35 +2171,40 @@ sub get_status {
    return;
 }
 
-sub get_server_state {
+sub get_observed_server_state {
    my ( %args ) = @_;
-   my @required_args = qw(server state_dbh state_tbl);
+   my @required_args = qw(name state);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($server, $dbh, $tbl) = @args{@required_args};
+   my ($name, $state) = @args{@required_args};
 
-   my $sql = "SELECT * FROM $tbl WHERE server='$server' AND observer=? "
+   # Prepare a sth for selecting the observed states for this server
+   # by each unique observer.
+   my $sql = "SELECT * FROM $state->{tbl} WHERE server='$name' AND observer=? "
            . ($args{where} ? "AND $args{where} " : "")
            . "ORDER BY ts DESC "
            . ($args{limit} ? "LIMIT $args{limit} " : "");
    _log($sql);
-   my $sth = $dbh->prepare($sql);
+   my $sth = $state->{dbh}->prepare($sql);
 
-   $sql = "SELECT DISTINCT observer FROM $tbl";
-   MKDEBUG && _d($dbh, $sql);
-   my $rows      = $dbh->selectall_arrayref($sql);
-   my @observers = map { $_->[0] } @$rows;
-
+   # Get the states observed for this server by each observer.
    my @observations;
    my $master_alive  = undef;
    my $slave_alive   = undef;
    my $connection_ok = undef;
-   foreach my $observer ( @observers ) {
+   foreach my $observer ( unique_observers($state) ) {
       $sth->execute($observer);
       while ( my $row = $sth->fetchrow_hashref() ) {
+         # Save the entire state info.
          push @observations, $row;
 
+         # Do a special logical AND (see _and() below) on the current value
+         # and the previous value.  Basically we want to know: was the value
+         # always true, always false, or sometimes both?  If, e.g., slave_alive
+         # was sometimes true and sometimes false, maybe the slave is ok
+         # or maybe it's not.  This depends on the optional limit arg above.
+         # If limit=1 then the last observed state is all we know.
          $master_alive = _and(
             ($row->{file} && $row->{position} ? 1 : 0),
             $master_alive
@@ -2217,18 +2224,47 @@ sub get_server_state {
    }
 
    return {
-      observations => \@observations,
-      state        => {
-         master     => $master_alive,
-         slave      => $slave_alive,
-         connection => $connection_ok,
-      },
+      observations  => \@observations,
+      master_alive  => $master_alive,
+      slave_alive   => $slave_alive,
+      connection_ok => $connection_ok,
    };
 }
 
+sub get_last_server_state {
+   my ( %args ) = @_;
+   my @required_args = qw(name state where);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($name, $state) = @args{@required_args};
+
+   my $sql = "SELECT * FROM $state->{tbl} WHERE server='$name' "
+           . "AND $args{where} "
+           . "ORDER BY ts DESC LIMIT " . ($args{limit} || 1);
+   _log($sql);
+   my $sth = $state->{dbh}->prepare($sql);
+   $sth->execute();
+
+   my @states;
+   while ( my $server_state = $sth->fetchrow_hashref() ) {
+      push @states, $server_state;
+   }
+
+   return \@states;
+}
+
+sub unique_observers {
+   my ( $state ) = @_;
+   my $sql = "SELECT DISTINCT observer FROM $state->{tbl}";
+   _log($sql);
+   my $rows = $state->{dbh}->selectall_arrayref($sql);
+   return  map { $_->[0] } @$rows;
+}
+
 sub print_observations {
-   my ( $observations ) = @_;
-   my $txt = "Observations:\n";
+   my ( $observations, $header ) = @_;
+   my $txt = $header ? $header : "Observations:\n";
    my $fmt = "# %21s: %s";
    foreach my $rec ( @$observations ) {
       my $hdr =  "# by $rec->{observer} at $rec->{ts} ";
@@ -2245,7 +2281,154 @@ sub print_observations {
 }
 
 sub failover {
-   _log("failover()");
+   my ( %args ) = @_;
+   my @required_args = qw(dead_master new_master servers state);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dead_master, $new_master, $servers, $state) = @args{@required_args};
+   my $dry_run = $args{dry_run};
+
+   _log("Beginning failover" . ($dry_run ? " (DRY RUN)" : ""));
+   my $sql;
+
+   _log("Removing IP from dead master");
+
+   $sql = "STOP SLAVE IO_THREAD /* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
+
+   # Wait until the slave sql thread has caught up to the io thread.
+   # The io thread should not be advancing because the dead master
+   # should be dead.
+   _log("Waiting for SQL thread to catch up to IO thread on "
+      . $new_master->{name});
+   my $slave_status = wait_for_sql_thread(%args);
+
+   my $dead_master_state = get_last_server_state(
+      name  => $dead_master->{name},
+      state => $state,
+      where => "position <= $slave_status->{exec_master_log_pos} "
+             . "AND file = '$slave_status->{relay_master_log_file}'",
+   );
+   if ( !$dead_master_state || @$dead_master_state == 0 ) {
+      # This shouldn't happen, unless maybe only one state was observed
+      # when the master was already dead.
+      die "Cannot determine dead master state near time of death";
+   }
+   print_observations($dead_master_state,
+         "Dead master state near time of death:\n");
+
+   replace_dead_master(
+      dead_master_state => $dead_master_state->[0],
+      %args
+   );
+
+   return;
+}
+
+sub wait_for_sql_thread {
+   my ( %args ) = @_;
+   my @required_args = qw(server);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($server) = @args{@required_args};
+   my ($name, $dbh) = ($server->{name}, $server->{dbh});
+   my $timeout      = $args{timeout} || 60;
+
+   # Use master log file and pos from slave status because
+   # dead master is supposed to be dead so whatever the slave
+   # is working on now should be all there is to do.
+   # TODO: handle failure
+   my $slave_status = get_status('slave', $server);
+   my $file         = $slave_status->{master_log_file};
+   my $pos_before   = $slave_status->{read_master_log_pos};
+
+   my $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout)";
+   _log($sql);
+
+   return $slave_status if $args{dry_run};
+
+   my $res = $dbh->selectrow_array($sql)->[0];
+   # TODO: handle failure better
+   if ( !defined $res ) {
+      die "MASTER_POS_WAIT returned NULL";
+   }
+   elsif ( $res == -1 ) {  # timeout exceeded
+      die "MASTER_POS_WAIT timeout exceeded";
+   }
+
+   # res (result of waiting) was 0 (didn't have to wait) or >0 (waited
+   # and reached pos) so slave sql pos should == io pos.
+   # TODO: how to handle this if it happens?
+   $slave_status = get_status('slave', $server);
+   my $pos_after = $slave_status->{read_master_log_pos};
+   if ( $pos_after > $pos_before ) {
+      _log("Read_Master_Log_Pos advanced on $server->{name} "
+         . "while doing MASTER_POS_WAIT");
+   }
+
+   return $slave_status;
+}
+
+sub replace_dead_master {
+   my ( %args ) = @_;
+   my @required_args = qw(dead_master dead_master_state new_master live_master);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dead_master, $dead_master_state, $new_master) = @args{@required_args};
+   my $dry_run = $args{dry_run};
+
+   my $sql = "STOP SLAVE /* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
+
+   # TODO: handle failure
+   my $new_master_status = get_status('master', $new_master);
+
+   $sql = "CHANGE MASTER TO "
+        . "MASTER_HOST='$dead_master_state->{master_host}', "
+        . "MASTER_PORT=$dead_master_state->{master_port}, "
+        . "MASTER_LOG_FILE='$dead_master_state->{relay_master_log_file}', "
+        . "MASTER_LOG_POS=$dead_master_state->{exec_master_log_pos} "
+        . "/* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
+
+   # Wait until the slave sql thread on the 2nd master (the one that
+   # the dead master used to be connected to) has caught up to the
+   # io thread.  The io thread should not be advancing because the
+   # dead master should be dead and all we did above was attach
+   # another slave (new master <- 2nd master).
+   _log("Waiting for SQL thread to catch up to IO thread on "
+      . $new_master->{name});
+   my $slave_status = wait_for_sql_thread(%args);
+   return;
+}
+
+sub get_cxn_from_servers {
+   my ( %args ) = @_;
+   my @required_args = qw(servers name DSNParser OptionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($servers, $name, $dp) = @args{@required_args};
+
+   my $sql = "SELECT server, dsn FROM $servers->{tbl} WHERE server='$name'";
+   _log($sql);
+   my $row = $servers->{dbh}->selectrow_arrayref($sql);
+   die "No server '$name' in table $servers->{tbl}"
+      unless $row;
+   die "Server '$name' in table $servers->{tbl} does not have a DSN"
+      unless $row->[1];
+
+   my $dsn = $dp->parse($row->[1]);
+   _log("Server '$name' DSN: " . $dp->as_string($dsn));
+   my $dbh = get_cxn(dsn=>$dsn, %args);
+
+   return $dbh, $dsn;
 }
 
 sub get_cxn {
@@ -2389,6 +2572,12 @@ runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
+=item --[no]check-masters
+
+default: yes
+
+Perform sanity checks on L<"--dead-master"> and L<"--new-master"> before failover.
+
 =item --config
 
 type: Array; group: Connection
@@ -2414,9 +2603,13 @@ short form: -F; type: string; group: Connection
 
 Only read mysql options from the given file.  You must give an absolute pathname.
 
+=item --dry-run
+
+Don't actually failover, just report what would be done.
+
 =item --force
 
-Force failover even if L<"--[no]sanity-checks"> fail.
+Force failover even if L<"--[no]check-masters"> fail.
 
 =item --help
 
@@ -2461,12 +2654,6 @@ exists, the program exits.
 short form: -P; type: int; group: Connection
 
 Port number to use for connection.
-
-=item --[no]sanity-checks
-
-default: yes
-
-Perform sanity checks on L<"--dead-master"> and L<"--new-master"> before failover.
 
 =item --servers
 
