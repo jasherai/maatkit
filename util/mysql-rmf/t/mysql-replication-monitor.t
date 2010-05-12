@@ -112,7 +112,7 @@ like(
 # not dropped and recreated.
 
 $master_dbh->do("insert into test.servers (server,dsn,mk_heartbeat_file) values ('master', '$dsn,P=12345', '/tmp/mk-heartbeat.master')");
-$master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, 0, 0, 1, 1, 1)");
+$master_dbh->do("insert into test.state values ('percoabot', 'master', NULL, 'binlog file', 1, 'master', 1, '', 1, '', 2, 0, 0, 1, 1, 1)");
 
 $retval = mysql_replication_monitor::main(@args,
    '--servers', "$dsn,P=12345,t=test.servers",

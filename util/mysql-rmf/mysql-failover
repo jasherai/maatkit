@@ -2483,7 +2483,7 @@ sub get_cxn_from_servers {
    my $sql = "SELECT server, dsn FROM $servers->{tbl} WHERE server='$name'";
    _log($sql);
    my $row = $servers->{dbh}->selectrow_arrayref($sql);
-   die "No server '$name' in table $servers->{tbl}"
+   die "Server '$name' does not exist in table $servers->{tbl}"
       unless $row;
    die "Server '$name' in table $servers->{tbl} does not have a DSN"
       unless $row->[1];

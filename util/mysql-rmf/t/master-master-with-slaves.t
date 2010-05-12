@@ -14,6 +14,11 @@ use Test::More;
 use MaatkitTest;
 require "$trunk/util/mysql-rmf/mysql-replication-monitor";
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 # This tests a topology like, S1 <- M1 <=> M2 -> S2, with IDEMPOTENT RBR.
 
 my $dp = new DSNParser(opts=>$dsn_opts);
@@ -61,6 +66,10 @@ my $check_logs_dir = '/tmp/checks/';
 my $dsn  = "h=127.1,u=msandbox,p=msandbox";
 my $args = "--check-logs all --check-logs-dir $check_logs_dir --observer perconabot --mk-heartbeat-dir /tmp";
 my $cmd  = "$trunk/util/mysql-rmf/mysql-replication-monitor $args";
+
+# Failover tool args and cmd for failing M1.
+my $fargs = "--servers F=/tmp/2901/my.sandbox.conf,t=repl.servers --state F=/tmp/2901/my.sandbox.conf,t=repl.state --dead-master 'server-2900' --new-master '2901' --live-master '2902'";
+my $fcmd  = "$trunk/util/mysql-rmf/mysql-failover $fargs";
 
 diag(`rm -rf $check_logs_dir >/dev/null 2>&1`);
 diag(`mkdir $check_logs_dir`);
@@ -177,6 +186,7 @@ $m1->do('truncate table repl.state');
 diag(`rm -rf /tmp/mrf.log`);
 diag(`rm -rf $check_logs_dir/*`);
 
+$m2->disconnect();
 diag(`/tmp/2901/stop >/dev/null`);
 
 $retval = system("$cmd --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once > /tmp/mrf.log");
@@ -201,6 +211,7 @@ is_deeply(
 
 diag(`rm -rf /tmp/mrf.log`);
 diag(`/tmp/2901/start >/dev/null`);
+$m2 = get_cxn(2901);
 
 # #############################################################################
 # Turn off slave2's io thread, see that this gets logged.
@@ -229,7 +240,7 @@ is_deeply(
    "Catches that slave IO thread started again"
 );
 
-# #############################################################################
+ #############################################################################
 # Done.
 # #############################################################################
 diag(`rm -rf /tmp/mrf.log`);
