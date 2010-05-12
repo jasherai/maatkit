@@ -1985,6 +1985,29 @@ sub main {
       _log("Cannot connect to --new-master $new_master->{name}: $EVAL_ERROR");
       return 1;
    }
+   
+   # #########################################################################
+   # Connect to --live-master.
+   # #########################################################################
+   my $live_master = {
+      name => $o->get('live-master'),
+      dsn  => undef,
+      dbh  => undef,
+   };
+   _log("Connecting to --live-master $live_master->{name}");
+   eval {
+      my ($dbh, $dsn) = get_cxn_from_servers(
+         servers => $servers,
+         name    => $live_master->{name},
+         %common_modules,
+      );
+      $live_master->{dbh} = $dbh;
+      $live_master->{dsn} = $dsn;
+   };
+   if ( $EVAL_ERROR ) {
+      _log("Cannot connect to --live-master $live_master->{name}: $EVAL_ERROR");
+      return 1;
+   }
 
    # #########################################################################
    # Try to connect to dead master.  If we can't, that's ok.  If we can,
@@ -2052,6 +2075,7 @@ sub main {
       failover(
          dead_master => $dead_master,
          new_master  => $new_master,
+         live_master => $live_master,
          servers     => $servers,
          state       => $state,
          dry_run     => $o->get('dry-run'),
@@ -2292,7 +2316,7 @@ sub failover {
    _log("Beginning failover" . ($dry_run ? " (DRY RUN)" : ""));
    my $sql;
 
-   _log("Removing IP from dead master");
+   # TODO: _log("Removing IP from dead master");
 
    $sql = "STOP SLAVE IO_THREAD /* $new_master->{name} */";
    _log($sql);
@@ -2301,9 +2325,7 @@ sub failover {
    # Wait until the slave sql thread has caught up to the io thread.
    # The io thread should not be advancing because the dead master
    # should be dead.
-   _log("Waiting for SQL thread to catch up to IO thread on "
-      . $new_master->{name});
-   my $slave_status = wait_for_sql_thread(%args);
+   my $slave_status = wait_for_sql_thread(%args, server => $new_master);
 
    my $dead_master_state = get_last_server_state(
       name  => $dead_master->{name},
@@ -2320,10 +2342,16 @@ sub failover {
          "Dead master state near time of death:\n");
 
    replace_dead_master(
+      %args,
       dead_master_state => $dead_master_state->[0],
-      %args
    );
 
+   $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
+
+   # TODO: _log("Adding IP from dead master to new master");
+   
    return;
 }
 
@@ -2334,8 +2362,10 @@ sub wait_for_sql_thread {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($server) = @args{@required_args};
-   my ($name, $dbh) = ($server->{name}, $server->{dbh});
-   my $timeout      = $args{timeout} || 60;
+   my $timeout  = $args{timeout} || 60;
+
+   _log("Waiting for slave SQL thread to catch up to IO thread on "
+      . $server->{name});
 
    # Use master log file and pos from slave status because
    # dead master is supposed to be dead so whatever the slave
@@ -2345,12 +2375,13 @@ sub wait_for_sql_thread {
    my $file         = $slave_status->{master_log_file};
    my $pos_before   = $slave_status->{read_master_log_pos};
 
-   my $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout)";
+   my $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout) "
+           . "/* $server->{name} */";
    _log($sql);
 
    return $slave_status if $args{dry_run};
 
-   my $res = $dbh->selectrow_array($sql)->[0];
+   my $res = $server->{dbh}->selectrow_arrayref($sql)->[0];
    # TODO: handle failure better
    if ( !defined $res ) {
       die "MASTER_POS_WAIT returned NULL";
@@ -2378,33 +2409,66 @@ sub replace_dead_master {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dead_master, $dead_master_state, $new_master) = @args{@required_args};
+   my ($dead_master, $dead_master_state, $new_master, $live_master)
+      = @args{@required_args};
    my $dry_run = $args{dry_run};
 
-   my $sql = "STOP SLAVE /* $new_master->{name} */";
-   _log($sql);
-   $new_master->{dbh}->do($sql) unless $dry_run;
-
-   # TODO: handle failure
    my $new_master_status = get_status('master', $new_master);
 
-   $sql = "CHANGE MASTER TO "
-        . "MASTER_HOST='$dead_master_state->{master_host}', "
-        . "MASTER_PORT=$dead_master_state->{master_port}, "
-        . "MASTER_LOG_FILE='$dead_master_state->{relay_master_log_file}', "
-        . "MASTER_LOG_POS=$dead_master_state->{exec_master_log_pos} "
-        . "/* $new_master->{name} */";
-   _log($sql);
-   $new_master->{dbh}->do($sql) unless $dry_run;
+   change_master_to(
+      %args,
+      server          => $new_master,
+      master_host     => $dead_master_state->{master_host},
+      master_port     => $dead_master_state->{master_port},
+      master_log_file => $dead_master_state->{relay_master_log_file},
+      master_log_pos  => $dead_master_state->{exec_master_log_pos},
+   );
 
    # Wait until the slave sql thread on the 2nd master (the one that
    # the dead master used to be connected to) has caught up to the
    # io thread.  The io thread should not be advancing because the
    # dead master should be dead and all we did above was attach
    # another slave (new master <- 2nd master).
-   _log("Waiting for SQL thread to catch up to IO thread on "
-      . $new_master->{name});
-   my $slave_status = wait_for_sql_thread(%args);
+   my $slave_status = wait_for_sql_thread(%args, server => $live_master);
+
+   change_master_to(
+      %args,
+      server          => $live_master,
+      master_host     => $new_master->{dsn}->{h},
+      master_port     => $new_master->{dsn}->{P},
+      master_log_file => $new_master_status->{file},
+      master_log_pos  => $new_master_status->{position},
+   ); 
+
+   return;
+}
+
+sub change_master_to {
+   my ( %args ) = @_;
+   my @required_args = qw(server master_host master_port master_log_file master_log_pos);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($server) = @args{@required_args};
+   my $dry_run  = $args{dry_run};
+
+   my $sql = "STOP SLAVE /* $server->{name} */";
+   _log($sql);
+   $server->{dbh}->do($sql) unless $dry_run;
+
+   $sql = "CHANGE MASTER TO "
+        . "MASTER_HOST='$args{master_host}', "
+        . "MASTER_PORT=$args{master_port}, "
+        . "MASTER_LOG_FILE='$args{master_log_file}', "
+        . "MASTER_LOG_POS=$args{master_log_pos} "
+        . "/* $server->{name} */";
+   _log($sql);
+   $server->{dbh}->do($sql) unless $dry_run;
+
+   $sql = "START SLAVE /* $server->{name} */";
+   _log($sql);
+   $server->{dbh}->do($sql) unless $dry_run;  
+
    return;
 }
 
@@ -2626,6 +2690,12 @@ Connect to host.
 type: int; default: 1
 
 Limit L<"--dead-master"> state history check to N most recent rows.
+
+=item --live-master
+
+type: string; group: Required
+
+The 2nd, live master in the master-master pair with L<"--dead-master"> (required).
 
 =item --new-master
 
