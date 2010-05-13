@@ -2811,6 +2811,9 @@ will be created, with the table name replace by the one given in the DSN:
   CREATE TABLE `servers` (
     `server`            VARCHAR(64) NOT NULL,
     `dsn`               VARCHAR(128) NOT NULL,
+    `virtual_ip`        VARCHAR(16) NOT NULL,
+    `interface`         VARCHAR(8) NOT NULL,
+    `ssh_user_host`     VARCHAR(128),
     `mk_heartbeat_file` VARCHAR(128),
     `comment`           VARCHAR(255),
     PRIMARY KEY (`server`)

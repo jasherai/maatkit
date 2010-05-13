@@ -80,10 +80,10 @@ $m1->do('create database repl');
 # Create the servers and state tables.
 `$cmd --create-servers-table --create-state-table --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once --quiet`;
 
-my $sql = "insert into repl.servers values ";
+my $sql = "insert into repl.servers (server,dsn,mk_heartbeat_file) values ";
 my @vals;
 foreach my $port ( qw(2900 2901 2902 2903) ) {
-   push @vals, "('server-$port', '$dsn,P=$port', 'heartbeat.$port', null)";
+   push @vals, "('server-$port', '$dsn,P=$port', 'heartbeat.$port')";
 }
 $sql .= join(',', @vals);
 $m1->do($sql);
@@ -99,14 +99,14 @@ foreach my $port ( qw(2900 2901 2902 2903) ) {
 sleep 2;
 
 # Check that we're up and running.
-$rows = $s2->selectall_arrayref('select * from repl.servers order by server');
+$rows = $s2->selectall_arrayref('select server,dsn,mk_heartbeat_file from repl.servers order by server');
 is_deeply(
    $rows,
    [
-      ['server-2900','h=127.1,u=msandbox,p=msandbox,P=2900','heartbeat.2900',undef],
-      ['server-2901','h=127.1,u=msandbox,p=msandbox,P=2901','heartbeat.2901',undef],
-      ['server-2902','h=127.1,u=msandbox,p=msandbox,P=2902','heartbeat.2902',undef],
-      ['server-2903','h=127.1,u=msandbox,p=msandbox,P=2903','heartbeat.2903',undef],
+      ['server-2900','h=127.1,u=msandbox,p=msandbox,P=2900','heartbeat.2900'],
+      ['server-2901','h=127.1,u=msandbox,p=msandbox,P=2901','heartbeat.2901'],
+      ['server-2902','h=127.1,u=msandbox,p=msandbox,P=2902','heartbeat.2902'],
+      ['server-2903','h=127.1,u=msandbox,p=msandbox,P=2903','heartbeat.2903'],
    ],
    "Populated servers table"
 );
