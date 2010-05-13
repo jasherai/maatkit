@@ -27,7 +27,6 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-use Transformers qw(secs_to_time ts);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -78,8 +77,8 @@ sub new {
          my ($fraction, $elapsed, $remaining, $eta) = @_;
          printf STDERR "$name: %3d%% %s remain\n",
             $fraction * 100,
-            secs_to_time($remaining),
-            ts($eta);
+            Transformers::secs_to_time($remaining),
+            Transformers::ts($eta);
       },
       %args,
    };
