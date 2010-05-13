@@ -2676,7 +2676,7 @@ re-execute the events between M1 pos 90 and 100.  Since M2 is currently at
 pos 400, S1 will have to catch up.  This also means that it won't miss any
 writes made on M2 after M1 died and, therefore, didn't get replicated to S1.
 
-While S1 is catchin up to M2, we wait for M2 to catch up to dead M1.  The
+While S1 is catching up to M2, we wait for M2 to catch up to dead M1.  The
 code does:
 
   SELECT MASTER_POS_WAIT('mysql-bin.000001', 120, 60) /* M2 */
