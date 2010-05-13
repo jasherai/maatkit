@@ -2683,7 +2683,7 @@ code does:
 
 Maybe M2 already caught up to M1 while we were waiting for S1 to catch up
 to M1.  In any case, we wait for M2 to execute everything it read from M1
-before it died before switching its master to S2.  Althought S1 is now slaved
+before it died before switching its master to S1.  Althought S1 is now slaved
 to and reading from M2, M2 is still only slaved to dead M1 so its C<read>
 should not advance and it can catch up to M1 while S1 catches up to it.
 
