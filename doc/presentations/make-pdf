@@ -13,7 +13,7 @@ while inotifywait -qq -e modify *.tex || true; do
    echo "`date` File modified";
    pdflatex "${1%%.*}" < /dev/null >/tmp/makepdf 2>&1;
    rm "${1%%.*}".{log,aux}
-   if grep -q 'Emergency stop' /tmp/makepdf; then
-      echo "Error."; grep -A1 '^!' /tmp/makepdf;
+   if grep -q 'Emergency stop\|no output PDF' /tmp/makepdf; then
+      echo "Error."; grep -A1 '^!\|pdfTeX error' /tmp/makepdf;
    fi
 done
