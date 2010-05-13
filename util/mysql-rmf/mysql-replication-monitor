@@ -1932,6 +1932,19 @@ sub main {
    );
    
    # ########################################################################
+   # Ask for the password before daemonizing, while we still have a terminal.
+   # ########################################################################
+   if ( $o->get('ask-pass') ) {
+      my $pass = OptionParser::prompt_noecho("Enter password: ");
+      foreach my $opt ( qw(servers state) ) {
+         my $dsn       = $o->get($opt);
+         next if $dsn->{p};
+         $dsn->{p}     = $pass;
+         $o->get($opt) = $dsn;
+      }
+   }
+
+   # ########################################################################
    # Create servers and state tables.  Terminate early if they can't be
    # created.
    # ########################################################################
@@ -1951,18 +1964,6 @@ sub main {
       }
    }
 
-   # ########################################################################
-   # Ask for the password before daemonizing, while we still have a terminal.
-   # XXX Don't we need to do this before creating the tables above?
-   # ########################################################################
-   if ( $o->get('ask-pass') ) {
-      my $pass = OptionParser::prompt_noecho("Enter password: ");
-      foreach my $opt ( qw(monitor update) ) {
-         my $dsn       = $o->get($opt);
-         $dsn->{p}     = $pass;
-         $o->get($opt) = $dsn;
-      }
-   }
 
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
@@ -2438,15 +2439,20 @@ sub get_real_lag {
    my $real_lag;
    _log("Getting real lag from mk-heartbeat file $heartbeat_file");
    if ( -f $heartbeat_file ) {
-      # XXX don't use shell command, use a proper open/close; this will fail if
-      # there are funny things in the filename
-      chomp($real_lag = `cat $heartbeat_file`);
-      if ( $real_lag ) {
-         _log("Real lag: $real_lag");
-         ($real_lag) = $real_lag =~ m/^\s*(\d+)/;
+      my $fh;
+      if ( open $fh, "<", $heartbeat_file ) {
+         $real_lag = <$fh>;
+         close $fh;
+         if ( $real_lag ) {
+            _log("Real lag: $real_lag");
+            ($real_lag) = $real_lag =~ m/^\s*(\d+)/;
+         }
+         else {
+            _log("mk-heartbeat file is empty");
+         }
       }
       else {
-         _log("mk-heartbeat file is empty");
+         _log("Cannot open $heartbeat_file: $OS_ERROR");
       }
    }
    else {

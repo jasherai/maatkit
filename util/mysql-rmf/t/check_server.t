@@ -77,7 +77,7 @@ my $state_dsn = {
 
 my %args = (
    server       => $server,
-   state_dsn   => $state_dsn,
+   state_dsn    => $state_dsn,
    observer     => 'daniel',
    OptionParser => $o,
    Quoter       => $q,
@@ -125,7 +125,7 @@ like(
 );
 
 # #############################################################################
-# Change --check-logs from default "failed" to "none" and test that
+# Change --check-logs from default "all" to "none" and test that
 # the check log is deleted.
 # #############################################################################
 diag(`rm $check_logs_dir/*`);
@@ -163,9 +163,10 @@ my $mstat = $master_dbh->selectrow_hashref('show master status');
 
 mysql_replication_monitor::check_server(%args);
 
+# --check-logs default is "all".
 ok(
-   !-f "$check_logs_dir/daniel.$PID",
-   "Deleted successful check log"
+   -f "$check_logs_dir/daniel.$PID",
+   "Kept successful check log"
 );
 
 $rows = $master_dbh->selectall_hashref('select * from test.state', 'server');
