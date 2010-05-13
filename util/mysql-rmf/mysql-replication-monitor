@@ -1953,6 +1953,7 @@ sub main {
 
    # ########################################################################
    # Ask for the password before daemonizing, while we still have a terminal.
+   # XXX Don't we need to do this before creating the tables above?
    # ########################################################################
    if ( $o->get('ask-pass') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
@@ -2437,6 +2438,8 @@ sub get_real_lag {
    my $real_lag;
    _log("Getting real lag from mk-heartbeat file $heartbeat_file");
    if ( -f $heartbeat_file ) {
+      # XXX don't use shell command, use a proper open/close; this will fail if
+      # there are funny things in the filename
       chomp($real_lag = `cat $heartbeat_file`);
       if ( $real_lag ) {
          _log("Real lag: $real_lag");
@@ -2726,7 +2729,7 @@ and the C<real_lag> column in the L<"--state"> table will not be null.
 
 =head1 EXIT STATUS
 
-The tool exists 0 if there were no errors, else it exits 1 if either the
+The tool exits 0 if there were no errors, else it exits 1 if either the
 parent or any child process ever had an error.
 
 =head1 OPTIONS
@@ -2751,7 +2754,7 @@ connecting to MySQL.
 
 =item --check-logs
 
-type: string; default: failed
+type: string; default: all
 
 Save logs from child processes that check the L<"--servers">.
 
@@ -2760,8 +2763,8 @@ These child processes do not share STDOUT/STDERR with the parent process
 so, instead, they log to separate files under L<"--check-logs-dir">.  These
 files are named "observer-name.PID" where observer-name is L<"--observer-name">
 and PID is the process ID of the child process that wrote the log.  The parent
-process reports the PID of every child process it forks so if there is a
-problem and check logs are saved the problem can be found in the corresponding
+process reports the PID of every child process it forks, so if there is a
+problem and check logs are saved, the problem can be found in the corresponding
 child process's check log.
 
 There are three possible values for this option:
@@ -2769,13 +2772,14 @@ There are three possible values for this option:
   VALUE   SAVES
   ======  ================================================
   failed  Only check logs from child processes that failed
-          or had an error
-  all     Every check log from both successeful and failed
+          or had an error; delete check logs from children
+          that do not fail
+  all     Every check log from both successful and failed
           child processes
   none    Do not save any check logs
 
-The default value, failed, causes check logs from successful child processes to
-be deleted automatically.
+With the default value of "all", you will need to set up something like
+logrotate to make sure the logs don't fill your hard disk over time.
 
 =item --check-logs-dir
 
