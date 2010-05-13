@@ -27,6 +27,7 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
+use Transformers qw(secs_to_time ts);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -49,7 +50,10 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # Optional arguments:
 #  start    The start time of the job; can also be set by calling start()
 #  fraction How complete the job is, as a number between 0 and 1.  Updated by
-#           calling update().
+#           calling update().  Normally don't specify this.
+#  name     If you want to use the default progress indicator, by default it
+#           just prints out "Progress: ..." but you can replace "Progress" with
+#           whatever you specify here.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg (qw(jobsize)) {
@@ -64,15 +68,18 @@ sub new {
       }
    }
 
-   my $start = time() || $args{start};
+   my $name  = $args{name} || "Progress";
+   $args{start} ||= time();
    my $self;
    $self = {
-      start         => $start,
-      last_reported => $start,
+      last_reported => $args{start},
       fraction      => 0,       # How complete the job is
       callback      => sub {
-         my ($fraction, $elapsed, $remaining, $eta) = $self->compute_stats();
-         printf STDERR "Progress: %3d%%\n", $fraction;
+         my ($fraction, $elapsed, $remaining, $eta) = @_;
+         printf STDERR "$name: %3d%% %s remain\n",
+            $fraction * 100,
+            secs_to_time($remaining),
+            ts($eta);
       },
       %args,
    };
@@ -93,7 +100,7 @@ sub set_callback {
 # is the default, or pass in a value.
 sub start {
    my ( $self, $start ) = @_;
-   $self->{start} = $start || time();
+   $self->{start} = $self->{last_reported} = $start || time();
 }
 
 # Provide a progress update.  Pass in a callback subroutine which this code can
@@ -112,9 +119,8 @@ sub update {
 
    # Determine whether to just quit and return...
    if ( $self->{report} eq 'time'
-         && $self->{interval} <= $now - $self->{last_reported}
+         && $self->{interval} > $now - $self->{last_reported}
    ) {
-      $self->{last_reported} = $now;
       return;
    }
    elsif ( $self->{report} eq 'iterations'
@@ -122,6 +128,7 @@ sub update {
    ) {
       return;
    }
+   $self->{last_reported} = $now;
 
    # Get the updated status of the job
    my $completed = $callback->();

@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 26;
 
 use Progress;
 use MaatkitTest;
@@ -25,6 +25,7 @@ $Data::Dumper::Quotekeys = 0;
 my $pr;
 my $how_much_done    = 0;
 my $callbacks_called = 0;
+my $completion_arr   = [];
 
 # #############################################################################
 # Checks that the command-line interface works OK
@@ -131,7 +132,7 @@ $pr = new Progress(
    interval => 10, # Every ten seconds
 );
 $pr->start(10); # Current time is 10 seconds.
-my $completion_arr = [];
+$completion_arr = [];
 $callbacks_called  = 0;
 $pr->set_callback(
    sub{
@@ -139,7 +140,6 @@ $pr->set_callback(
       $callbacks_called++;
    }
 );
-
 $pr->update(sub{return 60}, 35);
 is_deeply(
    $completion_arr,
@@ -147,6 +147,44 @@ is_deeply(
    'Got completion info for time-based stuff'
 );
 is($callbacks_called, 1, 'Callback called once');
+
+# #############################################################################
+# Test the default callback
+# #############################################################################
+
+my $buffer;
+eval {
+   local *STDERR;
+   open STDERR, '>', \$buffer or die $OS_ERROR;
+   $pr = new Progress(
+      jobsize  => 600,
+      report   => 'time',
+      interval => 10, # Every ten seconds
+   );
+   $pr->start(10); # Current time is 10 seconds.
+   $pr->update(sub{return 60}, 35);
+   is($buffer, "Progress:  10% 03:45 remain\n",
+      'Tested the default callback');
+};
+is ($EVAL_ERROR, '', "No error in default callback");
+
+$buffer = '';
+eval {
+   local *STDERR;
+   open STDERR, '>', \$buffer or die $OS_ERROR;
+   $pr = new Progress(
+      jobsize  => 600,
+      report   => 'time',
+      interval => 10, # Every ten seconds
+      name     => 'custom name',
+      start    => 10, # Current time is 10 seconds, alternate interface
+   );
+   is($pr->{start}, 10, 'Custom start time param works');
+   $pr->update(sub{return 60}, 35);
+   is($buffer, "custom name:  10% 03:45 remain\n",
+      'Tested the default callback with custom name');
+};
+is ($EVAL_ERROR, '', "No error in default callback with custom name");
 
 # #############################################################################
 # Done.
