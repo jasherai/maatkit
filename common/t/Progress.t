@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 21;
 
 use Progress;
 use MaatkitTest;
@@ -25,6 +25,18 @@ $Data::Dumper::Quotekeys = 0;
 my $pr;
 my $how_much_done    = 0;
 my $callbacks_called = 0;
+
+# #############################################################################
+# Checks that the command-line interface works OK
+# #############################################################################
+
+$pr = new Progress (
+   jobsize => 100,
+   spec    => [qw(percentage 15)],
+);
+is ($pr->{jobsize}, 100, 'jobsize is 100');
+is ($pr->{report}, 'percentage', 'report is percentage');
+is ($pr->{interval}, 15, 'interval is 15');
 
 # #############################################################################
 # Simple percentage-based completion.

@@ -41,15 +41,29 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #           reporting progress: report each X%, each X seconds, or each X
 #           iterations.
 #
+# The 'report' and 'interval' can also be omitted, as long the following option
+# is passed:
+#  spec     An arrayref of [report,interval].  This is convenient to use from a
+#           --progress command-line option that is an array.
+#
 # Optional arguments:
 #  start    The start time of the job; can also be set by calling start()
 #  fraction How complete the job is, as a number between 0 and 1.  Updated by
 #           calling update().
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg (qw(jobsize report interval)) {
+   foreach my $arg (qw(jobsize)) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   if ( (!$args{report} || !$args{interval}) ) {
+      if ( $args{spec} && @{$args{spec}} == 2 ) {
+         @args{qw(report interval)} = @{$args{spec}};
+      }
+      else {
+         die "I need either report and interval arguments, or a spec";
+      }
+   }
+
    my $start = time() || $args{start};
    my $self;
    $self = {
