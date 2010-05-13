@@ -1867,8 +1867,10 @@ sub main {
                    . '--dead-master SERVER --new-master SERVER '
                    . '--live-master SERVER',
       description => 'replaces --dead-master with --new-master, connected to '
-                   . '--live-master as a master-master, row-based, idempotent '
-                   . 'replication pair.'
+                   . '--live-master as a master-master pair.  The --servers '
+                   . 'and --state tables provide information for effectuating '
+                   . 'the failover at the correct binary log positions.  All '
+                   . 'servers must use row-based idempotent mode replication.'
 
    );
    $o->get_specs();
@@ -2575,46 +2577,120 @@ mysql-failover - Failover a slave to replace a dead master.
 
 =head1 SYNOPSIS
 
+Replace dead master1 with slave1 connected to master2 as master-master pair:
+
    mysql-failover                             \
       --servers     h=localhost,t=rmf.servers \
       --state       h=master2,t=rmf.state     \
-      --dead-master master1
-      --new-master  slave1
+      --dead-master master1                   \
+      --new-master  slave1                    \
+      --live-master master2
 
 =head1 DESCRIPTION
 
+mysql-failover is a tool for automating the failover/replacement of
+a dead master with its slave in a specific replication topology:
+
+  slave1 <- master1 <=> master2 -> slave2
+
+B<All servers are using row-based idempotent mode replication>.  Master1 and
+master2 are a master-master pair.  Each master has one slave which takes the
+place of its master if the master fails.  More than one slave per master
+is not currently supported.
+
+Row-based idempotent mode replication allows the failover to work without
+breaking replication because it is very likely that either the slave or the
+still live master will re-execute some statements when they are connected.
+This happens because the two servers are started at positions near (usually
+a little before) the time of death of the dead master.  The dead master's
+time of death is determined by the L<"--state"> table.  For example, if a
+master dies at 03:00 and state checks are logged at 02:55 and 03:05, the
+reported time of death is 03:05 and state information from (probably) 02:55
+is used to connect its slave and the live master.  Therefore, the slave
+and other master will probably re-execute statements written between
+02:55 and 03:05.
+
+The failover process works as follows, given this timeline of events where
+C<pos> is the server's own binary log postition (C<Position> from C<SHOW
+MASTER STATUS>), C<read> is C<Read_Master_Log_Pos> and C<exec> is
+C<Exec_Master_Log_Pos>, both from C<SHOW SLAVE STATUS>:
+
   TIME  SLAVE 1  <- MASTER 1 <=> MASTER 2  EVENT
   ===== ========    ========     ========  =============================
-  00:00 pos  500    pos  100     pos  300  Master 1 dies.  Master 2 and
-        read 100    read 200     read 100  Slave 1 have read but not
-        exec  50    exec 150     exec  50  executed to last M1 pos 100.
+  23:55 pos  480    pos   90     pos  290  State check: all is well.
+        read  90    read 190     read  80  M1 is lagging behind M2.
+        exec  80    exec 140     exec  30
 
-  00:05 pos  510    pos  100     pos  320  Master 2 and slave 1 are
-        read 100    read 200     read 100  catching up to last M1 pos.
-        exec  60    exec 150     exec  70
+  00:00 pos  500   (pos  120)    pos  300  M1 dies, this state not seen.
+        read 100   (read 220)    read 100  M2 and S1 have read to M1
+        exec  50   (exec 180)    exec  50  pos 100.  Reading stops at
+                                           this pos because M1 is dead.
 
-  00:10 pos  530    pos  100     pos  350  Master 2 has caught up to
-        read 100    read 200     read 100  last M1 pos but slave 1 has
-        exec  80    exec 150     exec 100  not caught up yet.
+  00:05 pos  510   (pos  120)    pos  320  State check: M1 is dead.
+        read 100   (read 220)    read 120  Begin failover. Wait for S1
+        exec  60   (exec 180)    exec  70  to catch up to dead M1.
 
-  00:15 pos  550    pos  100     pos  400  Slave 1 and master 2 are
-        read 100    read 200     read 100  caught up to last M1 pos.
-        exec 100    exec 150     exec 100  Master 2 has advanced.
+  00:10 pos  550   (pos  120)    pos  400  S1 is caught up to dead M1.
+        read 100   (read 220)    read 120  Save S1 pos 550.  Get 
+        exec 100   (exec 180)    exec  90  L<"--state"> of M1 when its
+                                           pos was <= 100, result:
+                                                         position: 90
+                                              exec_master_log_pos: 140
+                                           Change S1 master to M2 pos
+                                           pos 140.  Wait for M2 to
+                                           catch up to dead M1.
 
-  00:20 pos  550    pos  100     pos  470  Master 2 continues.  Slave 1
-        read 100    read 200     read 100  is stalled becaused master 1
-        exec 100    exec 150     exec 100  is dead.
+  00:15 pos  600   (pos  120)    pos  470  M2 is caught up to dead M1.
+        read 470   (read 220)    read 120  Change M2 master to S1
+        exec 400   (exec 180)    exec 120  starting at saved S1 pos 550.
 
   TIME  SLAVE 1  <=           => MASTER 2  EVENT
   ===== ========    ========     ========  =============================
-  00:25 pos  550    pos  100     pos  490  Start slave 1 at master 2 pos
-        read ---    read 200     read ---  150, start master 2 at slave
-        exec ---    exec 150     exec ---  1 pos 550.
-        MPOS 150                 MPOS 550
+  00:20 pos  600                 pos  490  S1 and M2 are connected and
+        read 490                 read 600  synced.
+        exec 490                 exec 600
 
-  00:35 pos  650    pos  100     pos  530  After time servers catch up
-        read 530    read 200     read 650  to one another.
-        exec 530    exec 150     exec 650
+At 23:55 all is well and the positions shown are saved in the L<"--state">
+table.  At 00:00 master 1 (M1) dies.  This happens between checks, so although
+M1 dies at positions (pos) 120/220/180, the last pos seen are 100 on S1 and
+120 on M2.  C<read> should not advance on either server since M1 is dead.
+
+When the death of M1 is detected at 00:05 the failover begins by waiting
+until its slave, S1, has executed everything it read from the master before
+it died.  The tool does:
+
+  SELECT MASTER_POS_WAIT('mysql-bin.000001', 100, 60) /* S1 */
+
+This completes at 00:10 and we save S1 pos 550.  Since S1 has nothing else to
+do, this pos will be the point at which M2 starts later.
+
+The L<"--state"> table is searched for the last recorded state when M1 was
+alive and at pos <= 100.  This results in the state recorded at 23:55 when
+M1 was at pos 90 in its own binary log and had executed to pos 140 on M2.
+This is, of course, slightly older and behind than when S1 thinks M1 died
+(at pos 100), but it's as close as we can get.
+
+S1 master is changed to M2 starting at pos 90, the last pos M1 had executed
+to according to the state record just retrieved.  This means that S1 will
+re-execute the events between M1 pos 90 and 100.  Since M2 is currently at
+pos 400, S1 will have to catch up.  This also means that it won't miss any
+writes made on M2 after M1 died and, therefore, didn't get replicated to S1.
+
+While S1 is catchin up to M2, we wait for M2 to catch up to dead M1.  The
+code does:
+
+  SELECT MASTER_POS_WAIT('mysql-bin.000001', 120, 60) /* M2 */
+
+Maybe M2 already caught up to M1 while we were waiting for S1 to catch up
+to M1.  In any case, we wait for M2 to execute everything it read from M1
+before it died before switching its master to S2.  Althought S1 is now slaved
+to and reading from M2, M2 is still only slaved to dead M1 so its C<read>
+should not advance and it can catch up to M1 while S1 catches up to it.
+
+At 00:15 M2 catches up to M1 so its master is changed to S1 starting at
+the S1 pos saved earlier: 550.
+
+Now S1 and M2 are master-master and should synchronize after some time.
 
 =head1 OPTIONS
 
