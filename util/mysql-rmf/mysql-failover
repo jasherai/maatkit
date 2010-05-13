@@ -2670,7 +2670,7 @@ M1 was at pos 90 in its own binary log and had executed to pos 140 on M2.
 This is, of course, slightly older and behind than when S1 thinks M1 died
 (at pos 100), but it's as close as we can get.
 
-S1 master is changed to M2 starting at pos 90, the last pos M1 had executed
+S1 master is changed to M2 starting at pos 140, the last pos M1 had executed
 to according to the state record just retrieved.  This means that S1 will
 re-execute the events between M1 pos 90 and 100.  Since M2 is currently at
 pos 400, S1 will have to catch up.  This also means that it won't miss any
