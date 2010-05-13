@@ -1868,9 +1868,8 @@ sub main {
                    . '--live-master SERVER',
       description => 'replaces --dead-master with --new-master, connected to '
                    . '--live-master as a master-master pair.  The --servers '
-                   . 'and --state tables provide information for effectuating '
-                   . 'the failover at the correct binary log positions.  All '
-                   . 'servers must use row-based idempotent mode replication.'
+                   . 'and --state tables store the positions for failover.  '
+                   . 'Servers must use row-based idempotent mode replication.'
 
    );
    $o->get_specs();
@@ -2047,6 +2046,7 @@ sub main {
    my $completely_dead = 1;  # dead master is completely dead
    my $new_master_ok   = 1;  # new master is alive and isn't a master yet
    if ( $o->get('check-masters') ) {
+      # XXX It is confusing to lump these two things into one function call.
       ($completely_dead, $new_master_ok) = check_masters(
          dead_master => $dead_master,
          new_master  => $new_master,
@@ -2172,6 +2172,9 @@ sub is_alive_as {
       if (    !$slave_status
            || $slave_status->{slave_sql_running} =~ m/no/i
            || $slave_status->{slave_io_running}  =~ m/no/i )
+         # XXX I think the above can be NULL.  I think all of this alive-ness
+         # checking needs to be wrapped in eval, else any number of things can
+         # make it fail.
       {
          return 0;
       }
@@ -2431,6 +2434,10 @@ sub replace_dead_master {
    # io thread.  The io thread should not be advancing because the
    # dead master should be dead and all we did above was attach
    # another slave (new master <- 2nd master).
+   # XXX: did we ever do STOP SLAVE IO_THREAD on this server?  We should do that
+   # so that we don't have to guess the io thread isn't advancing.  (Are there
+   # other cases where we assume no more progress, but haven't stopped the
+   # thread?)
    my $slave_status = wait_for_sql_thread(%args, server => $live_master);
 
    change_master_to(
@@ -2611,7 +2618,7 @@ and other master will probably re-execute statements written between
 02:55 and 03:05.
 
 The failover process works as follows, given this timeline of events where
-C<pos> is the server's own binary log postition (C<Position> from C<SHOW
+C<pos> is the server's own binary log position (C<Position> from C<SHOW
 MASTER STATUS>), C<read> is C<Read_Master_Log_Pos> and C<exec> is
 C<Exec_Master_Log_Pos>, both from C<SHOW SLAVE STATUS>:
 
@@ -2626,23 +2633,22 @@ C<Exec_Master_Log_Pos>, both from C<SHOW SLAVE STATUS>:
         exec  50   (exec 180)    exec  50  pos 100.  Reading stops at
                                            this pos because M1 is dead.
 
-  00:05 pos  510   (pos  120)    pos  320  State check: M1 is dead.
-        read 100   (read 220)    read 120  Begin failover. Wait for S1
-        exec  60   (exec 180)    exec  70  to catch up to dead M1.
+  00:05 pos  510   (--------)    pos  320  State check: M1 is dead.
+        read 100   (--------)    read 100  Begin failover. Wait for S1
+        exec  60   (--------)    exec  70  to exec to last M1 pos it saw.
 
-  00:10 pos  550   (pos  120)    pos  400  S1 is caught up to dead M1.
-        read 100   (read 220)    read 120  Save S1 pos 550.  Get 
-        exec 100   (exec 180)    exec  90  L<"--state"> of M1 when its
-                                           pos was <= 100, result:
-                                                         position: 90
-                                              exec_master_log_pos: 140
-                                           Change S1 master to M2 pos
-                                           pos 140.  Wait for M2 to
-                                           catch up to dead M1.
+  00:10 pos  550   (--------)    pos  400  S1 is "caught up to" dead M1.
+        read 100   (--------)    read 100  Save S1 pos 550.  Get 
+        exec 100   (--------)    exec  90  state of M1 when its pos
+                                           was <= 100, result:
+                                           pos=90, exec=140.  Change S1
+                                           master to M2 pos pos 140.
+                                           Wait for M2 to catch up to
+                                           last pos it saw on dead M1.
 
-  00:15 pos  600   (pos  120)    pos  470  M2 is caught up to dead M1.
-        read 470   (read 220)    read 120  Change M2 master to S1
-        exec 400   (exec 180)    exec 120  starting at saved S1 pos 550.
+  00:15 pos  600   (--------)    pos  470  M2 is "caught up to" dead M1.
+        read 470   (--------)    read 100  Change M2 master to S1
+        exec 400   (--------)    exec 100  starting at saved S1 pos 550.
 
   TIME  SLAVE 1  <=           => MASTER 2  EVENT
   ===== ========    ========     ========  =============================
@@ -2653,7 +2659,7 @@ C<Exec_Master_Log_Pos>, both from C<SHOW SLAVE STATUS>:
 At 23:55 all is well and the positions shown are saved in the L<"--state">
 table.  At 00:00 master 1 (M1) dies.  This happens between checks, so although
 M1 dies at positions (pos) 120/220/180, the last pos seen are 100 on S1 and
-120 on M2.  C<read> should not advance on either server since M1 is dead.
+M2.  C<read> should not advance on either server since M1 is dead.
 
 When the death of M1 is detected at 00:05 the failover begins by waiting
 until its slave, S1, has executed everything it read from the master before
@@ -2679,11 +2685,11 @@ writes made on M2 after M1 died and, therefore, didn't get replicated to S1.
 While S1 is catching up to M2, we wait for M2 to catch up to dead M1.  The
 code does:
 
-  SELECT MASTER_POS_WAIT('mysql-bin.000001', 120, 60) /* M2 */
+  SELECT MASTER_POS_WAIT('mysql-bin.000001', 100, 60) /* M2 */
 
 Maybe M2 already caught up to M1 while we were waiting for S1 to catch up
 to M1.  In any case, we wait for M2 to execute everything it read from M1
-before it died before switching its master to S1.  Althought S1 is now slaved
+before it died before switching its master to S1.  Although S1 is now slaved
 to and reading from M2, M2 is still only slaved to dead M1 so its C<read>
 should not advance and it can catch up to M1 while S1 catches up to it.
 
