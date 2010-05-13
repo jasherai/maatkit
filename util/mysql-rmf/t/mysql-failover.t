@@ -62,7 +62,7 @@ if ( !($m1 && $m2 && $s1 && $s2) ) {
    plan skip_all => 'Cannot connect to all sandbox servers';
 }
 else {
-   plan tests => 32;
+   plan tests => 34;
 }
 
 my $output;
@@ -86,21 +86,22 @@ $m1->do('drop database if exists new_db');
 
 # Create the servers and state tables.
 `$cmd --create-servers-table --create-state-table --servers $dsn,P=2900,t=repl.servers --state $dsn,P=2900,t=repl.state --run-once --quiet`;
-my $sql = "insert into repl.servers values ";
+my $sql = "insert into repl.servers (server,dsn,virtual_ip,interface,ssh_user_host,mk_heartbeat_file) values ";
 my @vals;
 foreach my $port ( qw(2900 2901 2902 2903) ) {
-   push @vals, "('server-$port', '$dsn,P=$port', 'heartbeat.$port', null)";
+   my $vip = $port - 2900;
+   push @vals, "('server-$port', '$dsn,P=$port', '10.0.0.$vip', 'eth0', 'ssh\@10.1.1.$vip', 'heartbeat.$port')";
 }
 $sql .= join(',', @vals);
 $m1->do($sql);
-$rows = $m1->selectall_arrayref('select * from repl.servers order by server');
+$rows = $m1->selectall_arrayref('select server,dsn,virtual_ip,ssh_user_host,interface,mk_heartbeat_file from repl.servers order by server');
 is_deeply(
    $rows,
    [
-['server-2900','h=127.1,u=msandbox,p=msandbox,P=2900','heartbeat.2900',undef],
-['server-2901','h=127.1,u=msandbox,p=msandbox,P=2901','heartbeat.2901',undef],
-['server-2902','h=127.1,u=msandbox,p=msandbox,P=2902','heartbeat.2902',undef],
-['server-2903','h=127.1,u=msandbox,p=msandbox,P=2903','heartbeat.2903',undef],
+      ['server-2900','h=127.1,u=msandbox,p=msandbox,P=2900','10.0.0.0','ssh@10.1.1.0','eth0','heartbeat.2900'],
+      ['server-2901','h=127.1,u=msandbox,p=msandbox,P=2901','10.0.0.1','ssh@10.1.1.1','eth0','heartbeat.2901'],
+      ['server-2902','h=127.1,u=msandbox,p=msandbox,P=2902','10.0.0.2','ssh@10.1.1.2','eth0','heartbeat.2902'],
+      ['server-2903','h=127.1,u=msandbox,p=msandbox,P=2903','10.0.0.3','ssh@10.1.1.3','eth0','heartbeat.2903'],
    ],
    "Populated servers table"
 );
@@ -313,6 +314,8 @@ is_deeply(
 # table confirms that.
 # #############################################################################
 $output = `$fcmd --dry-run`;
+# print $output;
+
 like(
    $output,
    qr/Failover procedure complete/,
@@ -343,10 +346,22 @@ like(
    "CHANGE M2 MASTER TO S1"
 );
 
+like(
+   $output,
+   qr{ssh ssh\@10.1.1.0 '/sbin/ip addr del 10.0.0.0/32 dev eth0'},
+   "Remove virtual IP from dead master"
+);
+
+like(
+   $output,
+   qr{ssh ssh\@10.1.1.2 '/sbin/ip addr add 10.0.0.0/32 dev eth0'},
+   "Add virtual IP to new master"
+);
+
 # #############################################################################
 # Do the real failover.
 # #############################################################################
-$output = `$fcmd`;
+$output = `$fcmd --no-move-virtual-ip`;
 # print $output;
 
 # #############################################################################

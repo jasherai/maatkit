@@ -1831,6 +1831,173 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# This is a modified copy of MMM::Agent::Helpers::Network from MMM v2.2.1.
+# http://mysql-mmm.org/
+# ###########################################################################
+package virtual_ip;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(OSNAME);
+
+use Net::ARP;
+use Time::HiRes qw(usleep);
+
+sub check_ip {
+   my ( %args ) = @_;
+   my ($if, $ip, $ssh) = @args{qw(interface virtual_ip ssh)};
+
+   my $cmd;
+   if ($OSNAME eq 'linux') {
+      $cmd = "/sbin/ip addr show dev $if";
+   }
+   elsif ($OSNAME eq 'solaris') {
+      $cmd = "/usr/sbin/ifconfig -a | grep inet";
+   }
+   elsif ($OSNAME eq 'freebsd') {
+      $cmd = "/sbin/ifconfig $if | grep inet";
+   }
+   else {
+      die "ERROR: Unsupported platform!";
+   }
+
+   $cmd = "$ssh '$cmd'" if $ssh;
+   mysql_failover::_log($cmd);
+   return if $args{dry_run};
+
+   my $output = `$cmd`;
+   if ( $? >> 8 == 255 ) {
+      die "Could not check if ip $ip is configured on $if: $output";
+   };
+
+   return ($output =~ /\D+$ip\D+/) ? 1 : 0;
+}
+
+
+sub add_ip {
+   my ( %args ) = @_;
+   my ($if, $ip, $ssh) = @args{qw(interface virtual_ip ssh)};
+
+   my $cmd;
+   if ($OSNAME eq 'linux') {
+      $cmd = "/sbin/ip addr add $ip/32 dev $if";
+   }
+   elsif ($OSNAME eq 'solaris') {
+      $cmd = "/usr/sbin/ifconfig $if addif $ip";
+   }
+   elsif ($OSNAME eq 'freebsd') {
+      $cmd = "/sbin/ifconfig $if inet $ip netmask 255.255.255.255 alias";
+   }
+   else {
+      die "ERROR: Unsupported platform!";
+   }
+
+   $cmd = "$ssh '$cmd'" if $ssh;
+   mysql_failover::_log($cmd);
+   return if $args{dry_run};
+
+   my $output = `$cmd`;
+   if ( $? >> 8 == 255 ) {
+      die "Could not configure ip $ip on interface $if: $output";
+   }
+
+   if ( $OSNAME eq 'solaris' ) {
+		my $logical_if = _solaris_find_logical_if($ip);
+		if ( !$logical_if ) {
+			die "ERROR: Can't find logical interface with IP = $ip";
+		}
+		$cmd    = "/usr/sbin/ifconfig $logical_if up";
+      $output = $ssh ? `$ssh '$cmd'` : `$cmd`;
+      if ( $? >> 8 == 255 ) {
+   		die "Could not activate logical interface $logical_if with ip $ip "
+            . "on interface: $output";
+      }
+   }
+
+   return check_ip(interface=>$if, ip=>$ip);
+}
+
+sub remove_ip {
+   my ( %args ) = @_;
+   my ($if, $ip, $ssh) = @args{qw(interface virtual_ip ssh)};
+
+   my $cmd;
+   if ($OSNAME eq 'linux') {
+      $cmd = "/sbin/ip addr del $ip/32 dev $if";
+   }
+   elsif ($OSNAME eq 'solaris') {
+      $cmd = "/usr/sbin/ifconfig $if removeif $ip";
+   }
+   elsif ($OSNAME eq 'freebsd') {
+      $cmd = "/sbin/ifconfig $if inet $ip -alias";
+   }
+   else {
+      die "ERROR: Unsupportd platform!";
+   }
+
+   $cmd = "$ssh '$cmd'" if $ssh;
+   mysql_failover::_log($cmd);
+   return if $args{dry_run};
+
+   my $output = `$cmd`;
+   if ( $? >> 8 == 255 ) {
+      die "Could not remove ip $ip from interface $if: $output";
+   }
+
+   return;
+}
+
+sub send_arp {
+   my ( %args ) = @_;
+   my ($if, $ip, $ssh) = @args{qw(interface virtual_ip ssh)};
+
+   if ($OSNAME eq 'linux' || $OSNAME eq 'freebsd') {
+      my $mac = '';
+      if ($Net::ARP::VERSION < 1.0) {
+         Net::ARP::get_mac($if, $mac);
+      }
+      else {
+         $mac = Net::ARP::get_mac($if);
+      }
+      die "ERROR: Couldn't get mac adress of interface $if" unless ($mac);
+
+      for (my $i = 0; $i < 5; $i++) {
+         Net::ARP::send_packet($if, $ip, $ip, $mac, 'ff:ff:ff:ff:ff:ff', 'request');
+         usleep(50);
+         Net::ARP::send_packet($if, $ip, $ip, $mac, 'ff:ff:ff:ff:ff:ff', 'reply');
+         usleep(50) if ($i < 4);
+      }
+   }
+   elsif ($OSNAME eq 'solaris') {
+      # Get params for send_arp
+      my $ipaddr = `/usr/sbin/ifconfig $if`;
+
+      # Get broadcast address and netmask
+      $ipaddr =~ /netmask\s*([0-9a-f]+)\s*broadcast\s*([\d\.]+)/i;
+      my $if_bcast = $1;
+      my $if_mask = $2;
+      `/bin/send_arp -i 100 -r 5 -p /tmp/send_arp $if $ip auto $if_bcast $if_mask`;
+	}
+	else {
+		die "ERROR: Unsupported platform!";
+	}
+
+   return;
+}
+
+sub _solaris_find_logical_if($) {
+   my $ip = shift;
+   my $ifconfig = `/usr/sbin/ifconfig -a`;
+   $ifconfig =~ s/\n/ /g;
+   while ($ifconfig =~ s/([a-z0-9\:]+)(\:\s+.*?)inet\s*([0-9\.]+)//) {
+      return $1 if ($3 eq $ip);
+   }
+   return;
+}
+
+1;
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1843,6 +2010,11 @@ package mysql_failover;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -1965,79 +2137,52 @@ sub main {
    }
 
    # #########################################################################
-   # Connect to --new-master.
+   # Get --new-master cxn and info.
    # #########################################################################
-   my $new_master = {
-      name => $o->get('new-master'),
-      dsn  => undef,
-      dbh  => undef,
-   };
-   _log("Connecting to --new-master $new_master->{name}");
+   my $new_master;
    eval {
-      my ($dbh, $dsn) = get_cxn_from_servers(
+      $new_master = get_server_cxn(
+         name    => $o->get('new-master'),
          servers => $servers,
-         name    => $new_master->{name},
          %common_modules,
       );
-      $new_master->{dbh} = $dbh;
-      $new_master->{dsn} = $dsn;
    };
    if ( $EVAL_ERROR ) {
-      _log("Cannot connect to --new-master $new_master->{name}: $EVAL_ERROR");
-      return 1;
-   }
-   
-   # #########################################################################
-   # Connect to --live-master.
-   # #########################################################################
-   my $live_master = {
-      name => $o->get('live-master'),
-      dsn  => undef,
-      dbh  => undef,
-   };
-   _log("Connecting to --live-master $live_master->{name}");
-   eval {
-      my ($dbh, $dsn) = get_cxn_from_servers(
-         servers => $servers,
-         name    => $live_master->{name},
-         %common_modules,
-      );
-      $live_master->{dbh} = $dbh;
-      $live_master->{dsn} = $dsn;
-   };
-   if ( $EVAL_ERROR ) {
-      _log("Cannot connect to --live-master $live_master->{name}: $EVAL_ERROR");
+      _log("Cannot connect to --new-master: $EVAL_ERROR");
       return 1;
    }
 
    # #########################################################################
-   # Try to connect to dead master.  If we can't, that's ok.  If we can,
+   # Get --live-master cxn and info.
+   # #########################################################################
+   my $live_master;
+   eval {
+      $live_master = get_server_cxn(
+         name    => $o->get('live-master'),
+         servers => $servers,
+         %common_modules,
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      _log("Cannot connect to --live-master: $EVAL_ERROR");
+      return 1;
+   }
+
+   # #########################################################################
+   # Get dead master cxn and info.  If cxn fails, that's ok.  If it connects,
    # we'll use the dbh in the sanity checks performed next.
    # #########################################################################
-   my $dead_master = {
-      name => $o->get('dead-master'),
-      dsn  => undef,
-      dbh  => undef,
+   my $dead_master;
+   eval {
+      $dead_master = get_server_cxn(
+         name               => $o->get('dead-master'),
+         servers            => $servers,
+         ignore_cxn_failure => 1,
+         %common_modules,
+      );
    };
-   if ( $o->get('connect-to-dead-master') ) {
-      _log("Attempting connection to --dead-master " . $o->get('dead-master'));
-      eval {
-         my ($dbh, $dsn) = get_cxn_from_servers(
-            servers => $servers,
-            name    => $dead_master->{name},
-            %common_modules,
-         );
-         $dead_master->{dbh} = $dbh;
-         $dead_master->{dsn} = $dsn;
-      };
-      if ( $EVAL_ERROR ) {
-         chomp $EVAL_ERROR;
-         MKDEBUG && _d($EVAL_ERROR);
-         _log("Connection failed as expected: $EVAL_ERROR");
-      }
-      else {
-         _log("Connection successful; will sanity check dead master");
-      }
+   if ( $EVAL_ERROR ) {
+      _log("Connection to --dead-master failed as expected: $EVAL_ERROR");
    }
 
    # #########################################################################
@@ -2073,8 +2218,24 @@ sub main {
       _log("Forcing failover");
    }
 
+   my $exit_status = 0;
+
+   if ( $o->get('move-virtual-ip') ) {
+      _log("Removing virtual IP from dead master");
+      eval {
+         $dead_master->{ssh} = $o->get('ssh') ." $dead_master->{ssh_user_host}";
+         $new_master->{ssh}  = $o->get('ssh') ." $new_master->{ssh_user_host}";
+         virtual_ip::check_ip(%$dead_master,  dry_run => $o->get('dry-run'));
+         virtual_ip::remove_ip(%$dead_master, dry_run => $o->get('dry-run'));
+      };
+      if ( $EVAL_ERROR ) {
+         _log("Error removing virtual IP from dead master: " . $EVAL_ERROR);
+         $exit_status |= 1;
+      }
+   }
+
    eval {
-      failover(
+      $exit_status |= failover(
          dead_master => $dead_master,
          new_master  => $new_master,
          live_master => $live_master,
@@ -2088,10 +2249,28 @@ sub main {
       _log("Failover procedure failed: $EVAL_ERROR");
       return 1;
    }
+   
+   if ( $o->get('move-virtual-ip') ) {
+      _log("Add virtual IP to new master");
+      eval {
+         virtual_ip::add_ip(
+            virtual_ip => $dead_master->{virtual_ip},
+            interface  => $new_master->{interface},
+            ssh        => $new_master->{ssh},
+            dry_run    => $o->get('dry-run')
+         );
+      };
+      if ( $EVAL_ERROR ) {
+         _log("Error adding virtual IP to new master: " . $EVAL_ERROR);
+         $exit_status |= 1;
+      }
+   }
+
    _log("Failover procedure complete"
       . ($o->get('dry-run') ? ' (DRY RUN)' : '' ));
 
-   return 0;
+   _log("$PROGRAM_NAME exit status $exit_status");
+   return $exit_status;
 } # End main()
 
 # ############################################################################
@@ -2311,25 +2490,20 @@ sub print_observations {
 
 sub failover {
    my ( %args ) = @_;
-   my @required_args = qw(dead_master new_master servers state);
+   my @required_args = qw(dead_master new_master live_master servers state);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dead_master, $new_master, $servers, $state) = @args{@required_args};
+   my ($dead_master, $new_master, $live_master, $servers, $state)
+      = @args{@required_args};
    my $dry_run = $args{dry_run};
 
    _log("Beginning failover" . ($dry_run ? " (DRY RUN)" : ""));
    my $sql;
 
-   # TODO: _log("Removing IP from dead master");
-
-   $sql = "STOP SLAVE IO_THREAD /* $new_master->{name} */";
-   _log($sql);
-   $new_master->{dbh}->do($sql) unless $dry_run;
-
    # Wait until the slave sql thread has caught up to the io thread.
    # The io thread should not be advancing because the dead master
-   # should be dead.
+   # should be dead, but it will be stopped anyway.
    my $slave_status = wait_for_sql_thread(%args, server => $new_master);
 
    my $dead_master_state = get_last_server_state(
@@ -2346,18 +2520,39 @@ sub failover {
    print_observations($dead_master_state,
          "Dead master state near time of death:\n");
 
-   replace_dead_master(
+   my $new_master_status = get_status('master', $new_master);
+
+   change_master_to(
       %args,
-      dead_master_state => $dead_master_state->[0],
+      server          => $new_master,
+      master_host     => $dead_master_state->[0]->{master_host},
+      master_port     => $dead_master_state->[0]->{master_port},
+      master_log_file => $dead_master_state->[0]->{relay_master_log_file},
+      master_log_pos  => $dead_master_state->[0]->{exec_master_log_pos},
    );
+
+   # Wait until the slave sql thread on the 2nd master (the one that
+   # the dead master used to be connected to) has caught up to the
+   # io thread.  The io thread should not be advancing because the
+   # dead master should be dead and all we did above was attach
+   # another slave (new master <- 2nd master).  The io thread is stopped
+   # on live master anyway.
+   wait_for_sql_thread(%args, server => $live_master);
+
+   change_master_to(
+      %args,
+      server          => $live_master,
+      master_host     => $new_master->{dsn}->{h},
+      master_port     => $new_master->{dsn}->{P},
+      master_log_file => $new_master_status->{file},
+      master_log_pos  => $new_master_status->{position},
+   ); 
 
    $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
    _log($sql);
    $new_master->{dbh}->do($sql) unless $dry_run;
 
-   # TODO: _log("Adding IP from dead master to new master");
-   
-   return;
+   return 0;
 }
 
 sub wait_for_sql_thread {
@@ -2372,6 +2567,10 @@ sub wait_for_sql_thread {
    _log("Waiting for slave SQL thread to catch up to IO thread on "
       . $server->{name});
 
+   my $sql = "STOP SLAVE IO_THREAD /* $server->{name} */";
+   _log($sql);
+   $server->{dbh}->do($sql) unless $args{dry_run};
+
    # Use master log file and pos from slave status because
    # dead master is supposed to be dead so whatever the slave
    # is working on now should be all there is to do.
@@ -2380,7 +2579,7 @@ sub wait_for_sql_thread {
    my $file         = $slave_status->{master_log_file};
    my $pos_before   = $slave_status->{read_master_log_pos};
 
-   my $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout) "
+   $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout) "
            . "/* $server->{name} */";
    _log($sql);
 
@@ -2396,60 +2595,20 @@ sub wait_for_sql_thread {
    }
 
    # res (result of waiting) was 0 (didn't have to wait) or >0 (waited
-   # and reached pos) so slave sql pos should == io pos.
-   # TODO: how to handle this if it happens?
+   # and reached pos) so slave sql pos should == io pos.  If not then
+   # something or someone started the io thread.
    $slave_status = get_status('slave', $server);
    my $pos_after = $slave_status->{read_master_log_pos};
    if ( $pos_after > $pos_before ) {
-      _log("Read_Master_Log_Pos advanced on $server->{name} "
-         . "while doing MASTER_POS_WAIT");
+      my $msg = "Read_Master_Log_Pos advanced from $pos_before to $pos_after "
+              . "on $server->{name} while doing MASTER_POS_WAIT";
+      if ( $slave_status->{slave_io_running} =~ m/yes/i ) {
+         $msg .= ", and the slave IO thread was restarted";
+      }
+      _log($msg);
    }
 
    return $slave_status;
-}
-
-sub replace_dead_master {
-   my ( %args ) = @_;
-   my @required_args = qw(dead_master dead_master_state new_master live_master);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my ($dead_master, $dead_master_state, $new_master, $live_master)
-      = @args{@required_args};
-   my $dry_run = $args{dry_run};
-
-   my $new_master_status = get_status('master', $new_master);
-
-   change_master_to(
-      %args,
-      server          => $new_master,
-      master_host     => $dead_master_state->{master_host},
-      master_port     => $dead_master_state->{master_port},
-      master_log_file => $dead_master_state->{relay_master_log_file},
-      master_log_pos  => $dead_master_state->{exec_master_log_pos},
-   );
-
-   # Wait until the slave sql thread on the 2nd master (the one that
-   # the dead master used to be connected to) has caught up to the
-   # io thread.  The io thread should not be advancing because the
-   # dead master should be dead and all we did above was attach
-   # another slave (new master <- 2nd master).
-   # XXX: did we ever do STOP SLAVE IO_THREAD on this server?  We should do that
-   # so that we don't have to guess the io thread isn't advancing.  (Are there
-   # other cases where we assume no more progress, but haven't stopped the
-   # thread?)
-   my $slave_status = wait_for_sql_thread(%args, server => $live_master);
-
-   change_master_to(
-      %args,
-      server          => $live_master,
-      master_host     => $new_master->{dsn}->{h},
-      master_port     => $new_master->{dsn}->{P},
-      master_log_file => $new_master_status->{file},
-      master_log_pos  => $new_master_status->{position},
-   ); 
-
-   return;
 }
 
 sub change_master_to {
@@ -2481,7 +2640,7 @@ sub change_master_to {
    return;
 }
 
-sub get_cxn_from_servers {
+sub get_server_cxn {
    my ( %args ) = @_;
    my @required_args = qw(servers name DSNParser OptionParser);
    foreach my $arg ( @required_args ) {
@@ -2489,28 +2648,52 @@ sub get_cxn_from_servers {
    }
    my ($servers, $name, $dp) = @args{@required_args};
 
-   my $sql = "SELECT server, dsn FROM $servers->{tbl} WHERE server='$name'";
+   _log("Getting server $name info");
+   my $sql = "SELECT * FROM $servers->{tbl} WHERE server='$name'";
    _log($sql);
-   my $row = $servers->{dbh}->selectrow_arrayref($sql);
+   my $server = $servers->{dbh}->selectrow_hashref($sql);
+
    die "Server '$name' does not exist in table $servers->{tbl}"
-      unless $row;
+      unless $server;
    die "Server '$name' in table $servers->{tbl} does not have a DSN"
-      unless $row->[1];
+      unless $server->{dsn};
 
-   my $dsn = $dp->parse($row->[1]);
-   _log("Server '$name' DSN: " . $dp->as_string($dsn));
-   my $dbh = get_cxn(dsn=>$dsn, %args);
+   # The subs expect $server->{name} not $server->{server}.
+   $server->{name} = $server->{server};
 
-   return $dbh, $dsn;
+   # This may die if there's an invalid DSN part.
+   my $dsn = $dp->parse($server->{dsn});
+
+   # Fill in ssh user@host with defaults.
+   if ( !$server->{ssh_user_host} ) {
+      $server->{ssh_user_host} = "$ENV{USER}\@$dsn->{h}";
+   }
+
+   _log("Server $name info: " . Dumper($server));
+
+   _log("Connecting to server $name");
+   eval {
+      my $dbh = get_cxn(dsn=>$dsn, %args);
+      $dp->fill_in_dsn($dbh, $dsn);
+      $server->{dsn} = $dsn;
+      $server->{dbh} = $dbh;
+      _log("Server '$name' DSN: " . $dp->as_string($dsn));
+
+   };
+   if ( $EVAL_ERROR && !$args{ignore_cxn_failure} ) {
+      die $EVAL_ERROR;
+   }
+
+   return $server;
 }
 
 sub get_cxn {
    my ( %args ) = @_;
-   my @required_args = qw(dsn OptionParser DSNParser);
+   my @required_args = qw(dsn DSNParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dsn, $o, $dp) = @args{@required_args};
+   my ($dsn, $dp) = @args{@required_args};
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit=>1});
    $dbh->{InactiveDestroy} = 1;  # Don't die on fork().
    MKDEBUG && _d('Connected dbh', $dbh);
@@ -2552,6 +2735,7 @@ sub _and {
 sub _log {
    my ( $msg ) = @_;
    chomp $msg;
+   $msg =~ s/\n/\n# /g;
    my $ts = ts(time);
    print "# $ts $msg\n";
    return;
@@ -2626,29 +2810,32 @@ C<Exec_Master_Log_Pos>, both from C<SHOW SLAVE STATUS>:
   ===== ========    ========     ========  =============================
   23:55 pos  480    pos   90     pos  290  State check: all is well.
         read  90    read 190     read  80  M1 is lagging behind M2.
-        exec  80    exec 140     exec  30
+        exec  30    exec 140     exec  30
 
-  00:00 pos  500   (pos  120)    pos  300  M1 dies, this state not seen.
-        read 100   (read 220)    read 100  M2 and S1 have read to M1
-        exec  50   (exec 180)    exec  50  pos 100.  Reading stops at
-                                           this pos because M1 is dead.
+  00:00 pos  500   (pos  120)    pos  310  M1 dies, this state not seen.
+        read 100   (read 220)    read 120  S1 has read to M1 pos 100,
+        exec  50   (exec 180)    exec  50  M2 has read to M1 pos 120.
+                                           Reading stops at these pos
+                                           because M1 is dead.
 
-  00:05 pos  510   (--------)    pos  320  State check: M1 is dead.
-        read 100   (--------)    read 100  Begin failover. Wait for S1
-        exec  60   (--------)    exec  70  to exec to last M1 pos it saw.
+  00:05 pos  510                 pos  330  State check: M1 is dead.
+        read 100                 read 120  Begin failover.  Stop slave
+        exec  60                 exec  70  IO thread on S1, wait for it
+                                           to exec to last M1 pos it saw.
 
-  00:10 pos  550   (--------)    pos  400  S1 is "caught up to" dead M1.
-        read 100   (--------)    read 100  Save S1 pos 550.  Get 
-        exec 100   (--------)    exec  90  state of M1 when its pos
+  00:10 pos  550                 pos  350  S1 is "caught up to" dead M1.
+        read 100                 read 120  Save S1 pos 550.  Get 
+        exec 100                 exec  90  state of M1 when its pos
                                            was <= 100, result:
                                            pos=90, exec=140.  Change S1
-                                           master to M2 pos pos 140.
-                                           Wait for M2 to catch up to
-                                           last pos it saw on dead M1.
+                                           master to M2 pos 140.  Stop
+                                           slave IO thread on M2, wait
+                                           for it to exec to last M1
+                                           pos it saw.
 
-  00:15 pos  600   (--------)    pos  470  M2 is "caught up to" dead M1.
-        read 470   (--------)    read 100  Change M2 master to S1
-        exec 400   (--------)    exec 100  starting at saved S1 pos 550.
+  00:15 pos  600                 pos  380  M2 is "caught up to" dead M1.
+        read 360                 read 120  Change M2 master to S1
+        exec 340                 exec 120  starting at saved S1 pos 550.
 
   TIME  SLAVE 1  <=           => MASTER 2  EVENT
   ===== ========    ========     ========  =============================
@@ -2779,6 +2966,12 @@ type: string; group: Required
 
 The 2nd, live master in the master-master pair with L<"--dead-master"> (required).
 
+=item --[no]move-virtual-ip
+
+default: yes
+
+Move virtual IP from L<"--dead-master"> to L<"--new-master">.
+
 =item --new-master
 
 type: string; group: Required
@@ -2829,6 +3022,13 @@ string will be appended to SET and executed.
 short form: -S; type: string; group: Connection
 
 Socket file to use for connection.
+
+=item --ssh
+
+type: string; default: ssh
+
+ssh command for L<"--[no]move-virtual-ip">.  SSH C<user@host> is set for each
+server in the L<"--servers"> table C<ssh_user_host> column.
 
 =item --state
 
