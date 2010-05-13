@@ -4475,9 +4475,10 @@ Port number to use for connection.
 
 type: array; default: time,30
 
-Print progress reports.  The value is an array.  The first part can be
-percentage, time, or iterations; the second part specifies how often an update
-should be printed, in percentage, seconds, or number of iterations.
+Print progress reports to STDERR.  The value is a comma-separated list with two
+parts.  The first part can be percentage, time, or iterations; the second part
+specifies how often an update should be printed, in percentage, seconds, or
+number of iterations.
 
 =item --set-vars
 
