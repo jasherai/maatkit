@@ -4235,6 +4235,12 @@ sub main {
    my $cur_db = '';
 
    # ########################################################################
+   # This keeps track of statements that can't be EXPLAINed for some reason, so
+   # they are not tried again.
+   # ########################################################################
+   my %err_for = ();
+
+   # ########################################################################
    # This is the main loop over the input filenames.
    # ########################################################################
    my $next_file = $fi->get_file_itr(@ARGV);
@@ -4278,8 +4284,11 @@ sub main {
       EVENT:
       while ( $event = $get_event->() ) {
          my $arg = $event->{arg} or next EVENT; # The arg is the SQL.
-         my $fingerprint
-            = $event->{fingerprint} = $qr->fingerprint($arg);
+         my $fingerprint = $event->{fingerprint} = $qr->fingerprint($arg);
+
+         # Skip events that previously had an error.
+         next if $err_for{$fingerprint};
+
          eval {
 
             # Checksum the query and get the query's ID.
@@ -4317,6 +4326,10 @@ sub main {
 
          };
          if ( $EVAL_ERROR ) {
+            # Skip statements with this fingerprint in the future.
+            $err_for{$fingerprint} = { event => $event, error => $EVAL_ERROR };
+
+            # Log the error.
             MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
             warn $EVAL_ERROR unless $o->get('q');
          }

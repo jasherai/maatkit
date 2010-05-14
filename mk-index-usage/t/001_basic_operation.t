@@ -12,8 +12,11 @@ use English qw(-no_match_vars);
 use Test::More;
 
 use MaatkitTest;
+# See http://code.google.com/p/maatkit/wiki/Testing
+shift @INC;  # MaatkitTest's unshift
+require "$trunk/mk-index-usage/mk-index-usage";
+
 use Sandbox;
-use DSNParser;
 
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -23,19 +26,32 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 1;
+   plan tests => 2;
 }
 
-my $run_with = "$trunk/mk-index-usage/mk-index-usage --host localhost";
+my @args = qw(--host localhost);
 my $output;
 my $cmd;
 
 ok(
    no_diff(
-      $run_with . " $trunk/common/t/samples/slow044.txt",
+      sub {
+          mk_index_usage::main(@args, "$trunk/common/t/samples/slow044.txt");
+      },
       "mk-index-usage/t/samples/slow044-report.txt"),
    'A simple query that does not use any indexes',
 );
+
+
+# Capture errors, and ensure that statement blacklisting works OK
+{
+   my $buffer;
+   local *STDERR;
+   open STDERR, '>', \$buffer or die $OS_ERROR;
+   mk_index_usage::main(@args, "$trunk/common/t/samples/slow045.txt");
+   my @errs = $buffer =~ m/DBD::mysql::db selectall_arrayref failed/g;
+   is(scalar @errs, 1, 'failing statement was blacklisted OK');
+}
 
 # #############################################################################
 # Done.
