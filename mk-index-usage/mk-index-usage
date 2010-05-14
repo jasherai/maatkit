@@ -4166,8 +4166,8 @@ sub main {
    # ##########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [FILE]',
-      description => q{reads queries from a log and analyzes how they use }
+      prompt      => '[OPTION...] [FILE...]',
+      description => q{reads queries from logs and analyzes how they use }
                    . q{indexes.},
    );
    $o->get_specs();
