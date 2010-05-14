@@ -3979,7 +3979,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Progress package 6295
+# Progress package 6302
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Progress.pm
@@ -4029,6 +4029,21 @@ sub new {
       %args,
    };
    return bless $self, $class;
+}
+
+sub validate_spec {
+   shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
+   my ( $spec ) = @_;
+   if ( @$spec != 2 ) {
+      die "spec array requires a two-part argument\n";
+   }
+   if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+      die "spec array's first element must be one of "
+        . "percentage,time,iterations\n";
+   }
+   if ( $spec->[1] !~ m/^\d+$/ ) {
+      die "spec array's second element must be an integer\n";
+   }
 }
 
 sub set_callback {
@@ -4159,6 +4174,15 @@ sub main {
    $o->get_opts();
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
+   if ( !$o->got('help') ) {
+      if ( $o->get('progress') ) {
+         eval { Progress->validate_spec($o->get('progress')) };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            $o->save_error("--progress $EVAL_ERROR");
+         }
+      }
+   }
    $o->usage_or_errors();
 
    # Open the database connection.
