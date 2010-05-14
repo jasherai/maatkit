@@ -4236,7 +4236,7 @@ sub main {
       # Maybe someday we can do a global progress report?
       # #####################################################################
       my $pr;
-      if ( $o->get('progress') && -e $filename ) {
+      if ( $o->get('progress') && $filename && -e $filename ) {
          $pr = new Progress(
             jobsize => -s $filename,
             spec    => $o->get('progress'),
