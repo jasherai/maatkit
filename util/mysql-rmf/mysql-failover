@@ -2363,7 +2363,7 @@ sub is_alive_as {
 }
 
 sub get_status {
-   my ( $what, $server ) = @_;
+   my ( $what, $server, $comment ) = @_;
    return unless $what;
    return unless $server;
 
@@ -2373,6 +2373,12 @@ sub get_status {
    if ( $status && %$status ) {
       # lowercase the keys
       $status = { map { lc($_) => $status->{$_} } keys %$status };
+      _log(
+         sprintf "$server->{name} pos=%s, read=%s, exec=%s %s",
+            (map { $status->{$_} || 'NULL' }
+             qw(position read_master_log_pos exec_master_log_pos)),
+            ($comment ? "($comment)" : '')
+      );
       return $status;
    }
 
@@ -2499,11 +2505,50 @@ sub failover {
    my $dry_run = $args{dry_run};
 
    _log("Beginning failover" . ($dry_run ? " (DRY RUN)" : ""));
-   my $sql;
 
-   # Wait until the slave sql thread has caught up to the io thread.
-   # The io thread should not be advancing because the dead master
-   # should be dead, but it will be stopped anyway.
+   foreach my $server ( $new_master, $live_master ) {
+      my $sql = "STOP SLAVE IO_THREAD /* $server->{name} */";
+      _log($sql);
+      $server->{dbh}->do($sql) unless $dry_run;
+   }
+
+   my $new_master_status;
+
+   my $new  = get_status('slave', $new_master);
+   my $live = get_status('slave', $live_master);
+   _log("New master read to dead slave pos $new->{read_master_log_pos}, "
+      . "live master to $live->{read_master_log_pos}");
+   if ( $new->{read_master_log_pos} > $live->{read_master_log_pos} ) {
+      my $sql = "STOP SLAVE SQL_THREAD /* $new_master->{name} */";
+      _log($sql);
+      $new_master->{dbh}->do($sql) unless $dry_run;
+
+      if ( $new->{exec_master_log_pos} > $live->{read_master_log_pos} ) {
+         # TODO: handle this by starting live at some new Position < its
+         # Pos right now.
+         _log("*** WARNING *** New master has executed to pos "
+            . $new->{exec_master_log_pos} . " which is past live master "
+            . "read pos " . $live->{read_master_log_pos} . " from dead master! "
+            . "Live master will miss events between dead master pos "
+            . $live->{read_master_log_pos} . "-" . $new->{exec_master_log_pos}
+         );
+      }
+
+      $sql = "START SLAVE SQL_THREAD UNTIL "
+           . "MASTER_LOG_FILE='$new->{relay_master_log_file}', "
+           . "MASTER_LOG_POS=$live->{read_master_log_pos} "
+           . "/* $new_master->{name} */";
+      _log($sql);
+      $new_master->{dbh}->do($sql) unless $dry_run;
+
+      $new_master_status = get_status('master', $new_master,
+         'start pos for live master');
+
+      $sql = "START SLAVE SQL_THREAD /* $new_master->{name} */";
+      _log($sql);
+      $new_master->{dbh}->do($sql) unless $dry_run;
+   }
+
    my $slave_status = wait_for_sql_thread(%args, server => $new_master);
 
    my $dead_master_state = get_last_server_state(
@@ -2520,7 +2565,10 @@ sub failover {
    print_observations($dead_master_state,
          "Dead master state near time of death:\n");
 
-   my $new_master_status = get_status('master', $new_master);
+   if ( !$new_master_status ) {
+      $new_master_status = get_status('master', $new_master,
+         'start pos for live server');
+   }
 
    change_master_to(
       %args,
@@ -2548,7 +2596,7 @@ sub failover {
       master_log_pos  => $new_master_status->{position},
    ); 
 
-   $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
+   my $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
    _log($sql);
    $new_master->{dbh}->do($sql) unless $dry_run;
 
@@ -2567,19 +2615,15 @@ sub wait_for_sql_thread {
    _log("Waiting for slave SQL thread to catch up to IO thread on "
       . $server->{name});
 
-   my $sql = "STOP SLAVE IO_THREAD /* $server->{name} */";
-   _log($sql);
-   $server->{dbh}->do($sql) unless $args{dry_run};
-
    # Use master log file and pos from slave status because
    # dead master is supposed to be dead so whatever the slave
    # is working on now should be all there is to do.
    # TODO: handle failure
-   my $slave_status = get_status('slave', $server);
+   my $slave_status = get_status('slave', $server, 'before wait');
    my $file         = $slave_status->{master_log_file};
    my $pos_before   = $slave_status->{read_master_log_pos};
 
-   $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout) "
+   my $sql = "SELECT MASTER_POS_WAIT('$file', $pos_before, $timeout) "
            . "/* $server->{name} */";
    _log($sql);
 
@@ -2597,7 +2641,7 @@ sub wait_for_sql_thread {
    # res (result of waiting) was 0 (didn't have to wait) or >0 (waited
    # and reached pos) so slave sql pos should == io pos.  If not then
    # something or someone started the io thread.
-   $slave_status = get_status('slave', $server);
+   $slave_status = get_status('slave', $server, 'after wait');
    my $pos_after = $slave_status->{read_master_log_pos};
    if ( $pos_after > $pos_before ) {
       my $msg = "Read_Master_Log_Pos advanced from $pos_before to $pos_after "
@@ -2785,7 +2829,6 @@ a dead master with its slave in a specific replication topology:
   slave1 <- master1 <=> master2 -> slave2
 
 B<All servers are using row-based idempotent mode replication>.  Master1 and
-master2 are a master-master pair.  Each master has one slave which takes the
 place of its master if the master fails.  More than one slave per master
 is not currently supported.
 

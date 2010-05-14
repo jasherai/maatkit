@@ -162,6 +162,7 @@ $o->get_opts();
 my $mstat = $master_dbh->selectrow_hashref('show master status');
 
 mysql_replication_monitor::check_server(%args);
+sleep 1;
 
 # --check-logs default is "all".
 ok(
