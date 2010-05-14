@@ -4174,6 +4174,7 @@ sub main {
    $o->get_opts();
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
+   $o->set('progress', undef) if $o->get('q');
    if ( !$o->got('help') ) {
       if ( $o->get('progress') ) {
          eval { Progress->validate_spec($o->get('progress')) };
@@ -4221,7 +4222,8 @@ sub main {
             $tables_for{$database}->{$table} = 1;
          };
          if ( $EVAL_ERROR ) {
-            warn $EVAL_ERROR;
+            warn $EVAL_ERROR unless $o->get('q');
+            MKDEBUG && _d($EVAL_ERROR);
          }
       }
    }
@@ -4316,7 +4318,7 @@ sub main {
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d('Problem on query', $event, $EVAL_ERROR);
-            warn $EVAL_ERROR;
+            warn $EVAL_ERROR unless $o->get('q');
          }
          $pr->update($tell) if $pr;
       }
@@ -4508,6 +4510,12 @@ Print progress reports to STDERR.  The value is a comma-separated list with two
 parts.  The first part can be percentage, time, or iterations; the second part
 specifies how often an update should be printed, in percentage, seconds, or
 number of iterations.
+
+=item --quiet
+
+short form: -q
+
+Do not print any warnings.  Also disables L<"--progress">.
 
 =item --set-vars
 
