@@ -4308,6 +4308,12 @@ sub main {
             my $access = $exa->get_usage_for($chk, $cur_db);
             if ( !$access ) {
 
+               # The query might not be explain-able.  If that is so, it will
+               # die, and we want that to happen so it gets blacklisted.  We
+               # don't want it to return an error or something like that, and we
+               # don't want to filter it out and skip it in the first place,
+               # because then we will keep burning cycles on it trying to
+               # explain it over and over.
                my $explain = $exa->explain_query(
                   dbh => $dbh,
                   sql => $arg,
