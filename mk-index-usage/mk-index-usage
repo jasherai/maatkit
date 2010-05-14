@@ -4462,11 +4462,25 @@ back to C<tbl1>.  This process involves complex parsing.  It is generally very
 accurate, but there is some chance that it might not work right.  If you find
 cases where it fails, submit a bug report and a reproducible test case.
 
+Queries that cannot be EXPLAIN'ed will cause all subsequent queries with the
+same fingerprint to be blacklisted.  This is to reduce the work they cause, and
+prevent them from continuing to print error messages.  However, at least in this
+stage of the tool's development, it is my opinion that it's not a good idea to
+pre-emtively silence these, or prevent them from being EXPLAIN'ed at all.  I am
+looking for lots of feedback on how to improve things like the query parsing.
+So please submit your test cases based on the errors the tool prints!
+
 =head1 OUTPUT
 
 After it reads all the events in the log, the tool prints out DROP statements
 for every index that was not used.  It skips indexes for tables that were never
 accessed by any queries in the log, to avoid false-positive results.
+
+If you don't specify L<"--quiet">, the tool also outputs warnings about
+statements that cannot be EXPLAIN'ed and similar.  These go to standard error.
+
+Progress reports are enabled by default (see L<"--progress">).  These also go to
+standard error.
 
 =head1 OPTIONS
 
