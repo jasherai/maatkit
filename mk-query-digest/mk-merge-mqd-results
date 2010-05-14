@@ -1323,7 +1323,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6240
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -1378,6 +1378,19 @@ sub literal_like {
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
    return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
 }
 
 1;
@@ -1989,7 +2002,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6170
+# EventAggregator package 6309
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -2013,8 +2026,6 @@ use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
-
-our @buckets  = map { 0 } (0..NUM_BUCK-1);
 
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
@@ -2271,8 +2282,8 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
+            'exists PLACE->{all} or PLACE->{all} = {};',
+            '++PLACE->{all}->{ EventAggregator::bucket_idx($val) };',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
@@ -2422,7 +2433,7 @@ sub _calc_metrics {
    };
 
    return $statistical_metrics
-      unless defined $vals && @$vals && $args->{cnt};
+      unless defined $vals && %$vals && $args->{cnt};
 
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
@@ -2465,6 +2476,10 @@ sub _calc_metrics {
    my $bucket_95  = 0; # top bucket in 95th
 
    MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+
+   my @buckets = map { 0 } (0..NUM_BUCK-1);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;  # repoint vals from given hashref to our array
 
    BUCKET:
    for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
@@ -3191,7 +3206,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6175
+# QueryReportFormatter package 6309
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3640,10 +3655,15 @@ sub chart_distro {
    my $results = $ea->results();
    my $store   = $results->{classes}->{$item}->{$attrib};
    my $vals    = $store->{all};
-   return "" unless defined $vals && scalar @$vals;
+   return "" unless defined $vals && scalar %$vals;
 
    my @buck_tens = $ea->buckets_of(10);
    my @distro = map { 0 } (0 .. 7);
+
+   my @buckets = map { 0 } (0..999);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;  # repoint vals from given hashref to our array
+
    map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
 
    my $vals_per_mark; # number of vals represented by 1 #-mark
@@ -4014,7 +4034,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 6148
+# QueryParser package 6262
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryParser.pm
@@ -4117,13 +4137,18 @@ sub has_derived_table {
 
 sub get_aliases {
    my ( $self, $query, $list ) = @_;
-   return unless $query;
-   my $aliases;
+
+   my $result = {
+      DATABASE => {},
+      TABLE    => {},
+   };
+   return $result unless $query;
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
+   my @tbl_refs;
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -4133,51 +4158,55 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   if ( !$tbl_refs ) {
-      MKDEBUG && _d("No tables ref in", $query);
-      return $list ? [] : {};
-   }
+   if ( $tbl_refs ) {
 
-   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
-      $tbl_refs =~ s/\([^\)]+\)\s*//;
-   }
-
-   MKDEBUG && _d('tbl refs:', $tbl_refs);
-
-   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
-
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
-
-   $tbl_refs =~ s/ = /=/g;
-
-   while (
-      $tbl_refs =~ m{
-         $before_tbl\b\s*
-            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
-         \s*$after_tbl
-      }xgio )
-   {
-      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d('Match table:', $tbl_ref);
-
-      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef unless $list;
-         next;
+      if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+         $tbl_refs =~ s/\([^\)]+\)\s*//;
       }
 
-      if ( $list ) {
-         $tbl_ref =~ s/^\s+//g;
-         $tbl_ref =~ s/\s+$//g;
-         push @$aliases, $tbl_ref;
-      }
-      else {
+      MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+      my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+      my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+      $tbl_refs =~ s/ = /=/g;
+
+      while (
+         $tbl_refs =~ m{
+            $before_tbl\b\s*
+               ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+            \s*$after_tbl
+         }xgio )
+      {
+         my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+         MKDEBUG && _d('Match table:', $tbl_ref);
+         push @tbl_refs, $tbl_ref;
+         $alias = $self->trim_identifier($alias);
+
+         if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+            MKDEBUG && _d('Subquery', $tbl_ref);
+            $result->{TABLE}->{$alias} = undef;
+            next;
+         }
+
          my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-         $aliases->{$alias || $tbl} = $tbl;
-         $aliases->{DATABASE}->{$tbl} = $db if $db;
+         $db  = $self->trim_identifier($db);
+         $tbl = $self->trim_identifier($tbl);
+         $result->{TABLE}->{$alias || $tbl} = $tbl;
+         $result->{DATABASE}->{$tbl}        = $db if $db;
       }
    }
-   return $aliases;
+   else {
+      MKDEBUG && _d("No tables ref in", $query);
+   }
+
+   if ( $list ) {
+      return \@tbl_refs;
+   }
+   else {
+      return $result;
+   }
 }
 
 sub split {
@@ -4382,6 +4411,15 @@ sub extract_tables {
       push @tables, [ $db || $default_db, $tbl ];
    }
    return @tables;
+}
+
+sub trim_identifier {
+   my ($self, $str) = @_;
+   return unless defined $str;
+   $str =~ s/`//g;
+   $str =~ s/^\s+//;
+   $str =~ s/\s+$//;
+   return $str;
 }
 
 sub _d {
