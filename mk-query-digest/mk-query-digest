@@ -13419,7 +13419,7 @@ The parser expects the input to be formatted with the following options: C<-x -n
 -q -tttt>.  For example, if you want to capture output from your local machine,
 you can do something like
 
-  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -nn -q -tttt > mysql.tcp.txt
+  tcpdump port 3306 -s 65535 -x -nn -q -tttt -i eth0 -c 1000 > mysql.tcp.txt
   mk-query-digest --type tcpdump mysql.tcp.txt
 
 The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
