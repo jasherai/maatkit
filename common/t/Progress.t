@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 29;
 
 use Transformers;
 use Progress;
@@ -31,6 +31,18 @@ my $completion_arr   = [];
 # #############################################################################
 # Checks that the command-line interface works OK
 # #############################################################################
+
+foreach my $test ( (
+      [  sub { Progress->validate_spec([qw()]) },
+         'spec array requires a two-part argument', ],
+      [  sub { Progress->validate_spec([qw(foo bar)]) },
+         'spec array\'s first element must be one of percentage,time,iterations', ],
+      [  sub { Progress::validate_spec([qw(time bar)]) },
+         'spec array\'s second element must be an integer', ],
+   )
+) {
+   throws_ok($test->[0], qr/$test->[1]/, $test->[1]);
+}
 
 $pr = new Progress (
    jobsize => 100,

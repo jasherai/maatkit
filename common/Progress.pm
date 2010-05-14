@@ -85,6 +85,23 @@ sub new {
    return bless $self, $class;
 }
 
+# Validates the 'spec' argument passed in from --progress command-line option.
+# It calls die with a trailing newline to avoid auto-adding the file/line.
+sub validate_spec {
+   shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
+   my ( $spec ) = @_;
+   if ( @$spec != 2 ) {
+      die "spec array requires a two-part argument\n";
+   }
+   if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+      die "spec array's first element must be one of "
+        . "percentage,time,iterations\n";
+   }
+   if ( $spec->[1] !~ m/^\d+$/ ) {
+      die "spec array's second element must be an integer\n";
+   }
+}
+
 # Specify your own custom way to report the progress.  The default is to print
 # the percentage to STDERR.  This is created in the call to new().  The
 # callback is a subroutine that will receive the fraction complete from 0 to
