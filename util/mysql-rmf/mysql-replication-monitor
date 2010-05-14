@@ -2622,6 +2622,61 @@ server and the L<"--state"> server, then it should update the state table
 with whatever SHOW MASTER STATUS, SHOW SLAVE STATUS, and (optionally)
 mk-heartbeat return for the monitored server.
 
+=head1 SERVERS TABLE
+
+The L<"--servers"> table should have the structure shown in
+L<"--create-servers-table">.  Its columns are briefly described here.
+
+=over
+
+=item * server
+
+The name of the server as shown in the L<"OUTPUT"> of this tool and
+mysql-failover.  The name can be anything you like.  The mysql-failover
+tool options C<--dead-master>, C<--new-master> and C<--live-master> take
+a server name as their values.  Server names must be unique.
+
+=item * dsn
+
+A DSN string for connecting to the MySQL server.  This is the same kind of
+DSN string as given on the command line for L<"--servers"> and L<"--state">.
+The DSN string can contain any valid L<"DSN OPTIONS">.  To avoid puting
+the MySQL pasword in the database you could, for example, put the MySQL
+connection options in a conf file and then specify C<F=file> for the DSN.
+
+=item * virtual_ip
+
+The virtual (floating) IP address this server uses when it is alive
+as a master being written to.  If this server dies and is replaced,
+mysql-failover will remove this virtual IP from the server and add it
+to the new master.  When the virtual IP is moved this column is B<not>
+updated.
+
+=item * interface
+
+The network interface name to which the virtual IP is bound.  For example,
+"eth0".  mysql-failover expects to find the server's virtual IP on this
+interface.
+
+=item * ssh_user_host
+
+The ssh user@host and other ssh options that mysql-failover should use to
+connect to the server to remove/add the virtual IP (remove from dead master,
+add to new master).  mysql-failover will execute commands like,
+
+  ssh dead-srv-user@192.168.0.1 '/sbin/ip addr del 10.0.0.1/32 dev eth0
+  ssh live-srv-user@192.168.0.2 '/sbin/ip addr add 10.0.0.1/32 dev eth0
+
+If no user@host is specified then the current user is used @ the dsn host.
+To avoid puting ssh passwords in this column you should use ssh keys.
+
+=item * mk_heartbeat_file
+
+The mk-heartbeat file name for this server, common to all observers.
+See L<"INTEGRATION WITH mk-heartbeat">.
+
+=back
+
 =head1 OUTPUT
 
 By default the tool's output is very verbose; the parent process prints
