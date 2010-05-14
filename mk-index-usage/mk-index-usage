@@ -4189,11 +4189,16 @@ sub main {
       TABLE:
       while ( my $table = $next_tbl->() ) {
          MKDEBUG && _d('Got table', $table);
-         $tables_for{$database}->{$table} = 1;
-         my $ddl       = $du->get_create_table(
-                         $dbh, $q, $database, $table)->[1];
-         my ($indexes) = $tp->get_keys($ddl, {version => $version });
-         $iu->add_indexes($database, $table, [ keys %$indexes ]);
+         eval {
+            my $ddl       = $du->get_create_table(
+                            $dbh, $q, $database, $table)->[1];
+            my ($indexes) = $tp->get_keys($ddl, {version => $version });
+            $iu->add_indexes($database, $table, [ keys %$indexes ]);
+            $tables_for{$database}->{$table} = 1;
+         };
+         if ( $EVAL_ERROR ) {
+            warn $EVAL_ERROR;
+         }
       }
    }
 
