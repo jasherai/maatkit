@@ -41,9 +41,6 @@ use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
-# Used to pre-initialize {all} arrayrefs for event attribs in make_handler.
-our @buckets  = map { 0 } (0..NUM_BUCK-1);
-
 # Used in buckets_of() to map buckets of log10 to log1.05 buckets.
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
@@ -396,8 +393,8 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
+            'exists PLACE->{all} or PLACE->{all} = {};',
+            '++PLACE->{all}->{ EventAggregator::bucket_idx($val) };',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
@@ -575,7 +572,7 @@ sub calculate_statistical_metrics {
    return;
 }
 
-# Given an arrayref of vals, returns a hashref with the following
+# Given a hashref of vals, returns a hashref with the following
 # statistical metrics:
 #
 #    pct_95    => top bucket value in the 95th percentile
@@ -583,8 +580,8 @@ sub calculate_statistical_metrics {
 #    stddev    => of all values
 #    median    => of all values
 #
-# The vals arrayref is the buckets as per the above (see the comments at the
-# top of this file).  $args should contain cnt, min and max properties.
+# The vals hashref represents the buckets as per the above (see the comments
+# at the top of this file).  $args should contain cnt, min and max properties.
 sub _calc_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -598,7 +595,7 @@ sub _calc_metrics {
    # example, processlist sniffing doesn't gather Rows_examined, so $args won't
    # have {cnt} or other properties.
    return $statistical_metrics
-      unless defined $vals && @$vals && $args->{cnt};
+      unless defined $vals && %$vals && $args->{cnt};
 
    # Return accurate metrics for some cases.
    my $n_vals = $args->{cnt};
@@ -647,6 +644,18 @@ sub _calc_metrics {
    my $bucket_95  = 0; # top bucket in 95th
 
    MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+
+   # In ancient times we kept an array of 1k buckets for each numeric
+   # attrib.  Each such array cost 32_300 bytes of memory (that's not
+   # a typo; yes, it was verified).  But measurements showed that only
+   # 1% of the buckets were used on average, meaning 99% of 32_300 was
+   # wasted.  Now we store only the used buckets in a hashref which we
+   # map to a 1k bucket array for processing, so we don't have to tinker
+   # with the delitcate code below.
+   # http://code.google.com/p/maatkit/issues/detail?id=866
+   my @buckets = map { 0 } (0..NUM_BUCK-1);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;  # repoint vals from given hashref to our array
 
    BUCKET:
    for my $bucket ( reverse 0..(NUM_BUCK-1) ) {

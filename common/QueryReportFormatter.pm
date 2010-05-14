@@ -555,11 +555,18 @@ sub chart_distro {
    my $results = $ea->results();
    my $store   = $results->{classes}->{$item}->{$attrib};
    my $vals    = $store->{all};
-   return "" unless defined $vals && scalar @$vals;
+   return "" unless defined $vals && scalar %$vals;
 
    # TODO: this is broken.
    my @buck_tens = $ea->buckets_of(10);
    my @distro = map { 0 } (0 .. 7);
+
+   # See similar code in EventAggregator::_calc_metrics() or
+   # http://code.google.com/p/maatkit/issues/detail?id=866
+   my @buckets = map { 0 } (0..999);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;  # repoint vals from given hashref to our array
+
    map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
 
    my $vals_per_mark; # number of vals represented by 1 #-mark

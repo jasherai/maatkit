@@ -81,8 +81,10 @@ $result = {
       Query_time => {
          min => '0.000652',
          max => '0.000682',
-         all =>
-            [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
+         all => {
+            133 => 1,
+            134 => 1,
+         },
          sum => '0.001334',
          cnt => 2,
       },
@@ -104,8 +106,9 @@ $result = {
       Rows_sent => {
          min => 1,
          max => 1,
-         all =>
-            [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
+         all => {
+            284 => 2,
+         },
          sum => 2,
          cnt => 2,
       }
@@ -114,8 +117,9 @@ $result = {
       Query_time => {
          min => '0.001943',
          max => '0.001943',
-         all =>
-            [ ( map {0} ( 0 .. 155 ) ), 1, ( map {0} ( 157 .. 999 ) ) ],
+         all => {
+            156 => 1,
+         },
          sum => '0.001943',
          cnt => 1,
       },
@@ -134,8 +138,9 @@ $result = {
       Rows_sent => {
          min => 0,
          max => 0,
-         all =>
-            [ 1, ( map {0} (1..999) ) ],
+         all => {
+            0 => 1,
+         },
          sum => 0,
          cnt => 1,
       }
@@ -254,11 +259,11 @@ $result = {
       max => '0.001943',
       sum => '0.003277',
       cnt => 3,
-      all => [
-         ( map {0} ( 0 .. 132 ) ),
-         1, 1, ( map {0} ( 135 .. 155 ) ),
-         1, ( map {0} ( 157 .. 999 ) ),
-      ],
+      all => {
+         133 => 1,
+         134 => 1,
+         156 => 1,
+      },
    },
    user => {
       min => 'bob',
@@ -275,7 +280,10 @@ $result = {
       max => 1,
       sum => 2,
       cnt => 3,
-      all => [ 1, ( map {0} (1..283 ) ), 2, ( map {0} (285..999) ), ],
+      all => {
+         0   => 1, 
+         284 => 2,
+      },
    },
 };
 
@@ -308,14 +316,18 @@ $result = {
          Query_time => {
             min    => '0.000682',
             max    => '0.000682',
-            all => [ ( map {0} ( 0 .. 133 ) ), 1, ( map {0} ( 135 .. 999 ) ) ],
+            all => {
+               134 => 1,
+            },
             sum => '0.000682',
             cnt => 1
          },
          Rows_sent => {
             min => 1,
             max => 1,
-            all => [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+            all => {
+               284 => 1,
+            },
             sum => 1,
             cnt => 1
          }
@@ -330,18 +342,20 @@ $result = {
          Query_time => {
             min    => '0.000652',
             max    => '0.001943',
-            all => [
-               ( map {0} ( 0 .. 132 ) ), 1,
-               ( map {0} ( 134 .. 155 ) ), 1,
-               ( map {0} ( 157 .. 999 ) )
-            ],
+            all => {
+               133 => 1,
+               156 => 1,
+            },
             sum => '0.002595',
             cnt => 2
          },
          Rows_sent => {
             min => 0,
             max => 1,
-            all => [ 1, ( map {0} (1..283) ), 1, ( map {0} (285..999) ) ],
+            all => {
+               0   => 1,
+               284 => 1,
+            },
             sum => 1,
             cnt => 2
          }
@@ -388,18 +402,21 @@ $result = {
       Query_time => {
          min => '0.000652',
          max => '0.001943',
-         all => [
-            ( map {0} ( 0 .. 132 ) ), 1, 1,
-            ( map {0} ( 135 .. 155 ) ), 1,
-            ( map {0} ( 157 .. 999 ) )
-         ],
+         all => {
+            133 => 1,
+            134 => 1,
+            156 => 1,
+         },
          sum => '0.003277',
          cnt => 3
       },
       Rows_sent => {
          min => 0,
          max => 1,
-         all => [ 1, ( map {0} (1..283) ), 2, ( map {0} (285..999) ) ],
+         all => {
+            0   => 1,
+            284 => 2,
+         },
          sum => 2,
          cnt => 3
       }
@@ -457,17 +474,28 @@ is_deeply(
 # Given an arrayref of vals, returns an arrayref and hashref of those
 # vals suitable for passing to calculate_statistical_metrics().
 sub bucketize {
-   my ( $vals ) = @_;
-   my @bucketed = map { 0 } (0..999); # TODO: shouldn't hard code this
+   my ( $vals, $as_hashref ) = @_;
+   my $bucketed;
+   if ( $as_hashref ) {
+      $bucketed = {};
+   }
+   else {
+      $bucketed = [ map { 0 } (0..999) ]; # TODO: shouldn't hard code this
+   }
    my ($sum, $max, $min);
    $max = $min = $vals->[0];
    foreach my $val ( @$vals ) {
-      $bucketed[ EventAggregator::bucket_idx($val) ]++;
+      if ( $as_hashref ) {
+         $bucketed->{ EventAggregator::bucket_idx($val) }++;
+      }
+      else {
+         $bucketed->[ EventAggregator::bucket_idx($val) ]++;
+      }
       $max = $max > $val ? $max : $val;
       $min = $min < $val ? $min : $val;
       $sum += $val;
    }
-   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
+   return $bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals};
 }
 
 sub test_bucket_val {
@@ -578,7 +606,7 @@ is_deeply(
 # #############################################################################
 
 $result = $ea->_calc_metrics(
-   bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) );
+   bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ], 1 ) );
 # The above bucketize will be bucketized as:
 # VALUE  BUCKET  VALUE        RANGE                       N VALS  SUM
 # 1      248     0.992136979  [0.992136979, 1.041743827)  4       3.968547916
@@ -604,7 +632,7 @@ is_deeply(
 );
 
 $result = $ea->_calc_metrics(
-   bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ] ) );
+   bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ], 1 ) );
 # The above bucketize will be bucketized as:
 # VALUE  BUCKET  VALUE        RANGE                       N VALS
 # 1      248     0.992136979  [0.992136979, 1.041743827)  4
@@ -631,7 +659,7 @@ is_deeply(
 # be exact (because we pass in min/max) and the stdev should never be bigger
 # than half the difference between min/max.
 $result = $ea->_calc_metrics(
-   bucketize( [ 0.000002, 0.018799 ] ) );
+   bucketize( [ 0.000002, 0.018799 ], 1 ) );
 is_deeply(
    $result,
    {  stddev => 0.0132914861659635,
@@ -653,7 +681,7 @@ is_deeply(
    'Calculates statistical metrics for undef array'
 );
 
-$result = $ea->_calc_metrics( [] );
+$result = $ea->_calc_metrics( {}, 1 );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -661,10 +689,10 @@ is_deeply(
       cutoff => undef,
       pct_95 => 0,
    },
-   'Calculates statistical metrics for empty array'
+   'Calculates statistical metrics for empty hashref'
 );
 
-$result = $ea->_calc_metrics( [ 1, 2 ], {} );
+$result = $ea->_calc_metrics( { 1 => 2 }, {} );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -675,7 +703,7 @@ is_deeply(
    'Calculates statistical metrics for when $stats missing'
 );
 
-$result = $ea->_calc_metrics( bucketize( [0.9] ) );
+$result = $ea->_calc_metrics( bucketize( [0.9], 1 ) );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -754,8 +782,9 @@ $result = {
          Rows_read => {
             min => 4,
             max => 4,
-            all =>
-               [ ( map {0} ( 0 .. 311 ) ), 2, ( map {0} ( 313 .. 999 ) ) ],
+            all => {
+               312 => 2,
+            },
             sum    => 8,
             cnt    => 2,
             'last' => 4,
@@ -765,8 +794,9 @@ $result = {
          Rows_read => {
             min => 0,
             max => 0,
-            all =>
-               [ 1, ( map {0} (1..999) ) ],
+            all => {
+               0 => 1,
+            },
             sum    => 0,
             cnt    => 1,
             'last' => 0,
@@ -777,7 +807,10 @@ $result = {
       Rows_read => {
          min => 0, # Because 'last' is only kept at the class level
          max => 4,
-         all => [ 1, ( map {0} (1..311) ), 2, ( map {0} (313..999) ) ],
+         all => {
+            0   => 1,
+            312 => 2,
+         },
          sum => 8,
          cnt => 3,
       },
@@ -934,13 +967,11 @@ is_deeply(
             Query_time => {
                min => '0.000652',
                max => '2.000652',
-               all =>
-                  [ 
-                     ( map {0} ( 1 .. 133 ) ), 2,
-                     ( map {0} ( 134 .. 283 ) ), 1,
-                     ( map {0} ( 285 .. 297 ) ), 1,
-                     ( map {0} ( 299 .. 999 ) )
-                  ],
+               all => {
+                  133 => 2,
+                  284 => 1,
+                  298 => 1,
+               },
                sum => '3.002608',
                cnt => 4,
             },
@@ -949,12 +980,10 @@ is_deeply(
             Query_time => {
                min => '0.000652',
                max => '2.000652',
-               all =>
-                  [ 
-                     ( map {0} ( 1 .. 133 ) ), 1,
-                     ( map {0} ( 134 .. 297 ) ), 1,
-                     ( map {0} ( 299 .. 999 ) )
-                  ],
+               all => {
+                  133 => 1,
+                  298 => 1,
+               },
                sum => '2.001304',
                cnt => 2,
             },
@@ -964,13 +993,11 @@ is_deeply(
          Query_time => {
             min => '0.000652',
             max => '2.000652',
-            all =>
-               [ 
-                  ( map {0} ( 1 .. 133 ) ), 3,
-                  ( map {0} ( 134 .. 283 ) ), 1,
-                  ( map {0} ( 285 .. 297 ) ), 2,
-                  ( map {0} ( 299 .. 999 ) )
-               ],
+            all => {
+               133 => 3,
+               284 => 1,
+               298 => 2,
+            },
             sum => '5.003912',
             cnt => 6,
          },
@@ -1128,7 +1155,11 @@ my $bad_event = {
    cnt => 605
 };
 
-$result = $ea->_calc_metrics($bad_vals, $bad_event);
+# Converted for http://code.google.com/p/maatkit/issues/detail?id=866
+my $bad_vals_hashref = {};
+$bad_vals_hashref->{$_} = $bad_vals->[$_] for 0..999;
+
+$result = $ea->_calc_metrics($bad_vals_hashref, $bad_event);
 is_deeply(
    $result,
    {
@@ -1143,11 +1174,9 @@ is_deeply(
 # #############################################################################
 # Issue 332: mk-query-digest crashes on sqrt of negative number
 # #############################################################################
-$bad_vals = [
-   ( map {0} ( 1..499 ) ),
-   12,
-   ( map {0} ( 501..999 ) )
-];
+$bad_vals = {
+   499 => 12,
+};
 $bad_event = {
    min  => 36015,
    max  => 36018,
@@ -1168,11 +1197,9 @@ is_deeply(
    'float math with big number (issue 332)'
 );
 
-$bad_vals = [
-   ( map {0} ( 1..799 ) ),
-   9,
-   ( map {0} ( 801..999 ) )
-];
+$bad_vals = {
+   799 => 9,
+};
 $bad_event = {
    min  => 36015, 
    max  => 36018,
@@ -1273,11 +1300,10 @@ is_deeply(
          Query_time => {
            min => '1.000000',
            max => '2.000000',
-           all => [
-             ( map {0} ( 0..283 ) ), 1,
-             ( map {0} ( 285..297) ), 1,
-             ( map {0} ( 299..999) ),
-           ],
+           all => {
+              284 => 1,
+              298 => 1,
+           },
            sum => 3,
            cnt => 2
          }
@@ -1302,11 +1328,10 @@ is_deeply(
        Query_time => {
          min => '1.000000',
          max => '2.000000',
-         all => [
-             ( map {0} ( 0..283 ) ), 1,
-             ( map {0} ( 285..297) ), 1,
-             ( map {0} ( 299..999) ),
-         ],
+         all => {
+            284 => 1,
+            298 => 1,
+         },
          sum => 3,
          cnt => 2
        }
@@ -1341,11 +1366,10 @@ my $only_query_time_results =  {
          Query_time => {
            min => '1.000000',
            max => '2.000000',
-           all => [
-             ( map {0} ( 0..283 ) ), 1,
-             ( map {0} ( 285..297) ), 1,
-             ( map {0} ( 299..999) ),
-           ],
+           all => {
+              284 => 1,
+              298 => 1,
+           },
            sum => 3,
            cnt => 2
          }
@@ -1355,11 +1379,10 @@ my $only_query_time_results =  {
        Query_time => {
          min => '1.000000',
          max => '2.000000',
-         all => [
-             ( map {0} ( 0..283 ) ), 1,
-             ( map {0} ( 285..297) ), 1,
-             ( map {0} ( 299..999) ),
-         ],
+         all => {
+            284 => 1,
+            298 => 1,
+         },
          sum => 3,
          cnt => 2
        }
@@ -1640,8 +1663,10 @@ $result = {
          Query_time => {
             min => '0.000652',
             max => '0.000682',
-            all =>
-               [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
+            all => {
+               133 => 1,
+               134 => 1,
+            },
             sum => '0.001334',
             cnt => 2,
          },
@@ -1666,13 +1691,10 @@ $result = {
          Rows_sent => {
             min => 1,
             max => 2,
-            all => [
-               (map {0} (0..283)),
-               1,
-               (map {0} (285..297)),
-               1,
-               (map {0} (299..999)),
-            ],
+            all => {
+               284 => 1,
+               298 => 1,
+            },
             sum => 3,
             cnt => 2,
          },
@@ -1689,14 +1711,14 @@ $result = {
          ea1_only => {
             min => '5',
             max => '5',
-            all => [(map {0} (0..316)), 1, (map {0} (318..999)) ], 
+            all => { 317 => 1 },
             sum => '5',
             cnt => 1,
          },
          ea2_only => {
             min => '7',
             max => '7',
-            all => [(map {0} (0..323)), 1, (map {0} (325..999)) ],
+            all => { 324 => 1 },
             sum => '7',
             cnt => 1,
          },
@@ -1708,11 +1730,10 @@ $result = {
          max => '0.000682',
          sum => '0.001334',
          cnt => 2,
-         all => [
-            ( map {0} ( 0 .. 132 ) ),
-            1, 1, ( map {0} ( 135 .. 156 ) ),
-            ( map {0} ( 157 .. 999 ) ),
-         ],
+         all => {
+            133 => 1,
+            134 => 1,
+         },
       },
       user => {
          min => 'bob',
@@ -1729,13 +1750,10 @@ $result = {
          max => 2,
          sum => 3,
          cnt => 2,
-         all => [
-            (map {0} (0..283 )),
-            1,
-            (map {0} (285..297)),
-            1,
-            (map {0} (299..999)),
-         ],
+         all => {
+            284 => 1,
+            298 => 1,
+         },
       },
       Full_scan => {
          cnt => 2,
@@ -1746,14 +1764,14 @@ $result = {
       ea1_only => {
          min => '5',
          max => '5',
-         all => [(map {0} (0..316)), 1, (map {0} (318..999)) ], 
+         all => { 317 => 1 },
          sum => '5',
          cnt => 1,
       },
       ea2_only => {
          min => '7',
          max => '7',
-         all => [(map {0} (0..323)), 1, (map {0} (325..999)) ],
+         all => { 324 => 1 },
          sum => '7',
          cnt => 1,
       },
