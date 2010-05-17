@@ -4446,7 +4446,8 @@ sub main {
    # ########################################################################
    if ( $o->get('check-replication-filters') ) {
       eval {
-         my $check_filter = $o->get('replication-filter-checks');
+         my %ignore_repl_filter 
+            = map { lc($_) => 1 } keys %{$o->get('ignore-replication-filters')};
 
          $ms->recurse_to_slaves(
             {  dbh        => $main_dbh,
@@ -4459,21 +4460,22 @@ sub main {
 
                   # Remove filters that aren't checked.
                   map {
-                     delete $repl_filters->{$_} unless $check_filter->{$_}
+                     delete $repl_filters->{$_} if $ignore_repl_filter{$_}
                   } keys %$repl_filters;
 
                   if ( keys %$repl_filters ) {
                      my $host = $dp->as_string($dsn);
-                     my $msg = "Cannot checksum with --replicate because "
+                     my $msg = "Cannot checksum with --replicate because these "
                              . "replication filters are set on $host:\n"
                              . join("\n",
                                  map { "  $_ = $repl_filters->{$_}" }
                                  keys %$repl_filters
                                )
-                             . "\nSpecify --no-check-replication-filters or "
-                             . "a custom list of replication filters to check "
-                             . "with --replication-filter-checks to disable "
-                             . "this check.";
+                             . "\nSpecify --no-check-replication-filters to "
+                             . "disable this check entirely or specify "
+                             . "--ignore-replication-filters "
+                             . join(',', keys %$repl_filters)
+                             . "to ignore just these replication filters.";
                      die $msg;
                   }
                   return;
@@ -6408,8 +6410,8 @@ Master and slave replication filters, like Binlog_Ignore_DB and
 Replicate_Do_DB, may prevent L<"--replicate"> from working or--worse--break
 replication.
 
-Checks for certain replication filters can be enabled/disabled by specifying
-L<"--replication-filter-checks">.
+Checks for certain replication filters can be ignored/disabled by specifying
+L<"--ignore-replication-filters">.
 
 =item --check-slave-lag
 
@@ -6604,6 +6606,15 @@ Ignore this comma-separated list of databases.
 type: Hash; default: FEDERATED,MRG_MyISAM; group: Filter
 
 Ignore this comma-separated list of storage engines.
+
+=item --ignore-replication-filters
+
+type: Hash
+
+Ignore these replication filters for L<"--[no]check-replication-filters">.
+
+Filter names, like Replicate_Ignore_DB, are comma-separated and
+case-insensitive.
 
 =item --ignore-tables
 
@@ -6907,12 +6918,6 @@ This requires the @@SERVER_ID system variable, so it works only on MySQL
 
 If any slave has chunks that differ from the master, mk-table-checksum's
 exit status is 1; otherwise it is 0.
-
-=item --replication-filter-checks
-
-type: hash; default: binlog_do_db, binlog_ignore_db, replicate_do_db, replicate_ignore_db, replicate_do_table, replicate_ignore_table, replicate_wild_do_table, replicate_wild_ignore_table
-
-Check for these replication filters for L<"--[no]check-replication-filters">.
 
 =item --resume
 

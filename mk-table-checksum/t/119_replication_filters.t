@@ -56,12 +56,10 @@ like(
    "Warns about replication fitlers"
 );
 
-# Override repl filter checks: check for everything but the one we set.
+# Ignore the repl filter we set.
 $output = output(
    sub { mk_table_checksum::main(@args, '--create-replicate-table',
-      '--replication-filter-checks',
-      'binlog_do_db, binlog_ignore_db, replicate_do_db, replicate_do_table, replicate_ignore_table, replicate_wild_do_table, replicate_wild_ignore_table')
-   },
+      qw(--ignore-replication-filters Replicate_Ignore_DB)) },
    undef,
    stderr => 1,
 );
