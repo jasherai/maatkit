@@ -802,7 +802,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -1424,7 +1424,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -2897,7 +2897,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6240
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -2954,6 +2954,19 @@ sub literal_like {
    return "'$like'";
 }
 
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
@@ -2961,7 +2974,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6184
+# MasterSlave package 6320
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -3629,6 +3642,48 @@ sub is_replication_thread {
    return $match;
 }
 
+sub get_replication_filters {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my %filters = ();
+
+   my $status = $self->get_master_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         binlog_do_db
+         binlog_ignore_db
+      );
+   }
+
+   $status = $self->get_slave_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         replicate_do_db
+         replicate_ignore_db
+         replicate_do_table
+         replicate_ignore_table 
+         replicate_wild_do_table
+         replicate_wild_ignore_table
+      );
+
+      my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
+      MKDEBUG && _d($dbh, $sql);
+      my $row = $dbh->selectrow_arrayref($sql);
+      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+   }
+
+   return \%filters; 
+}
+
 sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
@@ -3650,7 +3705,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -3696,7 +3751,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -3774,7 +3830,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -3815,7 +3871,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
@@ -4380,6 +4438,53 @@ sub main {
       if ( $col_in_argtable{since} ) {
          $savesince_sth = $main_dbh->prepare(
            "UPDATE $arg_tbl SET since=COALESCE(?, NOW()) WHERE db=? AND tbl=?");
+      }
+   }
+
+   # ########################################################################
+   # Check for replication filters.
+   # ########################################################################
+   if ( $o->get('check-replication-filters') ) {
+      eval {
+         my $check_filter = $o->get('replication-filter-checks');
+
+         $ms->recurse_to_slaves(
+            {  dbh        => $main_dbh,
+               dsn        => $hosts[0],
+               dsn_parser => $dp,
+               recurse    => $o->get('replicate-check'),
+               callback   => sub {
+                  my ( $dsn, $dbh, $level, $parent ) = @_;
+                  my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
+
+                  # Remove filters that aren't checked.
+                  map {
+                     delete $repl_filters->{$_} unless $check_filter->{$_}
+                  } keys %$repl_filters;
+
+                  if ( keys %$repl_filters ) {
+                     my $host = $dp->as_string($dsn);
+                     my $msg = "Cannot checksum with --replicate because "
+                             . "replication filters are set on $host:\n"
+                             . join("\n",
+                                 map { "  $_ = $repl_filters->{$_}" }
+                                 keys %$repl_filters
+                               )
+                             . "\nSpecify --no-check-replication-filters or "
+                             . "a custom list of replication filters to check "
+                             . "with --replication-filter-checks to disable "
+                             . "this check.";
+                     die $msg;
+                  }
+                  return;
+               },
+               method => $o->get('recursion-method'),
+            }
+         );
+      };
+      if ( $EVAL_ERROR ) {
+         warn $EVAL_ERROR;
+         return 1;
       }
    }
 
@@ -6292,6 +6397,20 @@ type: time; group: Throttle; default: 1s
 
 How often to check for slave lag if L<"--check-slave-lag"> is given.
 
+=item --[no]check-replication-filters
+
+default: yes
+
+Do not L<"--replicate"> if any master or slave replication filters are set.
+
+This check which is only performed when L<"--replicate"> is specified.
+Master and slave replication filters, like Binlog_Ignore_DB and
+Replicate_Do_DB, may prevent L<"--replicate"> from working or--worse--break
+replication.
+
+Checks for certain replication filters can be enabled/disabled by specifying
+L<"--replication-filter-checks">.
+
 =item --check-slave-lag
 
 type: DSN; group: Throttle
@@ -6788,6 +6907,12 @@ This requires the @@SERVER_ID system variable, so it works only on MySQL
 
 If any slave has chunks that differ from the master, mk-table-checksum's
 exit status is 1; otherwise it is 0.
+
+=item --replication-filter-checks
+
+type: hash; default: binlog_do_db, binlog_ignore_db, replicate_do_db, replicate_ignore_db, replicate_do_table, replicate_ignore_table, replicate_wild_do_table, replicate_wild_ignore_table
+
+Check for these replication filters for L<"--[no]check-replication-filters">.
 
 =item --resume
 
