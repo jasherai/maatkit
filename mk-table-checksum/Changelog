@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * --replicate-check=0 did not work as documented (issue 1020).
+
 2010-05-03: version 1.2.14
 
    * Added --throttle-method, permit throttling by lag of all slaves (issue 67).

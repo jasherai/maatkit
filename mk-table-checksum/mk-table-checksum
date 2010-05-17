@@ -4389,7 +4389,9 @@ sub main {
    # through the entire script but checksum only the inconsistent tables found
    # here.
    # ########################################################################
-   if ( $o->get('replicate-check') ) {
+   if ( defined $o->get('replicate-check') ) {
+      MKDEBUG && _d("Running --replicate-check: depth:"
+         . $o->get('replicate-check'));
       my $callback = $o->get('recheck')
                    ? \&save_inconsistent_tbls
                    : \&print_inconsistent_tbls;
