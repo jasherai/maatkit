@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 44;
+use Test::More tests => 47;
 
 use MasterSlave;
 use DSNParser;
@@ -21,10 +21,11 @@ my $vp = new VersionParser();
 my $ms = new MasterSlave(VersionParser => $vp);
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $master_dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $slave_dbh  = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave1');
+
+# slave_dbh is used near the end but for the most part we
+# use special sandboxes on ports 2900-2903.
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 # Create slave2 as slave of slave1.
 #diag(`/tmp/12347/stop 2> /dev/null`);
@@ -458,6 +459,59 @@ ok(
    $ms->is_replication_thread($query, 'slave_sql'),
    'Slave sql thd is a slave sql thd',
 );
+
+# #############################################################################
+# get_replication_filters()
+# #############################################################################
+SKIP: {
+   skip "Cannot connect to sandbox master", 3 unless $master_dbh;
+   skip "Cannot connect to sandbox slave", 3 unless $slave_dbh;
+
+   is_deeply(
+      $ms->get_replication_filters(dbh=>$slave_dbh),
+      {
+      },
+      "No replication filters"
+   );
+
+   $master_dbh->disconnect();
+   $slave_dbh->disconnect();
+
+   diag(`/tmp/12346/stop >/dev/null`);
+   diag(`/tmp/12345/stop >/dev/null`);
+   diag(`cp /tmp/12346/my.sandbox.cnf /tmp/12346/orig.cnf`);
+   diag(`cp /tmp/12345/my.sandbox.cnf /tmp/12345/orig.cnf`);
+   diag(`echo "replicate-ignore-db=foo" >> /tmp/12346/my.sandbox.cnf`);
+   diag(`echo "binlog-ignore-db=bar" >> /tmp/12345/my.sandbox.cnf`);
+   diag(`/tmp/12345/start >/dev/null`);
+   diag(`/tmp/12346/start >/dev/null`);
+   
+   $master_dbh = $sb->get_dbh_for('master');
+   $slave_dbh  = $sb->get_dbh_for('slave1');
+
+   is_deeply(
+      $ms->get_replication_filters(dbh=>$master_dbh),
+      {
+         binlog_ignore_db => 'bar',
+      },
+      "Master replication filter"
+   );
+
+   is_deeply(
+      $ms->get_replication_filters(dbh=>$slave_dbh),
+      {
+         replicate_ignore_db => 'foo',
+      },
+      "Slave replication filter"
+   );
+   
+   diag(`/tmp/12346/stop >/dev/null`);
+   diag(`/tmp/12345/stop >/dev/null`);
+   diag(`mv /tmp/12346/orig.cnf /tmp/12346/my.sandbox.cnf`);
+   diag(`mv /tmp/12345/orig.cnf /tmp/12345/my.sandbox.cnf`);
+   diag(`/tmp/12345/start >/dev/null`);
+   diag(`/tmp/12346/start >/dev/null`);
+}
 
 # #############################################################################
 # Done.

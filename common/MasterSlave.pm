@@ -820,6 +820,52 @@ sub is_replication_thread {
    return $match;
 }
 
+# Arguments:
+#   dbh    dbh to check, either a master or slave
+# Returns a hashref of any replication filters.  If none are set,
+# an empty hashref is returned.
+sub get_replication_filters {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my %filters = ();
+
+   my $status = $self->get_master_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         binlog_do_db
+         binlog_ignore_db
+      );
+   }
+
+   $status = $self->get_slave_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         replicate_do_db
+         replicate_ignore_db
+         replicate_do_table
+         replicate_ignore_table 
+         replicate_wild_do_table
+         replicate_wild_ignore_table
+      );
+
+      my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
+      MKDEBUG && _d($dbh, $sql);
+      my $row = $dbh->selectrow_arrayref($sql);
+      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+   }
+
+   return \%filters; 
+}
+
 # Stringifies a position in a way that's string-comparable.
 sub pos_to_string {
    my ( $self, $pos ) = @_;
