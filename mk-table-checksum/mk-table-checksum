@@ -4229,6 +4229,7 @@ sub main {
    $already_checksummed                        = undef;
    %tables_to_checksum                         = ();
 
+   my $q = new Quoter();
 
    # ########################################################################
    # Get configuration information.
@@ -4335,6 +4336,14 @@ sub main {
          $o->save_error('--throttle-method ', $o->get('throttle-method'),
             ' requires --replicate');
       }
+   
+      # Make sure --replicate has a db. 
+      if ( my $replicate_table = $o->get('replicate') ) {
+         my ($db, $tbl) = $q->split_unquote($replicate_table);
+         if ( !$db ) {
+            $o->save_error('The --replicate table must be database-qualified');
+         }
+      }
    }
 
    $o->usage_or_errors();
@@ -4354,7 +4363,6 @@ sub main {
    # ########################################################################
    # Ready to work now.
    # ########################################################################
-   my $q  = new Quoter();
    my $vp = new VersionParser();
    my $tp = new TableParser(Quoter => $q);
    my $tc = new TableChecksum(Quoter=> $q, VersionParser => $vp);
@@ -4453,7 +4461,6 @@ sub main {
             {  dbh        => $main_dbh,
                dsn        => $hosts[0],
                dsn_parser => $dp,
-               recurse    => $o->get('replicate-check'),
                callback   => sub {
                   my ( $dsn, $dbh, $level, $parent ) = @_;
                   my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
@@ -4475,7 +4482,7 @@ sub main {
                              . "disable this check entirely or specify "
                              . "--ignore-replication-filters "
                              . join(',', keys %$repl_filters)
-                             . "to ignore just these replication filters.";
+                             . " to ignore just these replication filters.";
                      die $msg;
                   }
                   return;
@@ -5353,6 +5360,22 @@ sub check_repl_table {
 
    # Check that the replicate table exists and that we can access it.
    my ($db, $tbl) = $q->split_unquote($replicate_table);
+
+   # USE the replicate table's db by default
+   # http://code.google.com/p/maatkit/issues/detail?id=982
+   MKDEBUG && _d("USE", $db);
+   eval {
+      $dbh->do("USE `$db`");
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/unknown database/i ) {
+         die "--replicate database `$db` does not exist: $EVAL_ERROR";
+      }
+      else {
+         die "Error accessing --replicate database: $EVAL_ERROR";
+      }
+   }
+
    my $tbl_exists = $tp->check_table(
       dbh => $dbh,
       db  => $db,
@@ -5514,7 +5537,6 @@ sub do_tbl_replicate {
       'on', $host->{h}, ':', $host->{P});
 
    my $dbh = $host->{dbh};
-   $dbh->do("USE " . $q->quote($tbl->{database}));
 
    my $cnt = 'NULL';
    my $crc = 'NULL';
@@ -6865,11 +6887,10 @@ need not be removed before running.  However, you may wish to do this anyway to
 remove rows related to tables that don't exist anymore.  The
 L<"--empty-replicate-table"> option does this for you.
 
-Since mk-table-checksum uses USE to select the table's database as its
-default database before executing the checksum query, the checksum queries
-should replicate to slaves even if --binlog-do-db settings on the master filter
-out the checksum table's database.  For more information on how --binlog-do-db
-works, see L<http://dev.mysql.com/doc/en/binary-log.html>.
+Since the table must be qualified with a database (e.g. C<db.checksums>),
+mk-table-checksum will only USE this database.  This may be important if any
+replication options are set because it could affect whether or not changes
+to the table are replicated.
 
 If the slaves have any --replicate-do-X or --replicate-ignore-X options, you
 should be careful not to checksum any databases or tables that exist on the
