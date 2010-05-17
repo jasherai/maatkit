@@ -1432,7 +1432,7 @@ is_deeply(
 );
 is_deeply($o->get('foo'), [qw(a b c)], 'Array got a default');
 
-@ARGV = ('-C', 'a,b', '-t', 'd,e', '-d', 'f,g', '-b', 'o,p' );
+@ARGV = ('-C', 'a,b', '-t', 'd, e', '-d', 'f,g', '-b', 'o,p' );
 $o->get_opts();
 %opts = (
    C => $o->get('C'),
