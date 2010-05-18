@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-# This program is copyright 2007-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2010-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -446,7 +446,12 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -1063,7 +1068,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -3645,7 +3650,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# FileIterator package 6249
+# FileIterator package 6326
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/FileIterator.pm
@@ -3729,7 +3734,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExplainAnalyzer package 6269
+# ExplainAnalyzer package 6326
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ExplainAnalyzer.pm
@@ -3873,7 +3878,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# IndexUsage package 6272
+# IndexUsage package 6326
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/IndexUsage.pm
@@ -3979,7 +3984,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Progress package 6302
+# Progress package 6326
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Progress.pm
@@ -4677,7 +4682,7 @@ running with the C<MKDEBUG=1> environment variable.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+This program is copyright 2010-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
