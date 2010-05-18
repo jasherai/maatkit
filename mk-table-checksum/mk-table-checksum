@@ -4454,9 +4454,6 @@ sub main {
    # ########################################################################
    if ( $o->get('check-replication-filters') ) {
       eval {
-         my %ignore_repl_filter 
-            = map { lc($_) => 1 } keys %{$o->get('ignore-replication-filters')};
-
          $ms->recurse_to_slaves(
             {  dbh        => $main_dbh,
                dsn        => $hosts[0],
@@ -4464,12 +4461,6 @@ sub main {
                callback   => sub {
                   my ( $dsn, $dbh, $level, $parent ) = @_;
                   my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
-
-                  # Remove filters that aren't checked.
-                  map {
-                     delete $repl_filters->{$_} if $ignore_repl_filter{$_}
-                  } keys %$repl_filters;
-
                   if ( keys %$repl_filters ) {
                      my $host = $dp->as_string($dsn);
                      my $msg = "Cannot checksum with --replicate because these "
@@ -4479,10 +4470,7 @@ sub main {
                                  keys %$repl_filters
                                )
                              . "\nSpecify --no-check-replication-filters to "
-                             . "disable this check entirely or specify "
-                             . "--ignore-replication-filters "
-                             . join(',', keys %$repl_filters)
-                             . " to ignore just these replication filters.";
+                             . "disable this check entirely.";
                      die $msg;
                   }
                   return;
@@ -6432,9 +6420,6 @@ Master and slave replication filters, like Binlog_Ignore_DB and
 Replicate_Do_DB, may prevent L<"--replicate"> from working or--worse--break
 replication.
 
-Checks for certain replication filters can be ignored/disabled by specifying
-L<"--ignore-replication-filters">.
-
 =item --check-slave-lag
 
 type: DSN; group: Throttle
@@ -6628,15 +6613,6 @@ Ignore this comma-separated list of databases.
 type: Hash; default: FEDERATED,MRG_MyISAM; group: Filter
 
 Ignore this comma-separated list of storage engines.
-
-=item --ignore-replication-filters
-
-type: Hash
-
-Ignore these replication filters for L<"--[no]check-replication-filters">.
-
-Filter names, like Replicate_Ignore_DB, are comma-separated and
-case-insensitive.
 
 =item --ignore-tables
 

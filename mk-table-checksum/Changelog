@@ -4,7 +4,6 @@ Changelog for mk-table-checksum and mk-checksum-filter:
    * --replicate-check=0 did not skip the checksumming step (issue 1020).
    * Database-qualified --replicate table was not enforced (issue 982).
    * Added --[no]check-replication-filters (issue 993).
-   * Added --ignore-replication-filters (issue 993).
 
 2010-05-03: version 1.2.14
 

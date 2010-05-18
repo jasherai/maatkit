@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 4;
+   plan tests => 2;
 }
 
 my $output;
@@ -54,26 +54,6 @@ like(
    $output,
    qr/replication filters are set/,
    "Warns about replication fitlers"
-);
-
-# Ignore the repl filter we set.
-$output = output(
-   sub { mk_table_checksum::main(@args, '--create-replicate-table',
-      qw(--ignore-replication-filters Replicate_Ignore_DB)) },
-   undef,
-   stderr => 1,
-);
-
-like(
-   $output,
-   qr/mysql\s+user/,
-   "Did not checksum with replication filter"
-);
-
-unlike(
-   $output,
-   qr/replication filters are set/,
-   "No warning about replication fitlers"
 );
 
 # Remove the replication filter from the slave.
