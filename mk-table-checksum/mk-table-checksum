@@ -2471,7 +2471,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 5955
+# TableChunker package 6339
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2586,36 +2586,55 @@ sub calculate_chunks {
    MKDEBUG && _d('chunk col type:', $col_type);
 
 
-   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-      $start_point = $args{min};
-      $end_point   = $args{max};
-      $range_func  = 'range_num';
-   }
-   elsif ( $col_type eq 'timestamp' ) {
-      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_timestamp';
-   }
-   elsif ( $col_type eq 'date' ) {
-      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_date';
-   }
-   elsif ( $col_type eq 'time' ) {
-      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_time';
-   }
-   elsif ( $col_type eq 'datetime' ) {
-      $start_point = $self->timestampdiff($dbh, $args{min});
-      $end_point   = $self->timestampdiff($dbh, $args{max});
-      $range_func  = 'range_datetime';
-   }
-   else {
-      die "I don't know how to chunk $col_type\n";
+   eval {
+      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+         $start_point = $args{min};
+         $end_point   = $args{max};
+         $range_func  = 'range_num';
+      }
+      elsif ( $col_type eq 'timestamp' ) {
+         my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_timestamp';
+      }
+      elsif ( $col_type eq 'date' ) {
+         my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_date';
+      }
+      elsif ( $col_type eq 'time' ) {
+         my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_time';
+      }
+      elsif ( $col_type eq 'datetime' ) {
+         $start_point = $self->timestampdiff($dbh, $args{min});
+         $end_point   = $self->timestampdiff($dbh, $args{max});
+         $range_func  = 'range_datetime';
+      }
+      else {
+         die "I don't know how to chunk $col_type\n";
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/don't know how to chunk/ ) {
+         die $EVAL_ERROR;
+      }
+      else {
+         die "Error calculating chunk start and end points for table "
+            . "`$args{tbl_struct}->{name}` on column `$args{chunk_col}` "
+            . "with min/max values "
+            . join('/',
+                  map { defined $args{$_} ? $args{$_} : 'undef' } qw(min max))
+            . ":\n\n"
+            . $EVAL_ERROR
+            . "\nVerify that the min and max values are valid for the column.  "
+            . "If they are valid, this error could be caused by a bug in the "
+            . "tool.";
+      }
    }
 
    if ( !defined $start_point ) {
@@ -2875,8 +2894,9 @@ sub timestampdiff {
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
-   This is probably because you are using a version of MySQL that overflows on
-   large interval values to DATE_ADD().  If not, please report this as a bug.
+   This could be due to a version of MySQL that overflows on large interval
+   values to DATE_ADD(), or the given datetime is not a valid date.  If not,
+   please report this as a bug.
    EOF
       unless $check eq $time;
    return $diff;
