@@ -157,38 +157,59 @@ sub calculate_chunks {
    # approximately the right number of rows between the endpoints.  Also
    # find the start/end points as a number that Perl can do + and < on.
 
-   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-      $start_point = $args{min};
-      $end_point   = $args{max};
-      $range_func  = 'range_num';
-   }
-   elsif ( $col_type eq 'timestamp' ) {
-      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_timestamp';
-   }
-   elsif ( $col_type eq 'date' ) {
-      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_date';
-   }
-   elsif ( $col_type eq 'time' ) {
-      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_time';
-   }
-   elsif ( $col_type eq 'datetime' ) {
-      # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
-      # to maintain just one kind of code, so I do it all with DATE_ADD().
-      $start_point = $self->timestampdiff($dbh, $args{min});
-      $end_point   = $self->timestampdiff($dbh, $args{max});
-      $range_func  = 'range_datetime';
-   }
-   else {
-      die "I don't know how to chunk $col_type\n";
+   eval {
+      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+         $start_point = $args{min};
+         $end_point   = $args{max};
+         $range_func  = 'range_num';
+      }
+      elsif ( $col_type eq 'timestamp' ) {
+         my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_timestamp';
+      }
+      elsif ( $col_type eq 'date' ) {
+         my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_date';
+      }
+      elsif ( $col_type eq 'time' ) {
+         my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_time';
+      }
+      elsif ( $col_type eq 'datetime' ) {
+         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
+         # to maintain just one kind of code, so I do it all with DATE_ADD().
+         $start_point = $self->timestampdiff($dbh, $args{min});
+         $end_point   = $self->timestampdiff($dbh, $args{max});
+         $range_func  = 'range_datetime';
+      }
+      else {
+         die "I don't know how to chunk $col_type\n";
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/don't know how to chunk/ ) {
+         # Special kind of error doesn't make sense with the more verbose
+         # description below.
+         die $EVAL_ERROR;
+      }
+      else {
+         die "Error calculating chunk start and end points for table "
+            . "`$args{tbl_struct}->{name}` on column `$args{chunk_col}` "
+            . "with min/max values "
+            . join('/',
+                  map { defined $args{$_} ? $args{$_} : 'undef' } qw(min max))
+            . ":\n\n"
+            . $EVAL_ERROR
+            . "\nVerify that the min and max values are valid for the column.  "
+            . "If they are valid, this error could be caused by a bug in the "
+            . "tool.";
+      }
    }
 
    # The endpoints could easily be undef, because of things like dates that
@@ -493,8 +514,9 @@ sub timestampdiff {
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
-   This is probably because you are using a version of MySQL that overflows on
-   large interval values to DATE_ADD().  If not, please report this as a bug.
+   This could be due to a version of MySQL that overflows on large interval
+   values to DATE_ADD(), or the given datetime is not a valid date.  If not,
+   please report this as a bug.
    EOF
       unless $check eq $time;
    return $diff;

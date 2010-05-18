@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 38;
+   plan tests => 39;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -652,6 +652,32 @@ test_zero_row(
       '`dt` >= "2010-03-02 09:30:40" AND `dt` < "2010-03-03 17:00:20"',
       '`dt` >= "2010-03-03 17:00:20"',
    ],
+);
+
+# #############################################################################
+# Issue 602: mk-table-checksum issue with invalid dates
+# #############################################################################
+$sb->load_file('master', 'mk-table-checksum/t/samples/issue_602.sql');
+$t = $p->parse( $du->get_create_table($dbh, $q, 'issue_602', 't') );
+%params = $c->get_range_statistics(
+   dbh       => $dbh,
+   db        => 'issue_602',
+   tbl       => 't',
+   chunk_col => 'b',
+);
+
+throws_ok(
+   sub {
+      $c->calculate_chunks(
+         dbh        => $dbh,
+         tbl_struct => $t,
+         chunk_col  => 'b',
+         chunk_size => '5',
+         %params,
+      )
+   },
+   qr/Error calculating chunk start and end points/,
+   "Catches start/end point failure (issue 602)"
 );
 
 # #############################################################################
