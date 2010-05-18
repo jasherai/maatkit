@@ -4453,34 +4453,39 @@ sub main {
    # Check for replication filters.
    # ########################################################################
    if ( $o->get('check-replication-filters') ) {
-      eval {
-         $ms->recurse_to_slaves(
-            {  dbh        => $main_dbh,
-               dsn        => $hosts[0],
-               dsn_parser => $dp,
-               callback   => sub {
-                  my ( $dsn, $dbh, $level, $parent ) = @_;
-                  my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
-                  if ( keys %$repl_filters ) {
-                     my $host = $dp->as_string($dsn);
-                     my $msg = "Cannot checksum with --replicate because these "
-                             . "replication filters are set on $host:\n"
-                             . join("\n",
-                                 map { "  $_ = $repl_filters->{$_}" }
-                                 keys %$repl_filters
-                               )
-                             . "\nSpecify --no-check-replication-filters to "
-                             . "disable this check entirely.";
-                     die $msg;
-                  }
-                  return;
-               },
-               method => $o->get('recursion-method'),
-            }
-         );
-      };
-      if ( $EVAL_ERROR ) {
-         warn $EVAL_ERROR;
+      my @all_repl_filters;
+      $ms->recurse_to_slaves(
+         {  dbh        => $main_dbh,
+            dsn        => $hosts[0],
+            dsn_parser => $dp,
+            callback   => sub {
+               my ( $dsn, $dbh, $level, $parent ) = @_;
+               my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
+               if ( keys %$repl_filters ) {
+                  my $host = $dp->as_string($dsn);
+                  push @all_repl_filters,
+                     { name    => $host,
+                       filters => $repl_filters,
+                     };
+               }
+               return;
+            },
+            method => $o->get('recursion-method'),
+         }
+      );
+      if ( @all_repl_filters ) {
+         my $msg = "Cannot checksum with --replicate because replication "
+                 . "filters are set on these hosts:\n";
+         foreach my $host ( @all_repl_filters ) {
+            my $filters = $host->{filters};
+            $msg .= "  $host->{name}\n"
+                  . join("\n", map { "    $_ = $host->{filters}->{$_}" }
+                        keys %{$host->{filters}})
+                  . "\n";
+         }
+         $msg .= "Specify --no-check-replication-filters to disable this "
+               . "check entirely.";
+         warn $msg;
          return 1;
       }
    }
