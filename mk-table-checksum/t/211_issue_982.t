@@ -27,7 +27,7 @@ if ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 2;
+   plan tests => 6;
 }
 
 my $rows;
@@ -76,15 +76,88 @@ ok(
    "Slave checksum table deleted"
 );
 
-# Remove the replication filter from the slave.
+# Clear checksum table for next tests.
+$master_dbh->do("truncate table test.checksum");
+sleep 1;
+$rows = $slave_dbh->selectall_arrayref("select * from test.checksum");
+ok(
+   !@$rows,
+   "Checksum table empty on slave"
+);
+
+$master_dbh->disconnect();
+$slave_dbh->disconnect();
+
+# Restore original config.
+diag(`/tmp/12346/stop >/dev/null`);
+diag(`/tmp/12345/stop >/dev/null`);
+diag(`cp /tmp/12345/orig.cnf /tmp/12345/my.sandbox.cnf`);
+
+# #############################################################################
+# Test --replicate-database which resulted from this issue.
+# #############################################################################
+
+# Add a binlog-do-db filter so master will only replicate
+# statements when USE mysql is in effect.
+diag(`echo "binlog-do-db=mysql" >> /tmp/12345/my.sandbox.cnf`);
+diag(`/tmp/12345/start >/dev/null`);
+diag(`/tmp/12346/start >/dev/null`);
+
+$master_dbh = $sb->get_dbh_for('master');
+$slave_dbh  = $sb->get_dbh_for('slave1');
+
+$output = output(
+   sub { mk_table_checksum::main("F=$cnf", qw(--no-check-replication-filters),
+      qw(--replicate=test.checksum -d mysql -t user))
+   },
+   undef,
+   stderr => 1,
+);
+
+# Because we did not use --replicate-database, mk-table-checksum should
+# have done USE mysql before updating the checksum table.  Thus, the
+# checksums should show up on the slave.
+sleep 1;
+$rows = $slave_dbh->selectall_arrayref("select * from test.checksum where db='mysql' AND tbl='user'");
+ok(
+   @$rows == 1,
+   "Checksum replicated with binlog-do-db, without --replicate-database"
+);
+
+# Now force --replicate-database test and the checksums should not replicate.
+
+$master_dbh->do("use mysql");
+$master_dbh->do("truncate table test.checksum");
+sleep 1;
+$rows = $slave_dbh->selectall_arrayref("select * from test.checksum");
+ok(
+   !@$rows,
+   "Checksum table empty on slave"
+);
+
+$output = output(
+   sub { mk_table_checksum::main("F=$cnf", qw(--no-check-replication-filters),
+      qw(--replicate=test.checksum -d mysql -t user),
+      qw(--replicate-database test))
+   },
+   undef,
+   stderr => 1,
+);
+sleep 1;
+$rows = $slave_dbh->selectall_arrayref("select * from test.checksum where db='mysql' AND tbl='user'");
+ok(
+   !@$rows,
+   "Checksum did not replicated with binlog-do-db, with --replicate-database"
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+# Restore original config.
+$sb->wipe_clean($master_dbh);
 diag(`/tmp/12346/stop >/dev/null`);
 diag(`/tmp/12345/stop >/dev/null`);
 diag(`mv /tmp/12345/orig.cnf /tmp/12345/my.sandbox.cnf`);
 diag(`/tmp/12345/start >/dev/null`);
 diag(`/tmp/12346/start >/dev/null`);
-
-# #############################################################################
-# Done.
-# #############################################################################
-# $sb->wipe_clean($dbh);
 exit;
