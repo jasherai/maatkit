@@ -21,13 +21,7 @@ package IndexUsage;
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # This module's job is to keep track of how many times queries use indexes, and
@@ -49,15 +43,25 @@ sub new {
 # follows:
 #   - The name of the database
 #   - The name of the table
-#   - An arrayref of the names of the indexes
+#   - A hashref to an indexes struct returned by TableParser::get_keys()
 sub add_indexes {
-   my ( $self, $db, $tbl, $indexes ) = @_;
-   die "I need a db, table, and index"
-      if grep { !defined } ($db, $tbl, $indexes);
-   $self->{tables_for}->{$db}->{$tbl} = 0;
-   foreach my $index ( @$indexes ) {
-      $self->{indexes_for}->{$db}->{$tbl}->{$index} = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(db tbl indexes);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
+   my ($db, $tbl, $indexes) = @args{@required_args};
+
+   $self->{tables_for}->{$db}->{$tbl}  = 0;
+   $self->{indexes_for}->{$db}->{$tbl} = $indexes;
+
+   # Add to the indexes struct a cnt key for each index which is
+   # incremented in add_index_usage().
+   foreach my $index ( keys %$indexes ) {
+      $indexes->{$index}->{cnt} = 0;
+   }
+
+   return;
 }
 
 # This method just counts the fact that a table was used (regardless of whether
@@ -82,7 +86,7 @@ sub add_index_usage {
       my ($db, $tbl, $idx, $alt) = @{$access}{qw(db tbl idx alt)};
       # Increment the index(es)'s usage counter.
       foreach my $index ( @$idx ) {
-         $self->{indexes_for}->{$db}->{$tbl}->{$index}++;
+         $self->{indexes_for}->{$db}->{$tbl}->{$index}->{cnt}++;
       }
    }
 }
@@ -101,28 +105,30 @@ sub find_unused_indexes {
    my %indexes_for = %{$self->{indexes_for}};
    my %tables_for  = %{$self->{tables_for}};
 
-   foreach my $database ( sort keys %indexes_for ) {
-      my %tables = %{$indexes_for{$database}};
+   DATABASE:
+   foreach my $db ( sort keys %{$self->{indexes_for}} ) {
       TABLE:
-      foreach my $table ( sort keys %tables ) {
-         next TABLE unless $tables_for{$database}->{$table}; # Skip unused
-         my %indexes = %{$tables{$table}};
+      foreach my $tbl ( sort keys %{$self->{indexes_for}->{$db}} ) {
+         next TABLE unless $self->{tables_for}->{$db}->{$tbl}; # Skip unused
+         my $indexes = $self->{indexes_for}->{$db}->{$tbl};
          my @unused_indexes;
-         foreach my $index ( sort keys %indexes ) {
-            if (!$indexes{$index}) { # The count of times accessed/used
-               push @unused_indexes, $index;
+         foreach my $index ( sort keys %$indexes ) {
+            if ( !$indexes->{$index}->{cnt} ) { # count of times accessed/used
+               push @unused_indexes, $indexes->{$index};
             }
          }
          if ( @unused_indexes ) {
             $callback->(
-               {  db  => $database,
-                  tbl => $table,
+               {  db  => $db,
+                  tbl => $tbl,
                   idx => \@unused_indexes,
                }
             );
          }
-      }
-   }
+      } # TABLE
+   } # DATABASE
+
+   return;
 }
 
 sub _d {
