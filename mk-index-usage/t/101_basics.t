@@ -29,9 +29,9 @@ else {
    plan tests => 2;
 }
 
-my @args = qw(--host localhost);
+my $cnf  = '/tmp/12345/my.sandbox.cnf';
+my @args = ('-F', $cnf);
 my $output;
-my $cmd;
 
 ok(
    no_diff(
@@ -42,16 +42,16 @@ ok(
    'A simple query that does not use any indexes',
 );
 
-
 # Capture errors, and ensure that statement blacklisting works OK
-{
-   my $buffer;
-   local *STDERR;
-   open STDERR, '>', \$buffer or die $OS_ERROR;
-   mk_index_usage::main(@args, "$trunk/common/t/samples/slow045.txt");
-   my @errs = $buffer =~ m/DBD::mysql::db selectall_arrayref failed/g;
-   is(scalar @errs, 1, 'failing statement was blacklisted OK');
-}
+$output = output(
+   sub {
+      mk_index_usage::main(@args, "$trunk/common/t/samples/slow045.txt")
+   },
+   undef,
+   stderr => 1,
+);
+my @errs = $output =~ m/DBD::mysql::db selectall_arrayref failed/g;
+is(scalar @errs, 1, 'failing statement was blacklisted OK');
 
 # #############################################################################
 # Done.
