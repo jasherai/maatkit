@@ -4396,7 +4396,7 @@ sub print_unused_indexes {
 
    # We must ignore the types that we're not dropping, then group
    # indexes of the remaining types together and print them together.
-   my (@primary, @unique, @secondary);
+   my (@primary, @unique, @nonunique);
    foreach my $idx ( @{$unused->{idx}} ) {
       if ($idx->{name} =~ m/PRIMARY/i ) {
          push @primary, $idx;
@@ -4405,30 +4405,30 @@ sub print_unused_indexes {
          push @unique, $idx;
       }
       else {
-         push @secondary, $idx;
+         push @nonunique, $idx;
       }
    }
 
    print_alter_drop_key(
-      db_tbl  => $db_tbl,
-      idx     => \@primary,
-      comment => 'primary key',
+      db_tbl => $db_tbl,
+      idx    => \@primary,
+      type   => 'primary key',
       %args
    ) if $drop->{primary} || $drop->{all};
 
    print_alter_drop_key(
-      db_tbl  => $db_tbl,
-      idx     => \@unique,
-      comment => 'unique indexes',
+      db_tbl => $db_tbl,
+      idx    => \@unique,
+      type   => 'unique',
       %args
    ) if $drop->{unique} || $drop->{all};
 
    print_alter_drop_key(
-      db_tbl  => $db_tbl,
-      idx     => \@secondary,
-      comment => 'secondary indexes',
+      db_tbl => $db_tbl,
+      idx    => \@nonunique,
+      type   => 'non-unique',
       %args
-   ) if $drop->{secondary} || $drop->{all};
+   ) if $drop->{"non-unique"} || $drop->{all};
 
    return;
 }
@@ -4443,18 +4443,11 @@ sub print_alter_drop_key {
 
    return unless @$idx;
 
-   if ( @$idx > 1 ) {
-      print "\nALTER TABLE $db_tbl"
-         . ($args{comment} ? " /* $args{comment} */" : "")
-         . join(',', map { "\n   DROP KEY " . $q->quote($_->{name}) } @$idx)
-         . ";\n";
-   }
-   else {
-      print "\nALTER TABLE $db_tbl DROP KEY " . $q->quote($idx->[0]->{name})
-         . ";"
-         . ($args{comment} ? " /* $args{comment} */" : "")
-         . "\n";
-   }
+   print "\nALTER TABLE $db_tbl "
+      . join(', ', map { "DROP KEY " . $q->quote($_->{name}) } @$idx)
+      . ";"
+      . ($args{type} ? " -- type:$args{type}" : "")
+      . "\n";
 
    return;
 }
@@ -4608,16 +4601,16 @@ Only read mysql options from the given file.  You must give an absolute pathname
 
 =item --drop
 
-type: Hash; default: secondary
+type: Hash; default: non-unique
 
 Suggest dropping only these types of unusued indexes.
 
 By default mk-index-usage will only suggest to drop unused secondary indexes,
 not primary or unique indexes.  You can specify which types of unused indexes
-the tool suggests to drop: primary, unique, secondary, all.
+the tool suggests to drop: primary, unique, non-unique, all.
 
 A separate C<ALTER TABLE> statement for each type is printed.  So if you
-specify C<--drop all> and there is a primary key and a secondary index,
+specify C<--drop all> and there is a primary key and a non-unique index,
 the C<ALTER TABLE ... DROP> for each will be printed on separate lines.
 
 =item --help

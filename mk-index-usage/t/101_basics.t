@@ -28,7 +28,7 @@ if ( !@{ $dbh->selectall_arrayref('show databases like "sakila"') } ) {
    plan skip_all => "Sakila database is not loaded";
 }
 else {
-   plan tests => 5;
+   plan tests => 6;
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
@@ -82,6 +82,18 @@ is(
    $output,
    '',
    'A simple query that uses a secondary index',
+);
+
+# This query uses the pk on a table with two other indexes, so those
+# indexes are printed.
+ok(
+   no_diff(
+      sub {
+          mk_index_usage::main(@args,
+            "$trunk/$samples/slow005.txt");
+      },
+      "$samples/slow005-report.txt"),
+   'Drop multiple indexes',
 );
 
 # #############################################################################
