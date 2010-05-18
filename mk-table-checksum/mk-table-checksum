@@ -5354,7 +5354,7 @@ sub check_repl_table {
    # Check that the replicate table exists and that we can access it.
    my ($db, $tbl) = $q->split_unquote($replicate_table);
 
-   # USE the replicate table's db by default
+   # USE the replicate table's db when doing operations on it.
    # http://code.google.com/p/maatkit/issues/detail?id=982
    MKDEBUG && _d("USE", $db);
    eval {
