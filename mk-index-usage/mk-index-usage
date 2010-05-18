@@ -3878,7 +3878,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# IndexUsage package 6326
+# IndexUsage package 6331
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/IndexUsage.pm
@@ -3889,13 +3889,7 @@ package IndexUsage;
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
@@ -3909,13 +3903,21 @@ sub new {
 }
 
 sub add_indexes {
-   my ( $self, $db, $tbl, $indexes ) = @_;
-   die "I need a db, table, and index"
-      if grep { !defined } ($db, $tbl, $indexes);
-   $self->{tables_for}->{$db}->{$tbl} = 0;
-   foreach my $index ( @$indexes ) {
-      $self->{indexes_for}->{$db}->{$tbl}->{$index} = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(db tbl indexes);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
+   my ($db, $tbl, $indexes) = @args{@required_args};
+
+   $self->{tables_for}->{$db}->{$tbl}  = 0;
+   $self->{indexes_for}->{$db}->{$tbl} = $indexes;
+
+   foreach my $index ( keys %$indexes ) {
+      $indexes->{$index}->{cnt} = 0;
+   }
+
+   return;
 }
 
 sub add_table_usage {
@@ -3933,7 +3935,7 @@ sub add_index_usage {
    foreach my $access ( @$usage ) {
       my ($db, $tbl, $idx, $alt) = @{$access}{qw(db tbl idx alt)};
       foreach my $index ( @$idx ) {
-         $self->{indexes_for}->{$db}->{$tbl}->{$index}++;
+         $self->{indexes_for}->{$db}->{$tbl}->{$index}->{cnt}++;
       }
    }
 }
@@ -3945,28 +3947,30 @@ sub find_unused_indexes {
    my %indexes_for = %{$self->{indexes_for}};
    my %tables_for  = %{$self->{tables_for}};
 
-   foreach my $database ( sort keys %indexes_for ) {
-      my %tables = %{$indexes_for{$database}};
+   DATABASE:
+   foreach my $db ( sort keys %{$self->{indexes_for}} ) {
       TABLE:
-      foreach my $table ( sort keys %tables ) {
-         next TABLE unless $tables_for{$database}->{$table}; # Skip unused
-         my %indexes = %{$tables{$table}};
+      foreach my $tbl ( sort keys %{$self->{indexes_for}->{$db}} ) {
+         next TABLE unless $self->{tables_for}->{$db}->{$tbl}; # Skip unused
+         my $indexes = $self->{indexes_for}->{$db}->{$tbl};
          my @unused_indexes;
-         foreach my $index ( sort keys %indexes ) {
-            if (!$indexes{$index}) { # The count of times accessed/used
-               push @unused_indexes, $index;
+         foreach my $index ( sort keys %$indexes ) {
+            if ( !$indexes->{$index}->{cnt} ) { # count of times accessed/used
+               push @unused_indexes, $indexes->{$index};
             }
          }
          if ( @unused_indexes ) {
             $callback->(
-               {  db  => $database,
-                  tbl => $table,
+               {  db  => $db,
+                  tbl => $tbl,
                   idx => \@unused_indexes,
                }
             );
          }
-      }
-   }
+      } # TABLE
+   } # DATABASE
+
+   return;
 }
 
 sub _d {
@@ -4150,21 +4154,12 @@ Transformers->import(qw(make_checksum));
 
 # Global variables.  Only really essential variables should be here.
 my $oktorun = 1;
-my $q      = new Quoter();
-my $qp     = new QueryParser();
-my $qr     = new QueryRewriter(QueryParser => $qp);
-my $tp     = new TableParser(Quoter => $q);
-my $vp     = new VersionParser();
-my $parser = new SlowLogParser();
-my $fi     = new FileIterator();
-my $du     = new MySQLDump();
-my $si     = new SchemaIterator(Quoter => $q);
-my $iu     = new IndexUsage();
-my $exa    = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
 
 if ( !caller ) { exit main(@ARGV); } # Run the program.
 sub main {
    @ARGV = @_;  # set global ARGV for this package
+
+   $oktorun = 1;
 
    # ##########################################################################
    # Get configuration information.
@@ -4198,13 +4193,32 @@ sub main {
       DSNParser    => $dp,
    );
 
+   # ##########################################################################
+   # Make common modules.
+   # ##########################################################################
+   my $q      = new Quoter();
+   my $qp     = new QueryParser();
+   my $qr     = new QueryRewriter(QueryParser => $qp);
+   my $tp     = new TableParser(Quoter => $q);
+   my $vp     = new VersionParser();
+   my $parser = new SlowLogParser();
+   my $fi     = new FileIterator();
+   my $du     = new MySQLDump();
+   my $si     = new SchemaIterator(Quoter => $q);
+   my $iu     = new IndexUsage();
+   my $exa    = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
+   my %common_modules = (
+      OptionParser => $o,
+      DSNParser    => $dp,
+      Quoter       => $q,
+   );
+
    # ########################################################################
    # Populate the IndexUsage object with indexes.  Also get a list of all
    # databases and tables before going on to parse the queries.  This will be
    # important when we see a query without any default database, and we have to
    # guess which database to USE for EXPLAIN-ing it.
    # ########################################################################
-   my %tables_for;
    $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
    my $next_db = $si->get_db_itr(dbh => $dbh);
@@ -4223,8 +4237,7 @@ sub main {
             my $ddl       = $du->get_create_table(
                             $dbh, $q, $database, $table)->[1];
             my ($indexes) = $tp->get_keys($ddl, {version => $version });
-            $iu->add_indexes($database, $table, [ keys %$indexes ]);
-            $tables_for{$database}->{$table} = 1;
+            $iu->add_indexes(db=>$database, tbl=>$table, indexes=>$indexes);
          };
          if ( $EVAL_ERROR ) {
             warn $EVAL_ERROR unless $o->get('q');
@@ -4355,11 +4368,12 @@ sub main {
    # ########################################################################
    $iu->find_unused_indexes(
       sub {
-         my ( $unused ) = @_; # Hashref.
-         print "ALTER TABLE ", $q->quote($unused->{db}, $unused->{tbl}),
-            join(',',
-               map { "\n   DROP KEY " . $q->quote($_) } @{$unused->{idx}}),
-            ";\n";
+         my ( $unused ) = @_;
+         print_unused_indexes(
+            unused => $unused,
+            drop   => $o->get('drop'),
+            %common_modules,
+         );
       }
    );
 
@@ -4370,6 +4384,80 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+sub print_unused_indexes {
+   my ( %args ) = @_;
+   my @required_args = qw(unused drop Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($unused, $drop, $q) = @args{@required_args};
+
+   my $db_tbl = $q->quote($unused->{db}, $unused->{tbl});
+
+   # We must ignore the types that we're not dropping, then group
+   # indexes of the remaining types together and print them together.
+   my (@primary, @unique, @secondary);
+   foreach my $idx ( @{$unused->{idx}} ) {
+      if ($idx->{name} =~ m/PRIMARY/i ) {
+         push @primary, $idx;
+      }
+      elsif ( $idx->{is_unique} ) {
+         push @unique, $idx;
+      }
+      else {
+         push @secondary, $idx;
+      }
+   }
+
+   print_alter_drop_key(
+      db_tbl  => $db_tbl,
+      idx     => \@primary,
+      comment => 'primary key',
+      %args
+   ) if $drop->{primary} || $drop->{all};
+
+   print_alter_drop_key(
+      db_tbl  => $db_tbl,
+      idx     => \@unique,
+      comment => 'unique indexes',
+      %args
+   ) if $drop->{unique} || $drop->{all};
+
+   print_alter_drop_key(
+      db_tbl  => $db_tbl,
+      idx     => \@secondary,
+      comment => 'secondary indexes',
+      %args
+   ) if $drop->{secondary} || $drop->{all};
+
+   return;
+}
+
+sub print_alter_drop_key {
+   my ( %args ) = @_;
+   my @required_args = qw(db_tbl idx Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($db_tbl, $idx, $q) = @args{@required_args};
+
+   return unless @$idx;
+
+   if ( @$idx > 1 ) {
+      print "\nALTER TABLE $db_tbl"
+         . ($args{comment} ? " /* $args{comment} */" : "")
+         . join(',', map { "\n   DROP KEY " . $q->quote($_->{name}) } @$idx)
+         . ";\n";
+   }
+   else {
+      print "\nALTER TABLE $db_tbl DROP KEY " . $q->quote($idx->[0]->{name})
+         . ";"
+         . ($args{comment} ? " /* $args{comment} */" : "")
+         . "\n";
+   }
+
+   return;
+}
 
 sub get_cxn {
    my ( %args ) = @_;
@@ -4517,6 +4605,20 @@ first option on the command line.
 short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute pathname.
+
+=item --drop
+
+type: Hash; default: secondary
+
+Suggest dropping only these types of unusued indexes.
+
+By default mk-index-usage will only suggest to drop unused secondary indexes,
+not primary or unique indexes.  You can specify which types of unused indexes
+the tool suggests to drop: primary, unique, secondary, all.
+
+A separate C<ALTER TABLE> statement for each type is printed.  So if you
+specify C<--drop all> and there is a primary key and a secondary index,
+the C<ALTER TABLE ... DROP> for each will be printed on separate lines.
 
 =item --help
 

@@ -1,4 +1,4 @@
-ALTER TABLE `sakila`.`film_text` DROP KEY `PRIMARY`;  /* primary key */
 
-ALTER TABLE `sakila`.`film_text`
-   DROP KEY `idx_title_description`;
+ALTER TABLE `sakila`.`film_text` DROP KEY `PRIMARY`; /* primary key */
+
+ALTER TABLE `sakila`.`film_text` DROP KEY `idx_title_description`; /* secondary indexes */
