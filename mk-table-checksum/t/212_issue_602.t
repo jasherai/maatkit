@@ -43,8 +43,8 @@ $output = output(
 
 like(
    $output,
-   qr/Error calculating chunk start and end points/,
-   "Captures errors calculating chunk start/end points"
+   qr/^issue_602\s+t\s+2/m,
+   "Checksums table despite invalid datetime"
 );
 
 # #############################################################################
