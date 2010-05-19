@@ -4503,8 +4503,8 @@ sub main {
                         keys %{$host->{filters}})
                   . "\n";
          }
-         $msg .= "Specify --no-check-replication-filters to disable this "
-               . "check entirely.";
+         $msg .= "Please read the --check-replication-filters documentation "
+               . "to learn how to solve this problem.";
          warn $msg;
          return 1;
       }
@@ -6451,12 +6451,14 @@ How often to check for slave lag if L<"--check-slave-lag"> is given.
 
 default: yes
 
-Do not L<"--replicate"> if any master or slave replication filters are set.
-
-This check which is only performed when L<"--replicate"> is specified.
-Master and slave replication filters, like Binlog_Ignore_DB and
-Replicate_Do_DB, may prevent L<"--replicate"> from working or--worse--break
-replication.
+Do not L<"--replicate"> if any replication filters are set.  When
+--replicate is specified, mk-table-checksum tries to detect slaves and look
+for options that filter replication, such as binlog_ignore_db and
+replicate_do_db.  If it finds any such filters, it aborts with an error.
+Replication filtering makes it impossible to be sure that the checksum
+queries won't break replication or simply fail to replicate.  If you are sure
+that it's OK to run the checksum queries, you can negate this option to
+disable the checks.  See also L<"--replicate-database">.
 
 =item --check-slave-lag
 
@@ -6958,7 +6960,17 @@ exit status is 1; otherwise it is 0.
 
 type: string
 
-USE only this database when doing L<"--replicate">.
+Use this database as the default database with L<"--replicate">.  By default,
+mk-table-checksum executes USE to set its default database to the database that
+contains whatever table it's currently working on.  It changes its default
+database as it works on different tables.  This is is a best effort to avoid
+problems with replication filters such as binlog_ignore_db and
+replicate_ignore_db.  However, replication filters can create a situation where
+there simply is no one right way to do things -- some statements might not be
+replicated, and others might be replicated and cause replication to fail on the
+slaves.  In such cases, it is up to the user to specify a safe default database.
+This option specifies a default database that mk-table-checksum selects with
+USE, and never changes afterwards.
 
 =item --resume
 
