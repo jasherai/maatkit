@@ -5371,21 +5371,24 @@ sub check_repl_table {
    my $replicate_table = $o->get('replicate');
    return unless $replicate_table;
 
-   # Check that the replicate table exists and that we can access it.
    my ($db, $tbl) = $q->split_unquote($replicate_table);
 
-   # USE the replicate table's db when doing operations on it.
    # http://code.google.com/p/maatkit/issues/detail?id=982
-   MKDEBUG && _d("USE", $db);
+   $db = $o->get('replicate-database') if $o->get('replicate-database');
    eval {
-      $dbh->do("USE `$db`");
+      my $sql = "USE " . $q->quote($db);
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
    };
    if ( $EVAL_ERROR ) {
+      # Report which option db really came from.
+      my $opt = $o->get('replicate-database') ? "--replicate-database"
+              :                                 "--replicate database";
       if ( $EVAL_ERROR =~ m/unknown database/i ) {
-         die "--replicate database `$db` does not exist: $EVAL_ERROR";
+         die "$opt `$db` does not exist: $EVAL_ERROR";
       }
       else {
-         die "Error accessing --replicate database: $EVAL_ERROR";
+         die "Error using $opt `$db`: $EVAL_ERROR";
       }
    }
 
