@@ -116,24 +116,17 @@ sub dump {
    }
 }
 
-# USEs the given database, and returns the previous default database.
+# USEs the given database.
 sub _use_db {
    my ( $self, $dbh, $quoter, $new ) = @_;
    if ( !$new ) {
       MKDEBUG && _d('No new DB to use');
       return;
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
+   my $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
-   return $curr;
+   return;
 }
 
 sub get_create_table {
@@ -146,7 +139,7 @@ sub get_create_table {
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $href;
@@ -155,7 +148,7 @@ sub get_create_table {
          warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
          return;
       }
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       MKDEBUG && _d($sql);
@@ -178,11 +171,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
