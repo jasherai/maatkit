@@ -27,7 +27,7 @@ if ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 6;
+   plan tests => 8;
 }
 
 my $rows;
@@ -151,13 +151,67 @@ ok(
 );
 
 # #############################################################################
-# Done.
-# #############################################################################
 # Restore original config.
-$sb->wipe_clean($master_dbh);
+# #############################################################################
+#$master_dbh->disconnect();
+#$slave_dbh->disconnect();
+
 diag(`/tmp/12346/stop >/dev/null`);
 diag(`/tmp/12345/stop >/dev/null`);
 diag(`mv /tmp/12345/orig.cnf /tmp/12345/my.sandbox.cnf`);
 diag(`/tmp/12345/start >/dev/null`);
 diag(`/tmp/12346/start >/dev/null`);
+
+$master_dbh = $sb->get_dbh_for('master');
+$slave_dbh  = $sb->get_dbh_for('slave1');
+
+# #############################################################################
+# Test it again by looking at binlog to see that the db didn't change.
+# #############################################################################
+diag(`$trunk/sandbox/mk-test-env reset`);
+sleep 1;
+
+$output = output(
+   sub { mk_table_checksum::main("F=$cnf",
+      qw(--replicate=test.checksum --chunk-size 10k))
+   },
+   undef,
+   stderr => 1,
+);
+
+my $row = $master_dbh->selectrow_hashref('show master status');
+$output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use '`;
+is(
+   $output,
+"use test/*!*/;
+use mysql/*!*/;
+use sakila/*!*/;
+",
+   "USE each table's db (binlog dump)"
+);
+
+diag(`$trunk/sandbox/mk-test-env reset`);
+sleep 1;
+
+$output = output(
+   sub { mk_table_checksum::main("F=$cnf", qw(--replicate-database test),
+      qw(--replicate=test.checksum --chunk-size 10k))
+   },
+   undef,
+   stderr => 1,
+);
+
+$row = $master_dbh->selectrow_hashref('show master status');
+$output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use '`;
+is(
+   $output,
+"use test/*!*/;
+",
+   "USE only --replicate-database db (binlog dump)"
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+$sb->wipe_clean($master_dbh);
 exit;
