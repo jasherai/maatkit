@@ -6963,7 +6963,7 @@ exit status is 1; otherwise it is 0.
 
 type: string
 
-Use this database as the default database with L<"--replicate">.  By default,
+C<USE> only this database with L<"--replicate">.  By default,
 mk-table-checksum executes USE to set its default database to the database that
 contains whatever table it's currently working on.  It changes its default
 database as it works on different tables.  This is is a best effort to avoid
