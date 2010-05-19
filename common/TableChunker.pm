@@ -385,44 +385,50 @@ sub get_range_statistics {
 
    # Check that min is valid.  If not, find the first valid min value.
    # If there isn't one, this will return undef, so don't overwrite
-   # $min so we can report it in the error message.
-   my $valid_min = $self->first_valid_value(
-      val      => $min,
-      col_type => $args{col_type},
-      endpoint => 'min',
-      tries    => $args{tries},
-      dbh      => $dbh,
-      db_tbl   => $db_tbl,
-      col      => $col,
-      where    => $where,
-   );
-   if ( !defined $valid_min ) {
-      die "Error finding a valid minimum value for table $db_tbl on column "
-         . "$col. The real minimum value $min is invalid and no other valid "
-         . "values were found.  Verify that the table has at least one valid "
-         . "value for this column" . ($where ? " where $where." : ".");
+   # $min so we can report it in the error message.  This only happens
+   # if $min is defined because NULL/undef is always a valid value by
+   # itself (even if func(NULL) isn't valid/sensical).
+   if ( defined $min ) {
+      my $valid_min = $self->first_valid_value(
+         val      => $min,
+         col_type => $args{col_type},
+         endpoint => 'min',
+         tries    => $args{tries},
+         dbh      => $dbh,
+         db_tbl   => $db_tbl,
+         col      => $col,
+         where    => $where,
+      );
+      if ( !defined $valid_min ) {
+         die "Error finding a valid minimum value for table $db_tbl on column "
+            . "$col. The real minimum value $min is invalid and no other valid "
+            . "values were found.  Verify that the table has at least one valid "
+            . "value for this column" . ($where ? " where $where." : ".");
+      }
+      $min = $valid_min;  # may be original $min, maybe next valid min value
    }
-   $min = $valid_min;  # may be original $min, maybe next valid min value
 
    # Same as above but for max value, although it should be pretty rare
    # that the max value is invalid.
-   my $valid_max = $self->first_valid_value(
-      val      => $max,
-      col_type => $args{col_type},
-      endpoint => 'max',
-      tries    => $args{tries},
-      dbh      => $dbh,
-      db_tbl   => $db_tbl,
-      col      => $col,
-      where    => $where,
-   );
-   if ( !defined $valid_max ) {
-      die "Error finding a valid maximum value for table $db_tbl on column "
-         . "$col. The real maximum value $max is invalid and no other valid "
-         . "values were found.  Verify that the table has at least one valid "
-         . "value for this column " . ($where ? "where $where." : ".");
+   if ( defined $max ) {
+      my $valid_max = $self->first_valid_value(
+         val      => $max,
+         col_type => $args{col_type},
+         endpoint => 'max',
+         tries    => $args{tries},
+         dbh      => $dbh,
+         db_tbl   => $db_tbl,
+         col      => $col,
+         where    => $where,
+      );
+      if ( !defined $valid_max ) {
+         die "Error finding a valid maximum value for table $db_tbl on column "
+            . "$col. The real maximum value $max is invalid and no other valid "
+            . "values were found.  Verify that the table has at least one valid "
+            . "value for this column " . ($where ? "where $where." : ".");
+      }
+      $max = $valid_max;  # may be original $max, maybe next valid max value
    }
-   $max = $valid_max;  # may be original $max, maybe next valid max value
 
    # Don't want minimum row if its zero or NULL.
    if ( !$args{zero_row} ) {
