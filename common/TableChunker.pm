@@ -32,6 +32,15 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# MySQL functions used to evalute whether a value for a column type is
+# valid or not.  If func(val) returns any defined value then it's valid.
+my %mysql_func_for = (
+   timestamp => 'UNIX_TIMESTAMP',
+   date      => 'TO_DAYS',
+   time      => 'TIME_TO_SEC',
+   datetime  => 'TO_DAYS',
+);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter MySQLDump) ) {
@@ -158,25 +167,26 @@ sub calculate_chunks {
    # find the start/end points as a number that Perl can do + and < on.
 
    eval {
+      my $func = $mysql_func_for{$col_type};
       if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
          $start_point = $args{min};
          $end_point   = $args{max};
          $range_func  = 'range_num';
       }
       elsif ( $col_type eq 'timestamp' ) {
-         my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
          MKDEBUG && _d($sql);
          ($start_point, $end_point) = $dbh->selectrow_array($sql);
          $range_func  = 'range_timestamp';
       }
       elsif ( $col_type eq 'date' ) {
-         my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
          MKDEBUG && _d($sql);
          ($start_point, $end_point) = $dbh->selectrow_array($sql);
          $range_func  = 'range_date';
       }
       elsif ( $col_type eq 'time' ) {
-         my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
          MKDEBUG && _d($sql);
          ($start_point, $end_point) = $dbh->selectrow_array($sql);
          $range_func  = 'range_time';
@@ -344,17 +354,21 @@ sub size_to_rows {
 # The $where could come from many places; it is not trustworthy.
 sub get_range_statistics {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl chunk_col);
+   my @required_args = qw(dbh db tbl chunk_col col_type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $db, $tbl, $col) = @args{@required_args};
-   my $where = $args{where};
-   my $q = $self->{Quoter};
-   my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
-      . ") FROM " . $q->quote($db, $tbl)
-      . ($where ? " WHERE $where" : '');
-   MKDEBUG && _d($sql);
+   my $where  = $args{where};
+   my $q      = $self->{Quoter};
+
+   # Quote these once so we don't have to do it again. 
+   my $db_tbl = $q->quote($db, $tbl);
+   $col       = $q->quote($col);
+
+   my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
+           . ($where ? " WHERE $where" : '');
+   MKDEBUG && _d($dbh, $sql);
    my ( $min, $max );
    eval {
       ( $min, $max ) = $dbh->selectrow_array($sql);
@@ -369,6 +383,47 @@ sub get_range_statistics {
       }
    }
 
+   # Check that min is valid.  If not, find the first valid min value.
+   # If there isn't one, this will return undef, so don't overwrite
+   # $min so we can report it in the error message.
+   my $valid_min = $self->first_valid_value(
+      val      => $min,
+      col_type => $args{col_type},
+      endpoint => 'min',
+      tries    => $args{tries},
+      dbh      => $dbh,
+      db_tbl   => $db_tbl,
+      col      => $col,
+      where    => $where,
+   );
+   if ( !defined $valid_min ) {
+      die "Error finding a valid minimum value for table $db_tbl on column "
+         . "$col. The real minimum value $min is invalid and no other valid "
+         . "values were found.  Verify that the table has at least one valid "
+         . "value for this column" . ($where ? " where $where." : ".");
+   }
+   $min = $valid_min;  # may be original $min, maybe next valid min value
+
+   # Same as above but for max value, although it should be pretty rare
+   # that the max value is invalid.
+   my $valid_max = $self->first_valid_value(
+      val      => $max,
+      col_type => $args{col_type},
+      endpoint => 'max',
+      tries    => $args{tries},
+      dbh      => $dbh,
+      db_tbl   => $db_tbl,
+      col      => $col,
+      where    => $where,
+   );
+   if ( !defined $valid_max ) {
+      die "Error finding a valid maximum value for table $db_tbl on column "
+         . "$col. The real maximum value $max is invalid and no other valid "
+         . "values were found.  Verify that the table has at least one valid "
+         . "value for this column " . ($where ? "where $where." : ".");
+   }
+   $max = $valid_max;  # may be original $max, maybe next valid max value
+
    # Don't want minimum row if its zero or NULL.
    if ( !$args{zero_row} ) {
       if ( !$min
@@ -378,8 +433,7 @@ sub get_range_statistics {
          )
       {
          MKDEBUG && _d('Discarding zero min:', $min);
-         $sql = "SELECT MIN(" . $q->quote($col) . ") FROM "
-              . $q->quote($db, $tbl)
+         $sql = "SELECT MIN($col) FROM $db_tbl "
               . "WHERE $col > ? "
               . ($where ? " AND $where " : '')
               . "LIMIT 1";
@@ -520,6 +574,102 @@ sub timestampdiff {
    EOF
       unless $check eq $time;
    return $diff;
+}
+
+# Arguments:
+#   * val       scalar: the current value, may be valid, maybe not
+#   * col_type  scalar: column type, e.g. "datetime"
+#   * endpoint  scalar: "min" or "max", i.e. find first endpoint() valid val
+#   * dbh       dbh
+#   * db_tbl    scalar: quoted db.tbl
+#   * col       scalar: quoted column name
+# Find and return first valid (i.e. defined) value in the given db.tbl.col.
+# Returns the first valid value, which may be zero, else returns undef.
+sub first_valid_value {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(val col_type endpoint dbh db_tbl col);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($val, $col_type, $endpoint, $dbh, $db_tbl, $col) = @args{@required_args};
+   my $tries = defined $args{tries} ? $args{tries} : 5;
+
+   # We don't eval all column types, just those in %mysql_func_for.
+   if ( !$mysql_func_for{$col_type} ) {
+      MKDEBUG && _d('No MySQL func to eval', $col_type, 'type column');
+      return $val;
+   }
+
+   # Evaluate the current value.  It may be valid.  If so, return it.
+   my $valid_val = $self->_eval_val(
+      dbh  => $dbh,
+      val  => $val,
+      func => $mysql_func_for{$col_type},
+   );
+
+   # Current value isn't valid so start looking for the first valid val.
+   if ( !defined $valid_val ) {  # 0 is valid so check defined
+      MKDEBUG && _d($endpoint, 'value is invalid, finding first valid',
+         $endpoint, 'value');
+
+      # Prep a sth for fetching the next col val.
+      my $cmp = $endpoint =~ m/min/i ? '>' : '<';
+      my $sql = "SELECT $col FROM $db_tbl WHERE $col $cmp ? "
+              . ($args{where} ? "WHERE $args{where} " : "")
+              . "LIMIT 1";
+      MKDEBUG && _d($dbh, $sql);
+      my $sth = $dbh->prepare($sql);
+
+      # Fetch the next col val from the db.tbl until we find a valid one
+      # or run out of rows.  Only try a limited number of next rows.
+      my $last_val = $val;
+      while ( $tries-- && !defined $valid_val ) {
+         $sth->execute($last_val);
+         my ($alt_val) = $sth->fetchrow_array();
+         MKDEBUG && _d('Next value:', $alt_val, '; tries left:', $tries);
+         if ( !defined $alt_val ) {
+            MKDEBUG && _d('No more rows in table');
+            last;
+         }
+         $valid_val = $self->_eval_val(
+            dbh  => $dbh,
+            val  => $alt_val,
+            func => $mysql_func_for{$col_type},
+         );
+         $val      = $alt_val if defined $valid_val;
+         $last_val = $alt_val;
+      }
+   }
+
+   # Set val to first valid valid, if any was found, then return it.
+   $val = undef unless defined $valid_val;
+   return $val;
+}
+
+# Evaluate the given val with the given MySQL func(tion).
+# E.g. SELECT TO_DAYS('2010-00-09') evaluates to NULL/undef,
+# so val is invalid.  Any valid combination of val and func
+# should eval to a defined value (so zero is valid).
+sub _eval_val {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh val func);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $val, $func) = @args{@required_args};
+
+   my $sql = "SELECT $func('$val')";
+   MKDEBUG && _d($dbh, $sql);
+   my $eval_val;
+   eval {
+      ($eval_val) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return;
+   }
+   MKDEBUG && _d('Value evaluates to', $eval_val);
+   return $eval_val;
 }
 
 sub _d {

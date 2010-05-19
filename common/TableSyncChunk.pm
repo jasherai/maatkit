@@ -150,7 +150,10 @@ sub prepare_to_sync {
 
    my @chunks;
    if ( !$args{replicate} ) {
-      my %range_params = $chunker->get_range_statistics(%args);
+      my %range_params = $chunker->get_range_statistics(
+         %args,
+         col_type => $args{tbl_struct}->{type_for}->{ $args{chunk_col} },
+      );
       if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
          $args{chunk_size} = $chunker->size_to_rows(%args);
          @chunks = $chunker->calculate_chunks(%args, %range_params);

@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 39;
+   plan tests => 42;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -429,6 +429,7 @@ SKIP: {
             db        => 'sakila',
             tbl       => 'film',
             chunk_col => 'film_id',
+            col_type  => 'int',
             where     => 'film_id>'
          )
       },
@@ -502,7 +503,8 @@ my %params = $c->get_range_statistics(
    dbh       => $dbh,
    db        => 'test',
    tbl       => 'issue_47',
-   chunk_col => 'userid'
+   chunk_col => 'userid',
+   col_type  => 'int',
 );
 my @chunks;
 eval {
@@ -580,6 +582,7 @@ sub test_zero_row {
       db        => 'issue_941',
       tbl       => $tbl,
       chunk_col => $tbl,
+      col_type  => 'int', 
       zero_row  => 0,
    );
    is_deeply(
@@ -664,11 +667,22 @@ $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_602', 't') );
    db        => 'issue_602',
    tbl       => 't',
    chunk_col => 'b',
+   col_type  => 'datetime',
+);
+
+is_deeply(
+   \%params,
+   {
+      max => '2010-05-09 00:00:00',
+      min => '2010-04-30 00:00:00',
+      rows_in_range => '11',
+   },
+   "Ignores invalid min val, gets next valid min val"
 );
 
 throws_ok(
    sub {
-      $c->calculate_chunks(
+      @chunks = $c->calculate_chunks(
          dbh        => $dbh,
          tbl_struct => $t,
          chunk_col  => 'b',
@@ -676,8 +690,45 @@ throws_ok(
          %params,
       )
    },
-   qr/Error calculating chunk start and end points/,
-   "Catches start/end point failure (issue 602)"
+   qr//,
+   "No error with invalid min datetime (issue 602)"
+);
+
+# Like the test above but t2 has nothing but invalid rows.
+$t = $p->parse( $du->get_create_table($dbh, $q, 'issue_602', 't2') );
+throws_ok(
+   sub {
+      $c->get_range_statistics(
+         dbh       => $dbh,
+         db        => 'issue_602',
+         tbl       => 't2',
+         chunk_col => 'b',
+         col_type  => 'datetime',
+      );
+   },
+   qr/Error finding a valid minimum value/,
+   "Dies if valid min value cannot be found"
+);
+
+# Try again with more tries: 6 instead of default 5.  Should
+# find a row this time.
+%params = $c->get_range_statistics(
+   dbh       => $dbh,
+   db        => 'issue_602',
+   tbl       => 't2',
+   chunk_col => 'b',
+   col_type  => 'datetime',
+   tries     => 6,
+);
+
+is_deeply(
+   \%params,
+   {
+      max => '2010-01-08 00:00:08',
+      min => '2010-01-07 00:00:07',
+      rows_in_range => 8,
+   },
+   "Gets valid min with enough tries"
 );
 
 # #############################################################################
