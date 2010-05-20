@@ -4799,9 +4799,26 @@ sub save_tbl_to_checksum {
 
       # Parse the table and determine a column that's chunkable.  This is
       # used not only for chunking, but also for --since.
-      my $create        = $du->get_create_table($dbh, $q, $db, $tbl);
-      my $struct        = $tp->parse($create);
-      my ( $col, $idx ) = $ch->get_first_chunkable_column(tbl_struct=>$struct);
+      my $create = $du->get_create_table($dbh, $q, $db, $tbl);
+      my $struct = $tp->parse($create);
+
+      # If there's a preferred --chunk-column, use it if it's among the
+      # list of chunkable columns.  Else, use the first chunkable column.
+      my ($col, $idx);
+      if ( my $preferred_col = $final_o->get('chunk-column') ) {
+         my ($exact, @cols) = $ch->find_chunk_columns(tbl_struct=>$struct);
+         foreach my $chunkable_col ( @cols ) {
+            if ( $preferred_col eq $chunkable_col->{column} ) {
+               $col = $preferred_col;
+               $idx = $chunkable_col->{index};
+               last;
+            }
+         }
+      }
+      if ( !$col ) {
+         ($col, $idx) = $ch->get_first_chunkable_column(tbl_struct=>$struct);
+      }
+      MKDEBUG && _d('Chunk col:', $col);
 
       $idx = undef if $final_o->get('no-use-index');
       if ( $idx ) {
@@ -6628,6 +6645,19 @@ L<"--[no]count">).
 Makes the output behave more like the output of C<md5sum>.  The checksum is
 first on the line, followed by the host, database, table, and chunk number,
 concatenated with dots.
+
+=item --chunk-column
+
+type: string
+
+Chunk tables on this column if the column exists and is chunkable.
+
+By default mk-table-checksum automatically determines on which column it
+will chunk each table.  This option allows you to specify a preferred column.
+There is no guarantee, however, that this column will be used.  The column
+must exist in the table and be chunkable.  If for any table those two
+conditions are not true, then mk-table-checksum will automatically choose
+a chunk column.
 
 =item --chunk-size
 
