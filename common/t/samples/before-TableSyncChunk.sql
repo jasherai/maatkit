@@ -7,7 +7,7 @@ create table test1(
    b char(2) not null,
    primary key(a, b),
    unique key (a)
-) ENGINE=INNODB DEFAULT CHARSET=latin1;
+) ENGINE=INNODB;
 
 create table test2 like test1;
 insert into test1 values(1, 'en'), (2, 'ca'), (3, 'ab'), (4, 'bz');
