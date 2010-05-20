@@ -4820,6 +4820,9 @@ sub save_tbl_to_checksum {
       }
       MKDEBUG && _d('Chunk col:', $col);
 
+      if ( my $preferred_idx = $final_o->get('chunk-index') ) {
+         $idx = $preferred_idx if exists $struct->{keys}->{$preferred_idx};
+      }
       $idx = undef if $final_o->get('no-use-index');
       if ( $idx ) {
          my $hint = $vp->version_ge($dbh, '4.0.9') ? 'FORCE' : 'USE';
@@ -6577,8 +6580,8 @@ following columns:
 In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
-  algorithm chunk-column chunk-size columns count crc function lock modulo
-  no-use-index offset optimize-xor probability separator save-since
+  algorithm chunk-column chunk-index chunk-size columns count crc function lock
+  modulo no-use-index offset optimize-xor probability separator save-since
   single-chunk since since-column sleep sleep-coef trim wait where
 
 Each of these columns corresponds to the long form of a command-line option.
@@ -6658,6 +6661,24 @@ There is no guarantee, however, that this column will be used.  The column
 must exist in the table and be chunkable.  If for any table those two
 conditions are not true, then mk-table-checksum will automatically choose
 a chunk column.
+
+Be careful when using this option as specifying a poor column could cause
+extremely slow checksumming or other undesirable side-effects.
+
+=item --chunk-index
+
+type: string
+
+Use this index for chunking tables.  By default mk-table-checksum chooses
+an appropriate index for the L<"--chunk-column"> (whether the chunk column
+is chosen automatically or given explicitly with that option).  Then a
+C<FORCE INDEX> clause is added to the SQL chunk statements.  This does not
+guarantee that MySQL will use this index, but it usually does.  The given
+index must, of course, exist, else mk-table-checksum will automatically
+choose an appropriate index.
+
+Be careful when using this option as specifying a poor index could cause
+table scans, extremely slow checksumming, or other undesirable side-effects.
 
 =item --chunk-size
 

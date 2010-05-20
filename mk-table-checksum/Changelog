@@ -6,6 +6,7 @@ Changelog for mk-table-checksum and mk-checksum-filter:
    * Added --[no]check-replication-filters as a --replicate sanity check (issue 993).
    * Added --replicate-database to select a single default database (issue 982).
    * Added --chunk-column (issue 519).
+   * Added --chunk-index (issue 519).
 
 2010-05-03: version 1.2.14
 

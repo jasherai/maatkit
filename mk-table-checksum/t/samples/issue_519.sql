@@ -5,7 +5,8 @@ create table t (
    i int unsigned not null auto_increment primary key,
    y year not null,
    t text,
-   unique index (y)
+   unique index (y),
+   index `myidx` (i, y)
 );
 insert into t values
    (null,'2000','a'),

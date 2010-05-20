@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 4;
+   plan tests => 3;
 }
 
 my $output;
@@ -47,42 +47,32 @@ $output = output(
 is(
    $output,
    $default_output,
-   "Chooses chunk column by default"
+   "Chooses chunk index by default"
 );
 
 $output = output(
-   sub { mk_table_checksum::main(@args, qw(--chunk-column batman)) },
+   sub { mk_table_checksum::main(@args, qw(--chunk-index dog)) },
 );
 
 is(
    $output,
    $default_output,
-   "Chooses chunk column if --chunk-column doesn't exist"
+   "Chooses chunk index if --chunk-index doesn't exist"
 );
 
 $output = output(
-   sub { mk_table_checksum::main(@args, qw(--chunk-column t)) },
+   sub { mk_table_checksum::main(@args, qw(--chunk-index myidx)) },
 );
 
 is(
    $output,
-   $default_output,
-   "Chooses chunk column if --chunk-column isn't chunkable"
-);
-
-$output = output(
-   sub { mk_table_checksum::main(@args, qw(--chunk-column y)) },
-);
-
-is(
-   $output,
-"issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`y`) WHERE (`y` < 2003)
-issue_519 t     `y` < 2003
-issue_519 t     `y` >= 2003 AND `y` < 2006
-issue_519 t     `y` >= 2006 AND `y` < 2009
-issue_519 t     `y` >= 2009
+"issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`myidx`) WHERE (`i` < 4)
+issue_519 t     `i` < 4
+issue_519 t     `i` >= 4 AND `i` < 7
+issue_519 t     `i` >= 7 AND `i` < 10
+issue_519 t     `i` >= 10
 ",
-   "Use --chunk-column"
+   "Use --chunk-index"
 );
 
 # #############################################################################
