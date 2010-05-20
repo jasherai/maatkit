@@ -425,12 +425,15 @@ SKIP: {
 
    throws_ok(
       sub { $c->get_range_statistics(
-            dbh       => $dbh,
-            db        => 'sakila',
-            tbl       => 'film',
-            chunk_col => 'film_id',
-            col_type  => 'int',
-            where     => 'film_id>'
+            dbh        => $dbh,
+            db         => 'sakila',
+            tbl        => 'film',
+            chunk_col  => 'film_id',
+            tbl_struct => {
+               type_for   => { film_id => 'int' },
+               is_numeric => { film_id => 1     },
+            },
+            where      => 'film_id>'
          )
       },
       qr/WHERE clause: /,
@@ -500,11 +503,14 @@ SKIP: {
 $sb->load_file('master', 'common/t/samples/issue_47.sql');
 $t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'issue_47') );
 my %params = $c->get_range_statistics(
-   dbh       => $dbh,
-   db        => 'test',
-   tbl       => 'issue_47',
-   chunk_col => 'userid',
-   col_type  => 'int',
+   dbh        => $dbh,
+   db         => 'test',
+   tbl        => 'issue_47',
+   chunk_col  => 'userid',
+   tbl_struct => {
+      type_for   => { userid => 'int' },
+      is_numeric => { userid => 1     },
+   },
 );
 my @chunks;
 eval {
@@ -578,12 +584,12 @@ sub test_zero_row {
    my ( $tbl, $range, $chunks ) = @_;
    $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_941', $tbl) );
    %params = $c->get_range_statistics(
-      dbh       => $dbh,
-      db        => 'issue_941',
-      tbl       => $tbl,
-      chunk_col => $tbl,
-      col_type  => 'int', 
-      zero_row  => 0,
+      dbh        => $dbh,
+      db         => 'issue_941',
+      tbl        => $tbl,
+      chunk_col  => $tbl,
+      tbl_struct => $t,
+      zero_row   => 0,
    );
    is_deeply(
       \%params,
@@ -663,11 +669,14 @@ test_zero_row(
 $sb->load_file('master', 'mk-table-checksum/t/samples/issue_602.sql');
 $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_602', 't') );
 %params = $c->get_range_statistics(
-   dbh       => $dbh,
-   db        => 'issue_602',
-   tbl       => 't',
-   chunk_col => 'b',
-   col_type  => 'datetime',
+   dbh        => $dbh,
+   db         => 'issue_602',
+   tbl        => 't',
+   chunk_col  => 'b',
+   tbl_struct => {
+      type_for   => { b => 'datetime' },
+      is_numeric => { b => 0          },
+   },
 );
 
 is_deeply(
@@ -699,11 +708,14 @@ $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_602', 't2') );
 throws_ok(
    sub {
       $c->get_range_statistics(
-         dbh       => $dbh,
-         db        => 'issue_602',
-         tbl       => 't2',
-         chunk_col => 'b',
-         col_type  => 'datetime',
+         dbh        => $dbh,
+         db         => 'issue_602',
+         tbl        => 't2',
+         chunk_col  => 'b',
+         tbl_struct => {
+            type_for   => { b => 'datetime' },
+            is_numeric => { b => 0          },
+         },
       );
    },
    qr/Error finding a valid minimum value/,
@@ -713,11 +725,14 @@ throws_ok(
 # Try again with more tries: 6 instead of default 5.  Should
 # find a row this time.
 %params = $c->get_range_statistics(
-   dbh       => $dbh,
-   db        => 'issue_602',
-   tbl       => 't2',
-   chunk_col => 'b',
-   col_type  => 'datetime',
+   dbh        => $dbh,
+   db         => 'issue_602',
+   tbl        => 't2',
+   chunk_col  => 'b',
+   tbl_struct => {
+      type_for   => { b => 'datetime' },
+      is_numeric => { b => 0          },
+   },
    tries     => 6,
 );
 
@@ -745,12 +760,15 @@ $dbh->do("insert into issue_602.t values ('12', '0000-00-00 00:00:00')");
 # invalid row, and we don't want that.  So we should get row "10" as min.
 
 %params = $c->get_range_statistics(
-   dbh       => $dbh,
-   db        => 'issue_602',
-   tbl       => 't',
-   chunk_col => 'b',
-   col_type  => 'datetime',
-   zero_row  => 0,
+   dbh        => $dbh,
+   db         => 'issue_602',
+   tbl        => 't',
+   chunk_col  => 'b',
+   tbl_struct => {
+      type_for   => { b => 'datetime' },
+      is_numeric => { b => 0          },
+   },
+   zero_row   => 0,
 );
 
 is_deeply(

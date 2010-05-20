@@ -33,7 +33,8 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # MySQL functions used to evalute whether a value for a column type is
-# valid or not.  If func(val) returns any defined value then it's valid.
+# real or not.  If func(val) returns any defined, non-zero value then
+# it's real.
 my %mysql_func_for = (
    timestamp => 'UNIX_TIMESTAMP',
    date      => 'TO_DAYS',
@@ -354,13 +355,16 @@ sub size_to_rows {
 # The $where could come from many places; it is not trustworthy.
 sub get_range_statistics {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl chunk_col col_type);
+   my @required_args = qw(dbh db tbl chunk_col tbl_struct);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $db, $tbl, $col) = @args{@required_args};
    my $where  = $args{where};
    my $q      = $self->{Quoter};
+   
+   my $col_type       = $args{tbl_struct}->{type_for}->{$col};
+   my $col_is_numeric = $args{tbl_struct}->{is_numeric}->{$col};
 
    # Quote these once so we don't have to do it again. 
    my $db_tbl = $q->quote($db, $tbl);
@@ -383,72 +387,72 @@ sub get_range_statistics {
       }
    }
 
-   # Check that min is valid.  If not, find the first valid min value.
-   # If there isn't one, this will return undef, so don't overwrite
-   # $min so we can report it in the error message.  This only happens
-   # if $min is defined because NULL/undef is always a valid value by
-   # itself (even if func(NULL) isn't valid/sensical).
-   if ( defined $min ) {
-      my $valid_min = $self->first_valid_value(
-         val      => $min,
-         col_type => $args{col_type},
-         endpoint => 'min',
-         tries    => $args{tries},
-         dbh      => $dbh,
-         db_tbl   => $db_tbl,
-         col      => $col,
-         where    => $where,
-      );
-      if ( !defined $valid_min ) {
-         die "Error finding a valid minimum value for table $db_tbl on column "
-            . "$col. The real minimum value $min is invalid and no other valid "
-            . "values were found.  Verify that the table has at least one valid "
-            . "value for this column" . ($where ? " where $where." : ".");
+   # If the column type is temporal (date, timestamp, datetime, etc.)
+   # and its value is defined (i.e. not NULL), then check that the value
+   # evaluates to a real time.  A real time is not NULL, undefined or
+   # zero.  Unreal times are ignored because MySQL can't always do
+   # arithmetic with them, therefore they cannot be used for chunking.
+   # first_real_value() will return the first value that evalutes to
+   # something real.  A MySQL func is used to evalute the value.  For example,
+   # TO_DAYS('0000-00-00') evalutes to NULL because 0000-00-00 is an unreal
+   # date even though it's valid/storable in MySQL.
+   if ( $col_type =~ m/date|time/i ) {
+      if ( defined $min ) {
+         my $real_min = $self->first_real_value(
+            val      => $min,
+            col_type => $col_type,
+            endpoint => 'min',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_min ) {
+            die "Error finding a valid minimum value for table $db_tbl on "
+               . "column $col. The real minimum value $min is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column"
+               . ($where ? " where $where." : ".");
+         }
+         $min = $real_min;  # may be original $min, maybe next real min value
       }
-      $min = $valid_min;  # may be original $min, maybe next valid min value
-   }
 
-   # Same as above but for max value, although it should be pretty rare
-   # that the max value is invalid.
-   if ( defined $max ) {
-      my $valid_max = $self->first_valid_value(
-         val      => $max,
-         col_type => $args{col_type},
-         endpoint => 'max',
-         tries    => $args{tries},
-         dbh      => $dbh,
-         db_tbl   => $db_tbl,
-         col      => $col,
-         where    => $where,
-      );
-      if ( !defined $valid_max ) {
-         die "Error finding a valid maximum value for table $db_tbl on column "
-            . "$col. The real maximum value $max is invalid and no other valid "
-            . "values were found.  Verify that the table has at least one valid "
-            . "value for this column " . ($where ? "where $where." : ".");
+      # Same as above but for max value, although it should be pretty rare
+      # that the max value is invalid.
+      if ( defined $max ) {
+         my $real_max = $self->first_real_value(
+            val      => $max,
+            col_type => $col_type,
+            endpoint => 'max',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_max ) {
+            die "Error finding a valid maximum value for table $db_tbl on "
+               . "column $col. The real maximum value $max is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column "
+               . ($where ? "where $where." : ".");
+         }
+         $max = $real_max;  # may be original $max, maybe next real max value
       }
-      $max = $valid_max;  # may be original $max, maybe next valid max value
    }
-
-   # Don't want minimum row if its zero or NULL.
-   if ( !$args{zero_row} ) {
-      if ( !$min
-           || $min eq '0'
-           || $min eq '0000-00-00'
-           || $min eq '0000-00-00 00:00:00'
-         )
-      {
-         MKDEBUG && _d('Discarding zero min:', $min);
-         $sql = "SELECT MIN($col) FROM $db_tbl "
-              . "WHERE $col > ? "
-              . ($where ? " AND $where " : '')
-              . "LIMIT 1";
-         MKDEBUG && _d($sql);
-         my $sth = $dbh->prepare($sql);
-         $sth->execute($min);
-         ($min) = $sth->fetchrow_array();
-         MKDEBUG && _d('New min:', $min);
-      }
+   elsif ( $col_is_numeric && !$args{zero_row} && ($min || 0) == 0 ) {
+      # Don't want minimum row if its zero.
+      MKDEBUG && _d('Discarding zero min:', $min);
+      $sql = "SELECT $col FROM $db_tbl "
+           . "WHERE $col > ? "
+           . ($where ? " AND $where " : '')
+           . "LIMIT 1";
+      MKDEBUG && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($min);
+      ($min) = $sth->fetchrow_array();
+      MKDEBUG && _d('New min:', $min);
    }
 
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
@@ -583,15 +587,15 @@ sub timestampdiff {
 }
 
 # Arguments:
-#   * val       scalar: the current value, may be valid, maybe not
+#   * val       scalar: the current value, may be real, maybe not
 #   * col_type  scalar: column type, e.g. "datetime"
-#   * endpoint  scalar: "min" or "max", i.e. find first endpoint() valid val
+#   * endpoint  scalar: "min" or "max", i.e. find first endpoint() real val
 #   * dbh       dbh
 #   * db_tbl    scalar: quoted db.tbl
 #   * col       scalar: quoted column name
-# Find and return first valid (i.e. defined) value in the given db.tbl.col.
-# Returns the first valid value, which may be zero, else returns undef.
-sub first_valid_value {
+# Find and return first real (i.e. not NULL/undef or zero) value in the
+# given db.tbl.col.  Returns the first real value, else returns undef.
+sub first_real_value {
    my ( $self, %args ) = @_;
    my @required_args = qw(val col_type endpoint dbh db_tbl col);
    foreach my $arg ( @required_args ) {
@@ -606,16 +610,16 @@ sub first_valid_value {
       return $val;
    }
 
-   # Evaluate the current value.  It may be valid.  If so, return it.
-   my $valid_val = $self->_eval_val(
+   # Evaluate the current value.  It may be real.  If so, return it.
+   my $real_val = $self->_eval_val(
       dbh  => $dbh,
       val  => $val,
       func => $mysql_func_for{$col_type},
    );
 
-   # Current value isn't valid so start looking for the first valid val.
-   if ( !defined $valid_val ) {  # 0 is valid so check defined
-      MKDEBUG && _d($endpoint, 'value is invalid, finding first valid',
+   # Current value isn't real so start looking for the first real val.
+   if ( !$real_val ) {
+      MKDEBUG && _d($endpoint, 'value is not real, finding first real',
          $endpoint, 'value');
 
       # Prep a sth for fetching the next col val.
@@ -626,10 +630,10 @@ sub first_valid_value {
       MKDEBUG && _d($dbh, $sql);
       my $sth = $dbh->prepare($sql);
 
-      # Fetch the next col val from the db.tbl until we find a valid one
+      # Fetch the next col val from the db.tbl until we find a real one
       # or run out of rows.  Only try a limited number of next rows.
       my $last_val = $val;
-      while ( $tries-- && !defined $valid_val ) {
+      while ( $tries-- && !$real_val ) {
          $sth->execute($last_val);
          my ($alt_val) = $sth->fetchrow_array();
          MKDEBUG && _d('Next value:', $alt_val, '; tries left:', $tries);
@@ -637,25 +641,23 @@ sub first_valid_value {
             MKDEBUG && _d('No more rows in table');
             last;
          }
-         $valid_val = $self->_eval_val(
+         $real_val = $self->_eval_val(
             dbh  => $dbh,
             val  => $alt_val,
             func => $mysql_func_for{$col_type},
          );
-         $val      = $alt_val if defined $valid_val;
+         $val      = $alt_val if defined $real_val;
          $last_val = $alt_val;
       }
    }
 
-   # Set val to first valid valid, if any was found, then return it.
-   $val = undef unless defined $valid_val;
+   # Set val to first real value, if any was found, then return it.
+   $val = undef unless $real_val;
    return $val;
 }
 
 # Evaluate the given val with the given MySQL func(tion).
-# E.g. SELECT TO_DAYS('2010-00-09') evaluates to NULL/undef,
-# so val is invalid.  Any valid combination of val and func
-# should eval to a defined value (so zero is valid).
+# E.g. SELECT TO_DAYS('2010-00-09') evaluates to NULL/undef.
 sub _eval_val {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh val func);
