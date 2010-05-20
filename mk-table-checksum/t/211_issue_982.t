@@ -180,12 +180,12 @@ $output = output(
 );
 
 my $row = $master_dbh->selectrow_hashref('show master status');
-$output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use '`;
+$output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use ' | sort -u`;
 is(
    $output,
-"use test/*!*/;
-use mysql/*!*/;
+"use mysql/*!*/;
 use sakila/*!*/;
+use test/*!*/;
 ",
    "USE each table's db (binlog dump)"
 );
