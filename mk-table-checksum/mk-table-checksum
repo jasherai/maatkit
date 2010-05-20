@@ -6577,9 +6577,9 @@ following columns:
 In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
-  algorithm chunk-size columns count crc function lock modulo no-use-index
-  offset optimize-xor probability separator save-since single-chunk since
-  since-column sleep sleep-coef trim wait where
+  algorithm chunk-column chunk-size columns count crc function lock modulo
+  no-use-index offset optimize-xor probability separator save-since
+  single-chunk since since-column sleep sleep-coef trim wait where
 
 Each of these columns corresponds to the long form of a command-line option.
 Each column should be NULL-able.  Column names with hyphens should be enclosed
