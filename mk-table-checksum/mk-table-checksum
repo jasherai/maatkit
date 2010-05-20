@@ -2471,7 +2471,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6347
+# TableChunker package 6351
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2751,13 +2751,16 @@ sub size_to_rows {
 
 sub get_range_statistics {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl chunk_col col_type);
+   my @required_args = qw(dbh db tbl chunk_col tbl_struct);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $db, $tbl, $col) = @args{@required_args};
    my $where  = $args{where};
    my $q      = $self->{Quoter};
+   
+   my $col_type       = $args{tbl_struct}->{type_for}->{$col};
+   my $col_is_numeric = $args{tbl_struct}->{is_numeric}->{$col};
 
    my $db_tbl = $q->quote($db, $tbl);
    $col       = $q->quote($col);
@@ -2779,64 +2782,60 @@ sub get_range_statistics {
       }
    }
 
-   if ( defined $min ) {
-      my $valid_min = $self->first_valid_value(
-         val      => $min,
-         col_type => $args{col_type},
-         endpoint => 'min',
-         tries    => $args{tries},
-         dbh      => $dbh,
-         db_tbl   => $db_tbl,
-         col      => $col,
-         where    => $where,
-      );
-      if ( !defined $valid_min ) {
-         die "Error finding a valid minimum value for table $db_tbl on column "
-            . "$col. The real minimum value $min is invalid and no other valid "
-            . "values were found.  Verify that the table has at least one valid "
-            . "value for this column" . ($where ? " where $where." : ".");
+   if ( $col_type =~ m/date|time/i ) {
+      if ( defined $min ) {
+         my $real_min = $self->first_real_value(
+            val      => $min,
+            col_type => $col_type,
+            endpoint => 'min',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_min ) {
+            die "Error finding a valid minimum value for table $db_tbl on "
+               . "column $col. The real minimum value $min is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column"
+               . ($where ? " where $where." : ".");
+         }
+         $min = $real_min;  # may be original $min, maybe next real min value
       }
-      $min = $valid_min;  # may be original $min, maybe next valid min value
-   }
 
-   if ( defined $max ) {
-      my $valid_max = $self->first_valid_value(
-         val      => $max,
-         col_type => $args{col_type},
-         endpoint => 'max',
-         tries    => $args{tries},
-         dbh      => $dbh,
-         db_tbl   => $db_tbl,
-         col      => $col,
-         where    => $where,
-      );
-      if ( !defined $valid_max ) {
-         die "Error finding a valid maximum value for table $db_tbl on column "
-            . "$col. The real maximum value $max is invalid and no other valid "
-            . "values were found.  Verify that the table has at least one valid "
-            . "value for this column " . ($where ? "where $where." : ".");
+      if ( defined $max ) {
+         my $real_max = $self->first_real_value(
+            val      => $max,
+            col_type => $col_type,
+            endpoint => 'max',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_max ) {
+            die "Error finding a valid maximum value for table $db_tbl on "
+               . "column $col. The real maximum value $max is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column "
+               . ($where ? "where $where." : ".");
+         }
+         $max = $real_max;  # may be original $max, maybe next real max value
       }
-      $max = $valid_max;  # may be original $max, maybe next valid max value
    }
-
-   if ( !$args{zero_row} ) {
-      if ( !$min
-           || $min eq '0'
-           || $min eq '0000-00-00'
-           || $min eq '0000-00-00 00:00:00'
-         )
-      {
-         MKDEBUG && _d('Discarding zero min:', $min);
-         $sql = "SELECT MIN($col) FROM $db_tbl "
-              . "WHERE $col > ? "
-              . ($where ? " AND $where " : '')
-              . "LIMIT 1";
-         MKDEBUG && _d($sql);
-         my $sth = $dbh->prepare($sql);
-         $sth->execute($min);
-         ($min) = $sth->fetchrow_array();
-         MKDEBUG && _d('New min:', $min);
-      }
+   elsif ( $col_is_numeric && !$args{zero_row} && ($min || 0) == 0 ) {
+      MKDEBUG && _d('Discarding zero min:', $min);
+      $sql = "SELECT $col FROM $db_tbl "
+           . "WHERE $col > ? "
+           . ($where ? " AND $where " : '')
+           . "LIMIT 1";
+      MKDEBUG && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($min);
+      ($min) = $sth->fetchrow_array();
+      MKDEBUG && _d('New min:', $min);
    }
 
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
@@ -2952,7 +2951,7 @@ sub timestampdiff {
    return $diff;
 }
 
-sub first_valid_value {
+sub first_real_value {
    my ( $self, %args ) = @_;
    my @required_args = qw(val col_type endpoint dbh db_tbl col);
    foreach my $arg ( @required_args ) {
@@ -2966,14 +2965,14 @@ sub first_valid_value {
       return $val;
    }
 
-   my $valid_val = $self->_eval_val(
+   my $real_val = $self->_eval_val(
       dbh  => $dbh,
       val  => $val,
       func => $mysql_func_for{$col_type},
    );
 
-   if ( !defined $valid_val ) {  # 0 is valid so check defined
-      MKDEBUG && _d($endpoint, 'value is invalid, finding first valid',
+   if ( !$real_val ) {
+      MKDEBUG && _d($endpoint, 'value is not real, finding first real',
          $endpoint, 'value');
 
       my $cmp = $endpoint =~ m/min/i ? '>' : '<';
@@ -2984,7 +2983,7 @@ sub first_valid_value {
       my $sth = $dbh->prepare($sql);
 
       my $last_val = $val;
-      while ( $tries-- && !defined $valid_val ) {
+      while ( $tries-- && !$real_val ) {
          $sth->execute($last_val);
          my ($alt_val) = $sth->fetchrow_array();
          MKDEBUG && _d('Next value:', $alt_val, '; tries left:', $tries);
@@ -2992,17 +2991,17 @@ sub first_valid_value {
             MKDEBUG && _d('No more rows in table');
             last;
          }
-         $valid_val = $self->_eval_val(
+         $real_val = $self->_eval_val(
             dbh  => $dbh,
             val  => $alt_val,
             func => $mysql_func_for{$col_type},
          );
-         $val      = $alt_val if defined $valid_val;
+         $val      = $alt_val if defined $real_val;
          $last_val = $alt_val;
       }
    }
 
-   $val = undef unless defined $valid_val;
+   $val = undef unless $real_val;
    return $val;
 }
 
@@ -4834,11 +4833,11 @@ sub save_tbl_to_checksum {
 
             # Calculate chunks for this table.
             my %params = $ch->get_range_statistics(
-               dbh       => $dbh,
-               db        => $db,
-               tbl       => $tbl,
-               chunk_col => $col,
-               col_type  => $struct->{type_for}->{$col},
+               dbh        => $dbh,
+               db         => $db,
+               tbl        => $tbl,
+               chunk_col  => $col,
+               tbl_struct => $struct,
             );
             if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
                @chunks = $ch->calculate_chunks(
