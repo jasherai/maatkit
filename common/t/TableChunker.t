@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 42;
+   plan tests => 43;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -729,6 +729,38 @@ is_deeply(
       rows_in_range => 8,
    },
    "Gets valid min with enough tries"
+);
+
+
+# #############################################################################
+# Test issue 941 + issue 602
+# #############################################################################
+
+$dbh->do("insert into issue_602.t values ('12', '0000-00-00 00:00:00')");
+# Now we have:
+# |   12 | 0000-00-00 00:00:00 | 
+# |   11 | 2010-00-09 00:00:00 | 
+# |   10 | 2010-04-30 00:00:00 | 
+# So min is a zero row.  If we don't want zero row, next min will be an
+# invalid row, and we don't want that.  So we should get row "10" as min.
+
+%params = $c->get_range_statistics(
+   dbh       => $dbh,
+   db        => 'issue_602',
+   tbl       => 't',
+   chunk_col => 'b',
+   col_type  => 'datetime',
+   zero_row  => 0,
+);
+
+is_deeply(
+   \%params,
+   {
+      min => '2010-04-30 00:00:00',
+      max => '2010-05-09 00:00:00',
+      rows_in_range => 12,
+   },
+   "Gets valid min after zero row"
 );
 
 # #############################################################################
