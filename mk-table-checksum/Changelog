@@ -2,11 +2,10 @@ Changelog for mk-table-checksum and mk-checksum-filter:
 
    * --empty-replicate-table did not work with replication filters (issue 982).
    * --replicate-check=0 did not skip the checksumming step (issue 1020).
-   * The --replicate table was not required to be in database.table format (issue 982).
-   * Added --[no]check-replication-filters as a --replicate sanity check (issue 993).
+   * The --replicate table was not required to specify a database (issue 982).
+   * Added --[no]check-replication-filters for --replicate sanity (issue 993).
    * Added --replicate-database to select a single default database (issue 982).
-   * Added --chunk-column (issue 519).
-   * Added --chunk-index (issue 519).
+   * Added --chunk-column and --chunk-index (issue 519).
 
 2010-05-03: version 1.2.14
 

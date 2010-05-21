@@ -6653,32 +6653,27 @@ concatenated with dots.
 
 type: string
 
-Chunk tables on this column if the column exists and is chunkable.
-
-By default mk-table-checksum automatically determines on which column it
-will chunk each table.  This option allows you to specify a preferred column.
-There is no guarantee, however, that this column will be used.  The column
-must exist in the table and be chunkable.  If for any table those two
-conditions are not true, then mk-table-checksum will automatically choose
-a chunk column.
-
-Be careful when using this option as specifying a poor column could cause
-extremely slow checksumming or other undesirable side-effects.
+Prefer this column for dividing tables into chunks.  By default,
+mk-table-checksum chooses the first suitable column for each table, preferring
+to use the primary key.  This option lets you specify a preferred column, which
+mk-table-checksum uses if it exists in the table and is chunkable.  If not, then
+mk-table-checksum will revert to its default behavior.  Be careful when using
+this option; a poor choice could cause bad performance.  This is probably best
+to use when you are checksumming only a single table, not an entire server.  See
+also L<"--chunk-index">.
 
 =item --chunk-index
 
 type: string
 
-Use this index for chunking tables.  By default mk-table-checksum chooses
-an appropriate index for the L<"--chunk-column"> (whether the chunk column
-is chosen automatically or given explicitly with that option).  Then a
-C<FORCE INDEX> clause is added to the SQL chunk statements.  This does not
-guarantee that MySQL will use this index, but it usually does.  The given
-index must, of course, exist, else mk-table-checksum will automatically
-choose an appropriate index.
-
-Be careful when using this option as specifying a poor index could cause
-table scans, extremely slow checksumming, or other undesirable side-effects.
+Prefer this index for chunking tables.  By default, mk-table-checksum chooses an
+appropriate index for the L<"--chunk-column"> (even if it chooses the chunk
+column automatically).  This option lets you specify the index you prefer.  If
+the index doesn't exist, then mk-table-checksum will fall back to its default
+behavior.  mk-table-checksum adds the index to the checksum SQL statements in a
+C<FORCE INDEX> clause.  Be careful when using this option; a poor choice of
+index could cause bad performance.  This is probably best to use when you are
+checksumming only a single table, not an entire server.
 
 =item --chunk-size
 
@@ -7160,17 +7155,17 @@ exit status is 1; otherwise it is 0.
 
 type: string
 
-C<USE> only this database with L<"--replicate">.  By default,
-mk-table-checksum executes USE to set its default database to the database that
-contains whatever table it's currently working on.  It changes its default
-database as it works on different tables.  This is is a best effort to avoid
-problems with replication filters such as binlog_ignore_db and
-replicate_ignore_db.  However, replication filters can create a situation where
-there simply is no one right way to do things -- some statements might not be
-replicated, and others might be replicated and cause replication to fail on the
-slaves.  In such cases, it is up to the user to specify a safe default database.
-This option specifies a default database that mk-table-checksum selects with
-USE, and never changes afterwards.
+C<USE> only this database with L<"--replicate">.  By default, mk-table-checksum
+executes USE to set its default database to the database that contains the table
+it's currently working on.  It changes its default database as it works on
+different tables.  This is is a best effort to avoid problems with replication
+filters such as binlog_ignore_db and replicate_ignore_db.  However, replication
+filters can create a situation where there simply is no one right way to do
+things.  Some statements might not be replicated, and others might cause
+replication to fail on the slaves.  In such cases, it is up to the user to
+specify a safe default database.  This option specifies a default database that
+mk-table-checksum selects with USE, and never changes afterwards.  See also
+<L"--[no]check-replication-filters">.
 
 =item --resume
 
