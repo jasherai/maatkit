@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 251;
+use Test::More tests => 253;
 
 use QueryRewriter;
 use QueryParser;
@@ -1239,6 +1239,18 @@ is(
 	'distills INSERT (tbl)'
 );
 
+# Something that will (should) never distill.
+is(
+	$qr->distill("-- how /*did*/ `THIS` #happen?"),
+	'',
+	'distills nonsense'
+);
+
+is(
+	$qr->distill("peek tbl poke db"),
+	'',
+	'distills non-SQL'
+);
 
 # #############################################################################
 # Done.
