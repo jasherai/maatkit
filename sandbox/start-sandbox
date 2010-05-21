@@ -26,9 +26,11 @@ make_sandbox() {
    if [ -n "$BINLOG_FORMAT" ]; then
       echo "binlog-format=$BINLOG_FORMAT" >> /tmp/$port/my.sandbox.cnf
    fi
-
    if [ -n "$SLAVE_EXEC_MODE" ]; then
       echo "slave_exec_mode=$SLAVE_EXEC_MODE" >> /tmp/$port/my.sandbox.cnf
+   fi
+   if [ -n "$SQL_MODE" ]; then
+      echo "sql-mode=$SQL_MODE" >> /tmp/$port/my.sandbox.cnf
    fi
 
    # Start the sandbox and check that it has InnoDB.
