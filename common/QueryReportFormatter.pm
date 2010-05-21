@@ -513,7 +513,7 @@ sub event_report {
          }
          elsif ( $attrib_type eq 'string' ) {
             push @values,
-               $self->format_string_list($attrib, $vals, $global_cnt),
+               $self->format_string_list($attrib, $vals, $class_cnt),
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
@@ -826,7 +826,7 @@ sub format_bool_attrib {
 
 # Does pretty-printing for lists of strings like users, hosts, db.
 sub format_string_list {
-   my ( $self, $attrib, $vals, $global_cnt ) = @_;
+   my ( $self, $attrib, $vals, $class_cnt ) = @_;
    my $o        = $self->{OptionParser};
    my $show_all = $o->get('show-all');
 
@@ -859,9 +859,8 @@ sub format_string_list {
       else {
          $print_str = $str;
       }
-      my $p = $global_cnt ? percentage_of($cnt_for->{$str}, $global_cnt) . '%'
-            :               '';
-      $print_str .= " ($cnt_for->{$str}/$p)";
+      my $p = percentage_of($cnt_for->{$str}, $class_cnt);
+      $print_str .= " ($cnt_for->{$str}/$p%)";
       if ( !$show_all->{$attrib} ) {
          last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
       }

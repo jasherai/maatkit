@@ -171,8 +171,8 @@ $expected = <<EOF;
 # Lock time     68   310us   109us   201us   155us   201us    65us   155us
 # Rows sent    100       2       1       1       1       1       0       1
 # Rows exam    100       3       1       2    1.50       2    0.71    1.50
-# Users                  2 bob (1/33%), root (1/33%)
-# Databases              2 test1 (1/33%), test3 (1/33%)
+# Users                  2 bob (1/50%), root (1/50%)
+# Databases              2 test1 (1/50%), test3 (1/50%)
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
 EOF
 
