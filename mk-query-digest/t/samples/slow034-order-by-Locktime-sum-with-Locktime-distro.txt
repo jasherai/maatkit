@@ -39,7 +39,7 @@ select * from  forest WHERE animal = 'dead'\G
 # Lock time      0   334ms    37ms   100ms    84ms    95ms    26ms    95ms
 # Rows sent      3      33       7       9    8.25    8.91    0.83    8.91
 # Rows exam      0     152      50      51   50.67   49.17       0   49.17
-# Databases              2 db1 (2), db3 (2)
+# Databases              2 db1 (2/50%), db3 (2/50%)
 # Time range 2009-08-05 11:00:27 to 2009-08-05 13:00:27
 # bytes         27      68      17      17      17      17       0      17
 # Merge pas      0       0       0       0       0       0       0       0

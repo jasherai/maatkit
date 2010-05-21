@@ -451,7 +451,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -1073,7 +1073,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -5811,7 +5811,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6309
+# QueryReportFormatter package 6361
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -6224,7 +6224,7 @@ sub event_report {
          }
          elsif ( $attrib_type eq 'string' ) {
             push @values,
-               $self->format_string_list($attrib, $vals),
+               $self->format_string_list($attrib, $vals, $class_cnt),
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
@@ -6490,7 +6490,7 @@ sub format_bool_attrib {
 }
 
 sub format_string_list {
-   my ( $self, $attrib, $vals ) = @_;
+   my ( $self, $attrib, $vals, $class_cnt ) = @_;
    my $o        = $self->{OptionParser};
    my $show_all = $o->get('show-all');
 
@@ -6520,10 +6520,12 @@ sub format_string_list {
       else {
          $print_str = $str;
       }
+      my $p = percentage_of($cnt_for->{$str}, $class_cnt);
+      $print_str .= " ($cnt_for->{$str}/$p%)";
       if ( !$show_all->{$attrib} ) {
          last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
       }
-      $line .= "$print_str ($cnt_for->{$str}), ";
+      $line .= "$print_str, ";
       $i++;
    }
 
@@ -7215,7 +7217,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5998
+# MySQLDump package 6345
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLDump.pm
@@ -7326,17 +7328,10 @@ sub _use_db {
       MKDEBUG && _d('No new DB to use');
       return;
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
+   my $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
-   return $curr;
+   return;
 }
 
 sub get_create_table {
@@ -7349,7 +7344,7 @@ sub get_create_table {
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $href;
@@ -7358,7 +7353,7 @@ sub get_create_table {
          warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
          return;
       }
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       MKDEBUG && _d($sql);
@@ -7381,11 +7376,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -9780,7 +9775,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6184
+# MasterSlave package 6320
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -10446,6 +10441,48 @@ sub is_replication_thread {
    MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
       '; match:', $match);
    return $match;
+}
+
+sub get_replication_filters {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my %filters = ();
+
+   my $status = $self->get_master_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         binlog_do_db
+         binlog_ignore_db
+      );
+   }
+
+   $status = $self->get_slave_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         replicate_do_db
+         replicate_ignore_db
+         replicate_do_table
+         replicate_ignore_table 
+         replicate_wild_do_table
+         replicate_wild_ignore_table
+      );
+
+      my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
+      MKDEBUG && _d($dbh, $sql);
+      my $row = $dbh->selectrow_arrayref($sql);
+      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+   }
+
+   return \%filters; 
 }
 
 sub pos_to_string {

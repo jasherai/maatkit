@@ -29,7 +29,7 @@ administrator command: Connect\G
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         28       2
 # Exec time      0       0       0       0       0       0       0       0
-# Databases              2 db1 (1), my_webstat... (1)
+# Databases              2 db1 (1/50%), my_webstat... (1/50%)
 # Time range 2005-10-07 21:55:24 to 2005-10-07 21:55:24
 # bytes         17      54      27      27      27      27       0      27
 # Query_time distribution

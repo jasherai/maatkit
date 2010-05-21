@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added percent of class count to string attribute values (issue 1026).
+
 2010-05-03: version 0.9.17
 
    * Made --report-format order configurable (issue 990).

@@ -13,7 +13,7 @@
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1    root
 # Hosts                  1 localhost
-# Databases              2 sakila (1), test (1)
+# Databases              2 sakila (1/50%), test (1/50%)
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:45:10
 # bytes        100      49      22      27   24.50      27    3.54   24.50
 # Query_time distribution

@@ -9,7 +9,7 @@
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1    meow
 # Hosts                  1
-# Databases              2 db1 (1), db2 (1)
+# Databases              2 db1 (1/50%), db2 (1/50%)
 # bytes         79      54      27      27      27      27       0      27
 # Query_time distribution
 #   1us  ################################################################

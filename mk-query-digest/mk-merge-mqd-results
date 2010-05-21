@@ -21,7 +21,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -643,7 +643,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -3206,7 +3206,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6309
+# QueryReportFormatter package 6361
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3619,7 +3619,7 @@ sub event_report {
          }
          elsif ( $attrib_type eq 'string' ) {
             push @values,
-               $self->format_string_list($attrib, $vals),
+               $self->format_string_list($attrib, $vals, $class_cnt),
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
@@ -3885,7 +3885,7 @@ sub format_bool_attrib {
 }
 
 sub format_string_list {
-   my ( $self, $attrib, $vals ) = @_;
+   my ( $self, $attrib, $vals, $class_cnt ) = @_;
    my $o        = $self->{OptionParser};
    my $show_all = $o->get('show-all');
 
@@ -3915,10 +3915,12 @@ sub format_string_list {
       else {
          $print_str = $str;
       }
+      my $p = percentage_of($cnt_for->{$str}, $class_cnt);
+      $print_str .= " ($cnt_for->{$str}/$p%)";
       if ( !$show_all->{$attrib} ) {
          last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
       }
-      $line .= "$print_str ($cnt_for->{$str}), ";
+      $line .= "$print_str, ";
       $i++;
    }
 

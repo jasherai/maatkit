@@ -37,7 +37,7 @@ SELECT * FROM foo\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
-# Databases              2 db1 (1), db2 (1)
+# Databases              2 db1 (1/50%), db2 (1/50%)
 # Time range 2009-07-27 11:19:30 to 2009-07-27 11:19:31
 # bytes         33      34      17      17      17      17       0      17
 # Query_time distribution
