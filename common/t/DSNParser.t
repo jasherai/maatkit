@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 26;
 
 use DSNParser;
 use OptionParser;
@@ -419,6 +419,27 @@ SKIP: {
    # Have to reconnect $dbh since it timedout too.
    $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
    $dbh->do('SET @@global.wait_timeout=28800');
+};
+
+# #############################################################################
+# Issue 801: DSNParser clobbers SQL_MODE
+# #############################################################################
+SKIP: {
+   diag(`SQL_MODE="no_zero_date" $trunk/sandbox/start-sandbox master 12348 >/dev/null`);
+   my $dsn = $dp->parse('h=127.1,P=12348,u=msandbox,p=msandbox');
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {});
+
+   skip 'Cannot connect to second sandbox master', 1 unless $dbh;
+
+   my $row = $dbh->selectrow_arrayref('select @@sql_mode');
+   is(
+      $row->[0],
+      'NO_AUTO_VALUE_ON_ZERO,NO_ZERO_DATE',
+      "Did not clobber server SQL mode"
+   );
+
+   $dbh->disconnect();
+   diag(`$trunk/sandbox/stop-sandbox remove 12348 >/dev/null`);
 };
 
 # #############################################################################

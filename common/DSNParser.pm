@@ -277,9 +277,18 @@ sub get_dbh {
             my $sql;
 
             # Set SQL_MODE and options for SHOW CREATE TABLE.
-            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
-                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d($dbh, ':', $sql);
+            # Get current, server SQL mode.  Don't clobber this;
+            # append our SQL mode to whatever is already set.
+            # http://code.google.com/p/maatkit/issues/detail?id=801
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
             $dbh->do($sql);
 
             # Set character set and binmode on STDOUT.
