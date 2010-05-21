@@ -171,8 +171,8 @@ $expected = <<EOF;
 # Lock time     68   310us   109us   201us   155us   201us    65us   155us
 # Rows sent    100       2       1       1       1       1       0       1
 # Rows exam    100       3       1       2    1.50       2    0.71    1.50
-# Users                  2 bob (1), root (1)
-# Databases              2 test1 (1), test3 (1)
+# Users                  2 bob (1/33%), root (1/33%)
+# Databases              2 test1 (1/33%), test3 (1/33%)
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
 EOF
 
@@ -618,7 +618,7 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       2
 # Exec time    100      3s      1s      2s      2s      2s   707ms      2s
-# foo                    2 Hi.  I'm a... (1), Me too! I'... (1)
+# foo                    2 Hi.  I'm a... (1/50%), Me too! I'... (1/50%)
 EOF
 
 foreach my $event (@$events) {
@@ -655,7 +655,7 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       3
 # Exec time    100      6s      1s      3s      2s      3s   780ms      2s
-# foo                    3 Hi.  I'm a... (1), Me too! I'... (1)... 1 more
+# foo                    3 Hi.  I'm a... (1/33%), Me too! I'... (1/33%)... 1 more
 EOF
 
 foreach my $event (@$events) {
@@ -750,7 +750,7 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       2
 # Exec time    100     16s      8s      8s      8s      8s       0      8s
-# Hosts                  2 123.123.123.456 (1), 123.123.123.789 (1)
+# Hosts                  2 123.123.123.456 (1/50%)... 1 more
 EOF
 
 $ea  = new EventAggregator(
@@ -796,7 +796,7 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       3
 # Exec time    100     24s      8s      8s      8s      8s       0      8s
-# Hosts                  3 123.123.123.456 (1), 123.123.123.789 (1)... 1 more
+# Hosts                  3 123.123.123.456 (1/33%)... 2 more
 EOF
 is($result, $expected, "IPs not shortened with more");
 
@@ -816,7 +816,7 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       3
 # Exec time    100     24s      8s      8s      8s      8s       0      8s
-# Hosts                  3 123.123.123.456 (1), 123.123.123.789 (1), 123.123.123.999 (1)
+# Hosts                  3 123.123.123.456 (1/33%), 123.123.123.789 (1/33%), 123.123.123.999 (1/33%)
 EOF
 is($result, $expected, "Show all hosts");
 
