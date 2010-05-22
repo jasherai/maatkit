@@ -731,7 +731,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 6366
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -750,54 +755,28 @@ my $have_dbi = $EVAL_ERROR ? 0 : 1;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class, @opts ) = @_;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(opts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $self = {
-      opts => {
-         A => {
-            desc => 'Default character set',
-            dsn  => 'charset',
-            copy => 1,
-         },
-         D => {
-            desc => 'Database to use',
-            dsn  => 'database',
-            copy => 1,
-         },
-         F => {
-            desc => 'Only read default options from the given file',
-            dsn  => 'mysql_read_default_file',
-            copy => 1,
-         },
-         h => {
-            desc => 'Connect to host',
-            dsn  => 'host',
-            copy => 1,
-         },
-         p => {
-            desc => 'Password to use when connecting',
-            dsn  => 'password',
-            copy => 1,
-         },
-         P => {
-            desc => 'Port number to use for connection',
-            dsn  => 'port',
-            copy => 1,
-         },
-         S => {
-            desc => 'Socket file to use for connection',
-            dsn  => 'mysql_socket',
-            copy => 1,
-         },
-         u => {
-            desc => 'User for login if not current user',
-            dsn  => 'user',
-            copy => 1,
-         },
-      },
+      opts => {}  # h, P, u, etc.  Should come from DSN OPTIONS section in POD.
    };
-   foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property', $opt->{key});
-      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   foreach my $opt ( @{$args{opts}} ) {
+      if ( !$opt->{key} || !$opt->{desc} ) {
+         die "Invalid DSN option: ", Dumper($opt);
+      }
+      MKDEBUG && _d('DSN option:',
+         join(', ',
+            map { "$_=" . (defined $opt->{$_} ? ($opt->{$_} || '') : 'undef') }
+               keys %$opt
+         )
+      );
+      $self->{opts}->{$opt->{key}} = {
+         dsn  => $opt->{dsn},
+         desc => $opt->{desc},
+         copy => $opt->{copy} || 0,
+      };
    }
    return bless $self, $class;
 }
@@ -822,7 +801,7 @@ sub parse {
    $defaults ||= {};
    my %given_props;
    my %final_props;
-   my %opts = %{$self->{opts}};
+   my $opts = $self->{opts};
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
@@ -834,11 +813,11 @@ sub parse {
       }
    }
 
-   foreach my $key ( keys %opts ) {
+   foreach my $key ( keys %$opts ) {
       MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
-           && defined $prev->{$key} && $opts{$key}->{copy} )
+           && defined $prev->{$key} && $opts->{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
          MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
@@ -850,12 +829,17 @@ sub parse {
    }
 
    foreach my $key ( keys %given_props ) {
-      die "Unrecognized DSN part '$key' in '$dsn'\n"
-         unless exists $opts{$key};
+      die "Unknown DSN option '$key' in '$dsn'.  For more details, "
+            . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+            . "for complete documentation."
+         unless exists $opts->{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+         die "Missing required DSN option '$key' in '$dsn'.  For more details, "
+               . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+               . "for complete documentation."
+            unless $final_props{$key};
       }
    }
 
@@ -876,11 +860,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -947,6 +933,10 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
@@ -969,9 +959,15 @@ sub get_dbh {
          if ( $cxn_string =~ m/mysql/i ) {
             my $sql;
 
-            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
-                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d($dbh, ':', $sql);
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {

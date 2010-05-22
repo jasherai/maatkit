@@ -1099,7 +1099,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6057
+# DSNParser package 6366
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -1327,9 +1327,15 @@ sub get_dbh {
          if ( $cxn_string =~ m/mysql/i ) {
             my $sql;
 
-            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
-                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d($dbh, ':', $sql);
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {

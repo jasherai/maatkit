@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -650,7 +650,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -981,7 +981,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6240
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -1038,6 +1038,19 @@ sub literal_like {
    return "'$like'";
 }
 
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
@@ -1045,7 +1058,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6057
+# DSNParser package 6366
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -1273,9 +1286,15 @@ sub get_dbh {
          if ( $cxn_string =~ m/mysql/i ) {
             my $sql;
 
-            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
-                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d($dbh, ':', $sql);
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
@@ -2147,7 +2166,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5998
+# MySQLDump package 6345
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLDump.pm
@@ -2258,17 +2277,10 @@ sub _use_db {
       MKDEBUG && _d('No new DB to use');
       return;
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
+   my $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
-   return $curr;
+   return;
 }
 
 sub get_create_table {
@@ -2281,7 +2293,7 @@ sub get_create_table {
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $href;
@@ -2290,7 +2302,7 @@ sub get_create_table {
          warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
          return;
       }
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       MKDEBUG && _d($sql);
@@ -2313,11 +2325,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -2780,7 +2792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 5955
+# TableChunker package 6351
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2801,6 +2813,13 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my %mysql_func_for = (
+   timestamp => 'UNIX_TIMESTAMP',
+   date      => 'TO_DAYS',
+   time      => 'TIME_TO_SEC',
+   datetime  => 'TO_DAYS',
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2895,36 +2914,56 @@ sub calculate_chunks {
    MKDEBUG && _d('chunk col type:', $col_type);
 
 
-   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-      $start_point = $args{min};
-      $end_point   = $args{max};
-      $range_func  = 'range_num';
-   }
-   elsif ( $col_type eq 'timestamp' ) {
-      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_timestamp';
-   }
-   elsif ( $col_type eq 'date' ) {
-      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_date';
-   }
-   elsif ( $col_type eq 'time' ) {
-      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
-      MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $dbh->selectrow_array($sql);
-      $range_func  = 'range_time';
-   }
-   elsif ( $col_type eq 'datetime' ) {
-      $start_point = $self->timestampdiff($dbh, $args{min});
-      $end_point   = $self->timestampdiff($dbh, $args{max});
-      $range_func  = 'range_datetime';
-   }
-   else {
-      die "I don't know how to chunk $col_type\n";
+   eval {
+      my $func = $mysql_func_for{$col_type};
+      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+         $start_point = $args{min};
+         $end_point   = $args{max};
+         $range_func  = 'range_num';
+      }
+      elsif ( $col_type eq 'timestamp' ) {
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_timestamp';
+      }
+      elsif ( $col_type eq 'date' ) {
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_date';
+      }
+      elsif ( $col_type eq 'time' ) {
+         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
+         MKDEBUG && _d($sql);
+         ($start_point, $end_point) = $dbh->selectrow_array($sql);
+         $range_func  = 'range_time';
+      }
+      elsif ( $col_type eq 'datetime' ) {
+         $start_point = $self->timestampdiff($dbh, $args{min});
+         $end_point   = $self->timestampdiff($dbh, $args{max});
+         $range_func  = 'range_datetime';
+      }
+      else {
+         die "I don't know how to chunk $col_type\n";
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/don't know how to chunk/ ) {
+         die $EVAL_ERROR;
+      }
+      else {
+         die "Error calculating chunk start and end points for table "
+            . "`$args{tbl_struct}->{name}` on column `$args{chunk_col}` "
+            . "with min/max values "
+            . join('/',
+                  map { defined $args{$_} ? $args{$_} : 'undef' } qw(min max))
+            . ":\n\n"
+            . $EVAL_ERROR
+            . "\nVerify that the min and max values are valid for the column.  "
+            . "If they are valid, this error could be caused by a bug in the "
+            . "tool.";
+      }
    }
 
    if ( !defined $start_point ) {
@@ -3033,17 +3072,23 @@ sub size_to_rows {
 
 sub get_range_statistics {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl chunk_col);
+   my @required_args = qw(dbh db tbl chunk_col tbl_struct);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $db, $tbl, $col) = @args{@required_args};
-   my $where = $args{where};
-   my $q = $self->{Quoter};
-   my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
-      . ") FROM " . $q->quote($db, $tbl)
-      . ($where ? " WHERE $where" : '');
-   MKDEBUG && _d($sql);
+   my $where  = $args{where};
+   my $q      = $self->{Quoter};
+   
+   my $col_type       = $args{tbl_struct}->{type_for}->{$col};
+   my $col_is_numeric = $args{tbl_struct}->{is_numeric}->{$col};
+
+   my $db_tbl = $q->quote($db, $tbl);
+   $col       = $q->quote($col);
+
+   my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
+           . ($where ? " WHERE $where" : '');
+   MKDEBUG && _d($dbh, $sql);
    my ( $min, $max );
    eval {
       ( $min, $max ) = $dbh->selectrow_array($sql);
@@ -3058,25 +3103,60 @@ sub get_range_statistics {
       }
    }
 
-   if ( !$args{zero_row} ) {
-      if ( !$min
-           || $min eq '0'
-           || $min eq '0000-00-00'
-           || $min eq '0000-00-00 00:00:00'
-         )
-      {
-         MKDEBUG && _d('Discarding zero min:', $min);
-         $sql = "SELECT MIN(" . $q->quote($col) . ") FROM "
-              . $q->quote($db, $tbl)
-              . "WHERE $col > ? "
-              . ($where ? " AND $where " : '')
-              . "LIMIT 1";
-         MKDEBUG && _d($sql);
-         my $sth = $dbh->prepare($sql);
-         $sth->execute($min);
-         ($min) = $sth->fetchrow_array();
-         MKDEBUG && _d('New min:', $min);
+   if ( $col_type =~ m/date|time/i ) {
+      if ( defined $min ) {
+         my $real_min = $self->first_real_value(
+            val      => $min,
+            col_type => $col_type,
+            endpoint => 'min',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_min ) {
+            die "Error finding a valid minimum value for table $db_tbl on "
+               . "column $col. The real minimum value $min is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column"
+               . ($where ? " where $where." : ".");
+         }
+         $min = $real_min;  # may be original $min, maybe next real min value
       }
+
+      if ( defined $max ) {
+         my $real_max = $self->first_real_value(
+            val      => $max,
+            col_type => $col_type,
+            endpoint => 'max',
+            tries    => $args{tries},
+            dbh      => $dbh,
+            db_tbl   => $db_tbl,
+            col      => $col,
+            where    => $where,
+         );
+         if ( !$real_max ) {
+            die "Error finding a valid maximum value for table $db_tbl on "
+               . "column $col. The real maximum value $max is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column "
+               . ($where ? "where $where." : ".");
+         }
+         $max = $real_max;  # may be original $max, maybe next real max value
+      }
+   }
+   elsif ( $col_is_numeric && !$args{zero_row} && ($min || 0) == 0 ) {
+      MKDEBUG && _d('Discarding zero min:', $min);
+      $sql = "SELECT $col FROM $db_tbl "
+           . "WHERE $col > ? "
+           . ($where ? " AND $where " : '')
+           . "LIMIT 1";
+      MKDEBUG && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($min);
+      ($min) = $sth->fetchrow_array();
+      MKDEBUG && _d('New min:', $min);
    }
 
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
@@ -3184,11 +3264,88 @@ sub timestampdiff {
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
-   This is probably because you are using a version of MySQL that overflows on
-   large interval values to DATE_ADD().  If not, please report this as a bug.
+   This could be due to a version of MySQL that overflows on large interval
+   values to DATE_ADD(), or the given datetime is not a valid date.  If not,
+   please report this as a bug.
    EOF
       unless $check eq $time;
    return $diff;
+}
+
+sub first_real_value {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(val col_type endpoint dbh db_tbl col);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($val, $col_type, $endpoint, $dbh, $db_tbl, $col) = @args{@required_args};
+   my $tries = defined $args{tries} ? $args{tries} : 5;
+
+   if ( !$mysql_func_for{$col_type} ) {
+      MKDEBUG && _d('No MySQL func to eval', $col_type, 'type column');
+      return $val;
+   }
+
+   my $real_val = $self->_eval_val(
+      dbh  => $dbh,
+      val  => $val,
+      func => $mysql_func_for{$col_type},
+   );
+
+   if ( !$real_val ) {
+      MKDEBUG && _d($endpoint, 'value is not real, finding first real',
+         $endpoint, 'value');
+
+      my $cmp = $endpoint =~ m/min/i ? '>' : '<';
+      my $sql = "SELECT $col FROM $db_tbl WHERE $col $cmp ? "
+              . ($args{where} ? "WHERE $args{where} " : "")
+              . "LIMIT 1";
+      MKDEBUG && _d($dbh, $sql);
+      my $sth = $dbh->prepare($sql);
+
+      my $last_val = $val;
+      while ( $tries-- && !$real_val ) {
+         $sth->execute($last_val);
+         my ($alt_val) = $sth->fetchrow_array();
+         MKDEBUG && _d('Next value:', $alt_val, '; tries left:', $tries);
+         if ( !defined $alt_val ) {
+            MKDEBUG && _d('No more rows in table');
+            last;
+         }
+         $real_val = $self->_eval_val(
+            dbh  => $dbh,
+            val  => $alt_val,
+            func => $mysql_func_for{$col_type},
+         );
+         $val      = $alt_val if defined $real_val;
+         $last_val = $alt_val;
+      }
+   }
+
+   $val = undef unless $real_val;
+   return $val;
+}
+
+sub _eval_val {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh val func);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $val, $func) = @args{@required_args};
+
+   my $sql = "SELECT $func('$val')";
+   MKDEBUG && _d($dbh, $sql);
+   my $eval_val;
+   eval {
+      ($eval_val) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return;
+   }
+   MKDEBUG && _d('Value evaluates to', $eval_val);
+   return $eval_val;
 }
 
 sub _d {
@@ -3588,7 +3745,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 5712
+# TableSyncChunk package 6351
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncChunk.pm
@@ -5136,7 +5293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6184
+# MasterSlave package 6320
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -5804,6 +5961,48 @@ sub is_replication_thread {
    return $match;
 }
 
+sub get_replication_filters {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my %filters = ();
+
+   my $status = $self->get_master_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         binlog_do_db
+         binlog_ignore_db
+      );
+   }
+
+   $status = $self->get_slave_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         replicate_do_db
+         replicate_ignore_db
+         replicate_do_table
+         replicate_ignore_table 
+         replicate_wild_do_table
+         replicate_wild_ignore_table
+      );
+
+      my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
+      MKDEBUG && _d($dbh, $sql);
+      my $row = $dbh->selectrow_arrayref($sql);
+      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+   }
+
+   return \%filters; 
+}
+
 sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
@@ -5825,7 +6024,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -5871,7 +6070,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -5949,7 +6149,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -5990,7 +6190,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
