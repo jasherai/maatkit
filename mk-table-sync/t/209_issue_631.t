@@ -40,12 +40,12 @@ is(
    $output,
 "# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d2`.`t`(`x`) VALUES (1);
+INSERT INTO `d2`.`t`(`x`) VALUES ('1');
 #      0       0      1      0 GroupBy   2    d1.t
 # Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d3`.`t`(`x`) VALUES (1);
-INSERT INTO `d3`.`t`(`x`) VALUES (2);
+INSERT INTO `d3`.`t`(`x`) VALUES ('1');
+INSERT INTO `d3`.`t`(`x`) VALUES ('2');
 #      0       0      2      0 GroupBy   2    d1.t
 ",
    'GroupBy can sync issue 631'
@@ -56,12 +56,12 @@ is(
    $output,
 "# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d2`.`t`(`x`) VALUES (1);
+INSERT INTO `d2`.`t`(`x`) VALUES ('1');
 #      0       0      1      0 Stream    2    d1.t
 # Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d3`.`t`(`x`) VALUES (1);
-INSERT INTO `d3`.`t`(`x`) VALUES (2);
+INSERT INTO `d3`.`t`(`x`) VALUES ('1');
+INSERT INTO `d3`.`t`(`x`) VALUES ('2');
 #      0       0      2      0 Stream    2    d1.t
 ",
    'Stream can sync issue 631'

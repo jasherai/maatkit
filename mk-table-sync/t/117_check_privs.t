@@ -75,7 +75,7 @@ $output = output(
 );
 is(
    $output,
-   "DELETE FROM `issue_907`.`t` WHERE `i`=1 LIMIT 1;
+   "DELETE FROM `issue_907`.`t` WHERE `i`='1' LIMIT 1;
 ",
    "Can --print without all privs and --no-check-privileges"
 );

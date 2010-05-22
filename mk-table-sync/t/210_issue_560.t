@@ -68,17 +68,17 @@ is(
 # SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 301 AND `player_id` < 351)) LOCK IN SHARE MODE
 # SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 301 AND `player_id` < 351) ORDER BY `player_id`, `buddy_id` FOR UPDATE
 # SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 301 AND `player_id` < 351) ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=333 AND `buddy_id`='0' LIMIT 1;
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=334 AND `buddy_id`='0' LIMIT 1;
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (333, 3414);
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (334, 6626);
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='333' AND `buddy_id`='0' LIMIT 1;
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='334' AND `buddy_id`='0' LIMIT 1;
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('333', '3414');
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('334', '6626');
 #      2       2      0      0 Nibble    2    issue_560.buddy_list
 # SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 451)) FOR UPDATE
 # SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 451)) LOCK IN SHARE MODE
 # SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 451) ORDER BY `player_id`, `buddy_id` FOR UPDATE
 # SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 451) ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=486 AND `buddy_id`='0' LIMIT 1;
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (486, 1660);
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='486' AND `buddy_id`='0' LIMIT 1;
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('486', '1660');
 #      1       1      0      0 Nibble    2    issue_560.buddy_list
 ",
    'Sync only --replicate chunks'

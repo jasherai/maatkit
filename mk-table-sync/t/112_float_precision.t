@@ -50,7 +50,7 @@ $slave_dbh->do('update test.fl set d = 2.0000013 where id = 1');
 $output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox,D=test,t=fl --print 2>&1`;
 is(
    $output,
-   "REPLACE INTO `test`.`fl`(`id`, `f`, `d`) VALUES (1, '1.0000011921', '2.0000012');
+   "REPLACE INTO `test`.`fl`(`id`, `f`, `d`) VALUES ('1', '1.0000011921', '2.0000012');
 ",
    'No --float-precision so double col diff at high precision (issue 410)'
 );

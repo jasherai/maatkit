@@ -39,7 +39,7 @@ $output = `$trunk/mk-table-sync/mk-table-sync h=127.1,P=12345,u=msandbox,p=msand
 chomp $output;
 is(
    $output,
-   "UPDATE `issue_96`.`t2` SET `from_city`='ta' WHERE `package_id`=4 AND `location`='CPR' LIMIT 1;",
+   "UPDATE `issue_96`.`t2` SET `from_city`='ta' WHERE `package_id`='4' AND `location`='CPR' LIMIT 1;",
    'Sync nibbler infinite loop (issue 96)'
 );
 

@@ -55,8 +55,8 @@ diag(`$trunk/mk-table-checksum/mk-table-checksum --replicate issue_375.checksum 
 $output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox --replicate issue_375.checksum --print`;
 is(
    $output,
-   "REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (10, '2009-09-03 14:18:00', 'k');
-REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (100, '2009-09-06 15:01:23', 'cv');
+   "REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES ('10', '2009-09-03 14:18:00', 'k');
+REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES ('100', '2009-09-06 15:01:23', 'cv');
 ",
    'Simple --replicate'
 );

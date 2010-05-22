@@ -135,13 +135,13 @@ $output = output(
 
 is(
    $output,
-"/*127.1:12347*/ UPDATE `bidi`.`t` SET `c`='ghi', `d`=5, `ts`='2010-02-01 09:17:52' WHERE `id`=3 LIMIT 1;
-/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`=5 LIMIT 1;
-/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (11, '?', '0', '2010-01-29 11:17:12');
-/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='hmm', `d`=1, `ts`='2010-02-02 12:17:31' WHERE `id`=13 LIMIT 1;
-/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='gtg', `d`=7, `ts`='2010-02-02 06:01:08' WHERE `id`=15 LIMIT 1;
-/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (17, 'good', 1, '2010-02-02 21:38:03');
-/*127.1:12347*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (20, 'new', 100, '2010-02-01 04:15:36');
+"/*127.1:12347*/ UPDATE `bidi`.`t` SET `c`='ghi', `d`='5', `ts`='2010-02-01 09:17:52' WHERE `id`='3' LIMIT 1;
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`='5' LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('11', '?', '0', '2010-01-29 11:17:12');
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='hmm', `d`='1', `ts`='2010-02-02 12:17:31' WHERE `id`='13' LIMIT 1;
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='gtg', `d`='7', `ts`='2010-02-02 06:01:08' WHERE `id`='15' LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('17', 'good', '1', '2010-02-02 21:38:03');
+/*127.1:12347*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('20', 'new', '100', '2010-02-01 04:15:36');
 ",
    '--print correct SQL for c1<->r1 bidirectional sync'
 );
@@ -176,19 +176,19 @@ my $err = '';
 
 is(
    $output,
-"/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`=5 LIMIT 1;
-/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (11, '?', '0', '2010-01-29 11:17:12');
-/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='hmm', `d`=1, `ts`='2010-02-02 12:17:31' WHERE `id`=13 LIMIT 1;
-/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='gtg', `d`=7, `ts`='2010-02-02 06:01:08' WHERE `id`=15 LIMIT 1;
-/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (17, 'good', 1, '2010-02-02 21:38:03');
-/*127.1:12347*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (20, 'new', 100, '2010-02-01 04:15:36');
+"/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`='5' LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('11', '?', '0', '2010-01-29 11:17:12');
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='hmm', `d`='1', `ts`='2010-02-02 12:17:31' WHERE `id`='13' LIMIT 1;
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='gtg', `d`='7', `ts`='2010-02-02 06:01:08' WHERE `id`='15' LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('17', 'good', '1', '2010-02-02 21:38:03');
+/*127.1:12347*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES ('20', 'new', '100', '2010-02-01 04:15:36');
 ",
   'SQL for c1<->r1 with conflict'
 );
 
 is(
    $err,
-"# Cannot resolve conflict WHERE `id`=3: `ts` values do not differ by the threhold, 30m.
+"# Cannot resolve conflict WHERE `id`='3': `ts` values do not differ by the threhold, 30m.
 ",
    'Warns about conflict'
 );
@@ -267,7 +267,7 @@ is(
 # syncing other tables.
 is(
    $err,
-"# Cannot resolve conflict WHERE `id`=3: `ts` values do not differ by the threhold, 30m.  while doing bidi.t on 127.1
+"# Cannot resolve conflict WHERE `id`='3': `ts` values do not differ by the threhold, 30m.  while doing bidi.t on 127.1
 ",
    'Die/warn about conflict'
 );
@@ -369,7 +369,7 @@ SKIP: {
 
    like(
       $err,
-      qr/Cannot resolve conflict WHERE `id`=8: `ts` values are the same/,
+      qr/Cannot resolve conflict WHERE `id`='8': `ts` values are the same/,
       'Warned that id=8 differs but has same ts'
    );
 
@@ -464,7 +464,7 @@ SKIP: {
    
    like(
       $err,
-      qr/Cannot resolve conflict WHERE `id`=8: `ts` values are the same/,
+      qr/Cannot resolve conflict WHERE `id`='8': `ts` values are the same/,
       'Warned again that id=8 differs but has same ts'
    );
 

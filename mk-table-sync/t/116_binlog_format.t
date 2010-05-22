@@ -79,7 +79,7 @@ is(
    output(
       sub { mk_table_sync::main(@args, qw(--print --execute)) }
    ),
-   "DELETE FROM `test`.`t` WHERE `i`=3 LIMIT 1;
+   "DELETE FROM `test`.`t` WHERE `i`='3' LIMIT 1;
 ",
    "Executed DELETE"
 );

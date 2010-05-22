@@ -43,8 +43,8 @@ $output = output(
 
 is(
    $output,
-"DELETE FROM `issue_965`.`t2` WHERE `b_ref`='aae' AND `r`=5 AND `o_i`=100 LIMIT 1;
-INSERT INTO `issue_965`.`t2`(`b_ref`, `r`, `o_i`, `r_s`) VALUES ('aae', 5, 1, '2010-03-29 14:44:00');
+"DELETE FROM `issue_965`.`t2` WHERE `b_ref`='aae' AND `r`='5' AND `o_i`='100' LIMIT 1;
+INSERT INTO `issue_965`.`t2`(`b_ref`, `r`, `o_i`, `r_s`) VALUES ('aae', '5', '1', '2010-03-29 14:44:00');
 ",
    "Correct SQL statements"
 );

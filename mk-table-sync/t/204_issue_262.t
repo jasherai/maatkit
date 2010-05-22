@@ -45,7 +45,7 @@ $sb->use('slave1', '-e "truncate table foo.t1"');
 $output = `$trunk/mk-table-sync/mk-table-sync --no-check-slave --print h=127.1,P=12345,u=msandbox,p=msandbox -d mysql,foo h=127.1,P=12346 2>&1`;
 like(
    $output,
-   qr/INSERT INTO `foo`\.`t1`\(`i`\) VALUES \(1\)/,
+   qr/INSERT INTO `foo`\.`t1`\(`i`\) VALUES \('1'\)/,
    'Does not die checking tables for triggers (issue 262)'
 );
 

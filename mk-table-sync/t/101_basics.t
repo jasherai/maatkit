@@ -55,8 +55,8 @@ $output = run('test1', 'test2', '');
 like($output, qr/Can't make changes/, 'It dislikes changing a slave');
 
 $output = run('test1', 'test2', '--no-bin-log');
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca');", 'No alg sync');
 is_deeply(
    query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
@@ -65,8 +65,8 @@ is_deeply(
 
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Stream --no-bin-log');
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca');", 'Basic Stream sync');
 is_deeply(
    query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
@@ -75,8 +75,8 @@ is_deeply(
 
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms GroupBy --no-bin-log');
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca');", 'Basic GroupBy sync');
 is_deeply(
    query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
@@ -85,8 +85,8 @@ is_deeply(
 
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Chunk,GroupBy --no-bin-log');
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca');", 'Basic Chunk sync');
 is_deeply(
    query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
@@ -95,8 +95,8 @@ is_deeply(
 
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Nibble --no-bin-log');
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca');", 'Basic Nibble sync');
 is_deeply(
    query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
