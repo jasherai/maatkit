@@ -159,18 +159,11 @@ sub prepare_to_sync {
    my @ucols = grep { !$seen{$_}++ } @{$args{cols}}, @{$args{key_cols}};
    $args{cols} = \@ucols;
 
-   if ( !$args{replicate} ) {
-      $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
-         %args,
-         index    => $args{chunk_index}, # expects an index arg, not chunk_index
-         asc_only => 1,
-      );
-   }
-   else {
-      # See http://code.google.com/p/maatkit/issues/detail?id=560
-      MKDEBUG && _d('Using --replicate boundary instead of nibble boundaries');
-      $self->{sel_stmt} = undef;
-   }
+   $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
+      %args,
+      index    => $args{chunk_index}, # expects an index arg, not chunk_index
+      asc_only => 1,
+   );
 
    $self->{nibble}            = 0;
    $self->{cached_row}        = undef;
@@ -254,11 +247,6 @@ sub __get_boundaries {
    my $q = $self->{Quoter};
    my $s = $self->{sel_stmt};
 
-   if ( !$s ) {
-      MKDEBUG && _d('No sel_stmt so WHERE clause 1=1 (for --replicate)');
-      return '1=1';
-   }
-
    my $lb;   # Lower boundary part of WHERE
    my $ub;   # Upper boundary part of WHERE
    my $row;  # Next upper boundary row or cached_row
@@ -316,6 +304,7 @@ sub __get_boundaries {
 
    # If $lb is defined, then this is the 2nd or subsequent nibble and
    # $ub should be the previous boundary.  Else, this is the first nibble.
+   # Do not append option where arg here; it is added by the caller.
    my $where = $lb ? "($lb AND $ub)" : $ub;
 
    $self->{cached_row}        = $row;
@@ -340,7 +329,8 @@ sub __make_boundary_sql {
    my $sql = "SELECT /*nibble boundary $self->{nibble}*/ "
       . join(',', map { $q->quote($_) } @{$s->{cols}})
       . " FROM " . $q->quote($args{database}, $args{table})
-      . ' ' . ($self->{index_hint} || '');
+      . ' ' . ($self->{index_hint} || '')
+      . ($args{where} ? " WHERE ($args{where})" : "");
 
    if ( $self->{nibble} ) {
       # The lower boundaries of the nibble must be defined, based on the last
@@ -349,7 +339,7 @@ sub __make_boundary_sql {
       my $i   = 0;
       $lb     = $s->{boundaries}->{'>'};
       $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]} || 0)/eg;
-      $sql   .= ' WHERE ' . $lb;
+      $sql   .= $args{where} ? " AND $lb" : " WHERE $lb";
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
          . ' LIMIT ' . ($self->{chunk_size} - 1) . ', 1';

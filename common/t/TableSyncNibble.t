@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 36;
 
 use DSNParser;
 use Sandbox;
@@ -103,7 +103,6 @@ my %args       = (
    chunk_size    => 1,
    chunk_index   => 'PRIMARY',
    key_cols      => $tbl_struct->{keys}->{PRIMARY}->{cols},
-   where         => 'a>2',
    crc_col       => '__crc',
    index_hint    => 'USE INDEX (`PRIMARY`)',
    ChangeHandler => $ch,
@@ -122,12 +121,11 @@ SKIP: {
       $t->get_sql(
          database => 'test',
          table    => 'test1',
-         where    => 'foo=1',
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
       . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
       . q{10, 16)) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' }
-      . q{AND `b` <= 'en'))) AND ((foo=1))},
+      . q{AND `b` <= 'en')))},
       'First nibble SQL with FNV_64',
    );
 }
@@ -137,7 +135,6 @@ $t->set_checksum_queries(
 );
 is(
    $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    ),
@@ -147,13 +144,12 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))},
    'First nibble SQL',
 );
 
 is(
    $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    ),
@@ -163,7 +159,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))},
    'First nibble SQL, again',
 );
 
@@ -172,7 +168,6 @@ delete $t->{cached_boundaries};
 
 is(
    $t->get_sql(
-      where    => '(foo=1)',
       database => 'test',
       table    => 'test1',
    ),
@@ -183,33 +178,29 @@ is(
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
-   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca')))) AND (((foo=1)))},
+   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))},
    'Second nibble SQL',
 );
 
 # Bump the nibble boundaries ahead until we run off the end of the table.
 $t->done_with_rows();
 $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
 $t->done_with_rows();
 $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
 $t->done_with_rows();
 $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
 
 is(
    $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    ),
@@ -220,7 +211,7 @@ is(
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
-   . q{1=1)) AND ((foo=1))},
+   . q{1=1))},
    'End-of-table nibble SQL',
 );
 
@@ -235,7 +226,6 @@ delete $t->{cached_row};
 
 is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');
 $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
@@ -309,7 +299,6 @@ $t->prepare_to_sync(%args, buffer_in_mysql=>1);
 $t->{state} = 1;
 like(
    $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
       buffer_in_mysql => 1,
@@ -326,7 +315,6 @@ $t->same_row(
 
 like(
    $t->get_sql(
-      where    => 'foo=1',
       database => 'test',
       table    => 'test1',
       buffer_in_mysql => 1,
@@ -423,7 +411,16 @@ is(
 
 # #############################################################################
 # Issue 560: mk-table-sync generates impossible WHERE
+# Issue 996: might not chunk inside of mk-table-checksum's boundaries
 # #############################################################################
+# Due to issue 996 this test has changed.  Now it *should* use the replicate
+# boundary provided via the where arg and nibble just inside this boundary.
+# If it does, then it will prevent the impossible WHERE of issue 560.
+
+# The buddy_list table has 500 rows, so when it's chunk into 100 rows this is
+# chunk 2:
+my $where = '`player_id` >= 201 AND `player_id` < 301';
+
 $sb->load_file('master', 'mk-table-sync/t/samples/issue_560.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_560', 'buddy_list'));
 my (undef, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
@@ -438,6 +435,8 @@ $t->prepare_to_sync(
    crc_col        => '__crc_col',
    %plugin_args,
    replicate      => 'issue_560.checksum',
+   where          => $where,  # not used in sub but normally passed so we
+                              # do the same to simulate a real run
 );
 
 # Must call this else $row_sql will have values from previous test.
@@ -451,25 +450,83 @@ $t->set_checksum_queries(
 
 is(
    $t->get_sql(
-      where    => 'player_id > 1 AND player_id <= 9',
+      where    => $where,
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((player_id > 1 AND player_id <= 9))",
-   'Use only --replicate chunk boundary (chunk sql)'
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085'))) AND (($where))",
+   'Nibble with chunk boundary (chunk sql)'
 );
 
 $t->{state} = 2;
 is(
    $t->get_sql(
-      where    => 'player_id > 1 AND player_id <= 9',
+      where    => $where,
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (player_id > 1 AND player_id <= 9) ORDER BY `player_id`, `buddy_id`",
-   'Use only --replicate chunk boundary (row sql)'
+   "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085'))) AND ($where) ORDER BY `player_id`, `buddy_id`",
+   'Nibble with chunk boundary (row sql)'
 );
 
+$t->{state} = 0;
+$t->done_with_rows();
+is(
+   $t->get_sql(
+      where    => $where,
+      database => 'issue_560',
+      table    => 'buddy_list', 
+   ),
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '300') OR (`player_id` = '300' AND `buddy_id` > '2085')) AND 1=1)) AND (($where))",
+   "Next sub-nibble",
+);
+
+# Just like the previous tests but this time the chunk size is 50 so we
+# should nibble two chunks within the larger range ($where).
+$t->prepare_to_sync(
+   ChangeHandler  => $ch,
+   cols           => $tbl_struct->{cols},
+   dbh            => $dbh,
+   db             => 'issue_560',
+   tbl            => 'buddy_list',
+   tbl_struct     => $tbl_struct,
+   chunk_size     => 50,              # 2 sub-nibbles
+   crc_col        => '__crc_col',
+   %plugin_args,
+   replicate      => 'issue_560.checksum',
+   where          => $where,  # not used in sub but normally passed so we
+                              # do the same to simulate a real run
+);
+
+# Must call this else $row_sql will have values from previous test.
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      src        => $src,
+      dst        => $dst,
+      tbl_struct => $tbl_struct,
+   )
+);
+
+is(
+   $t->get_sql(
+      where    => $where,
+      database => 'issue_560',
+      table    => 'buddy_list', 
+   ),
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '250') OR (`player_id` = '250' AND `buddy_id` <= '809'))) AND ((`player_id` >= 201 AND `player_id` < 301))",
+   "Sub-nibble 1"
+);
+
+$t->done_with_rows();
+is(
+   $t->get_sql(
+      where    => $where,
+      database => 'issue_560',
+      table    => 'buddy_list', 
+   ),
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '250') OR (`player_id` = '250' AND `buddy_id` > '809')) AND ((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085')))) AND ((`player_id` >= 201 AND `player_id` < 301))",
+   "Sub-nibble 2"
+);
 
 # #############################################################################
 # Issue 804: mk-table-sync: can't nibble because index name isn't lower case?

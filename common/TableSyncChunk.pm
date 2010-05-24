@@ -149,20 +149,13 @@ sub prepare_to_sync {
    push @{$args{cols}}, $args{chunk_col};
 
    my @chunks;
-   if ( !$args{replicate} ) {
-      my %range_params = $chunker->get_range_statistics(%args);
-      if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
-         $args{chunk_size} = $chunker->size_to_rows(%args);
-         @chunks = $chunker->calculate_chunks(%args, %range_params);
-      }
-      else {
-         MKDEBUG && _d('No range statistics; using single chunk 1=1');
-         @chunks = '1=1';
-      }
+   my %range_params = $chunker->get_range_statistics(%args);
+   if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
+      $args{chunk_size} = $chunker->size_to_rows(%args);
+      @chunks = $chunker->calculate_chunks(%args, %range_params);
    }
    else {
-      # See http://code.google.com/p/maatkit/issues/detail?id=560
-      MKDEBUG && _d('Using --replicate boundary instead of chunks');
+      MKDEBUG && _d('No range statistics; using single chunk 1=1');
       @chunks = '1=1';
    }
 

@@ -21,7 +21,7 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 if ( $dbh ) {
-   plan tests => 33;
+   plan tests => 34;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -354,17 +354,22 @@ is_deeply(
 
 # #############################################################################
 # Issue 560: mk-table-sync generates impossible WHERE
+# Issue 996: might not chunk inside of mk-table-checksum's boundaries
 # #############################################################################
 $t->prepare_to_sync(%args, index_hint => undef, replicate => 'test.checksum');
 is(
    $t->get_sql(
-      where    => 'x > 1 AND x <= 9',
+      where    => 'x > 1 AND x <= 9',  # e.g. range from mk-table-checksum
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (1=1) AND ((x > 1 AND x <= 9))",
-   'Use only --replicate chunk boundary (chunk sql)'
+   "SELECT /*test.test1:1/2*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` < 3) AND ((x > 1 AND x <= 9))",
+   'Chunk within chunk (chunk sql)'
 );
+
+# The above test shows that we can chunk (a<3) inside a given range (x>1 AND x<=9).
+# That tests issue 996.  Issue 560 was really an issue with nibbling within a chunk,
+# so there's a test similar to this one in TableSyncNibble.t.
 
 $t->{state} = 2;
 is(
@@ -373,8 +378,20 @@ is(
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (1=1) AND (x > 1 AND x <= 9) ORDER BY `a`",
-   'Use only --replicate chunk boundary (row sql)'
+   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (`a` < 3) AND (x > 1 AND x <= 9) ORDER BY `a`",
+   'Chunk within chunk (row sql)'
+);
+
+$t->{state} = 0;
+$t->done_with_rows();
+is(
+   $t->get_sql(
+      where    => 'x > 1 AND x <= 9',
+      database => 'test',
+      table    => 'test1', 
+   ),
+   "SELECT /*test.test1:2/2*/ 1 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` >= 3) AND ((x > 1 AND x <= 9))",
+   'Second chunk within chunk'
 );
 
 # #############################################################################
