@@ -1,5 +1,7 @@
 Changelog for mk-slave-move:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-04-01: version 0.9.11
 
    * Added DSN OPTIONS section to POD (issue 55).

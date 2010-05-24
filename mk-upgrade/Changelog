@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-05-03: version 0.9.7
 
    * Shortened hostname column headers.

@@ -1,5 +1,7 @@
 Changelog for mk-query-profiler and mk-profile-compact:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-04-01: version 1.1.21
 
    * Added DSN OPTIONS section to POD (issue 55).

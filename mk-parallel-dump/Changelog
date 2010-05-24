@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-05-03: version 1.0.24
 
    * Added ability to specify a DSN on the command line.

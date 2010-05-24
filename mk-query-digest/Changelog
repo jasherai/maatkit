@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Connections did not preserve server SQL modes (issue 801).
    * Added percent of class count to string attribute values (issue 1026).
 
 2010-05-03: version 0.9.17

@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-05-03: version 1.0.27
 
    * Added --[no]hex-blob to HEX() BLOB data by default (issue 641).

@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+   * Connections did not preserve server SQL modes (issue 801).
+
 2010-05-03: version 0.9.5
 
    * Replication threads were allowed to match by default (issue 853).
