@@ -139,23 +139,18 @@ sub sync_table {
    # Make an index hint for either the explicitly given chunk_index
    # or the chunk_index chosen by the plugin if index_hint is true.
    my $index_hint;
-   if ( !$args{replicate} ) {
-      my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
-                  && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
-               . ' INDEX';
-      if ( $args{chunk_index} ) {
-         MKDEBUG && _d('Using given chunk index for index hint');
-         $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
-      }
-      elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
-         MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
-         $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
-      }
-      MKDEBUG && _d('Index hint:', $index_hint);
+   my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
+               && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
+            . ' INDEX';
+   if ( $args{chunk_index} ) {
+      MKDEBUG && _d('Using given chunk index for index hint');
+      $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
    }
-   else {
-      MKDEBUG && _d('No index hint for --replicate');
+   elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
+      MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
+      $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
    }
+   MKDEBUG && _d('Index hint:', $index_hint);
 
    eval {
       $plugin->prepare_to_sync(
