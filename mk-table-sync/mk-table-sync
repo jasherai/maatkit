@@ -2792,7 +2792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6351
+# TableChunker package 6372
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -3087,6 +3087,7 @@ sub get_range_statistics {
    $col       = $q->quote($col);
 
    my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
+           . ($args{index_hint} ? " $args{index_hint}" : "")
            . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($dbh, $sql);
    my ( $min, $max );
@@ -3160,7 +3161,8 @@ sub get_range_statistics {
    }
 
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
-      . ($where ? " WHERE $where" : '');
+        . ($args{index_hint} ? " $args{index_hint}" : "")
+        . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    return (
@@ -3745,7 +3747,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 6351
+# TableSyncChunk package 6371
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncChunk.pm
@@ -3851,19 +3853,13 @@ sub prepare_to_sync {
    push @{$args{cols}}, $args{chunk_col};
 
    my @chunks;
-   if ( !$args{replicate} ) {
-      my %range_params = $chunker->get_range_statistics(%args);
-      if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
-         $args{chunk_size} = $chunker->size_to_rows(%args);
-         @chunks = $chunker->calculate_chunks(%args, %range_params);
-      }
-      else {
-         MKDEBUG && _d('No range statistics; using single chunk 1=1');
-         @chunks = '1=1';
-      }
+   my %range_params = $chunker->get_range_statistics(%args);
+   if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
+      $args{chunk_size} = $chunker->size_to_rows(%args);
+      @chunks = $chunker->calculate_chunks(%args, %range_params);
    }
    else {
-      MKDEBUG && _d('Using --replicate boundary instead of chunks');
+      MKDEBUG && _d('No range statistics; using single chunk 1=1');
       @chunks = '1=1';
    }
 
@@ -4056,7 +4052,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 5712
+# TableSyncNibble package 6371
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncNibble.pm
@@ -4169,17 +4165,11 @@ sub prepare_to_sync {
    my @ucols = grep { !$seen{$_}++ } @{$args{cols}}, @{$args{key_cols}};
    $args{cols} = \@ucols;
 
-   if ( !$args{replicate} ) {
-      $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
-         %args,
-         index    => $args{chunk_index}, # expects an index arg, not chunk_index
-         asc_only => 1,
-      );
-   }
-   else {
-      MKDEBUG && _d('Using --replicate boundary instead of nibble boundaries');
-      $self->{sel_stmt} = undef;
-   }
+   $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
+      %args,
+      index    => $args{chunk_index}, # expects an index arg, not chunk_index
+      asc_only => 1,
+   );
 
    $self->{nibble}            = 0;
    $self->{cached_row}        = undef;
@@ -4243,11 +4233,6 @@ sub __get_boundaries {
    my $q = $self->{Quoter};
    my $s = $self->{sel_stmt};
 
-   if ( !$s ) {
-      MKDEBUG && _d('No sel_stmt so WHERE clause 1=1 (for --replicate)');
-      return '1=1';
-   }
-
    my $lb;   # Lower boundary part of WHERE
    my $ub;   # Upper boundary part of WHERE
    my $row;  # Next upper boundary row or cached_row
@@ -4308,14 +4293,15 @@ sub __make_boundary_sql {
    my $sql = "SELECT /*nibble boundary $self->{nibble}*/ "
       . join(',', map { $q->quote($_) } @{$s->{cols}})
       . " FROM " . $q->quote($args{database}, $args{table})
-      . ' ' . ($self->{index_hint} || '');
+      . ' ' . ($self->{index_hint} || '')
+      . ($args{where} ? " WHERE ($args{where})" : "");
 
    if ( $self->{nibble} ) {
       my $tmp = $self->{cached_row};
       my $i   = 0;
       $lb     = $s->{boundaries}->{'>'};
       $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]} || 0)/eg;
-      $sql   .= ' WHERE ' . $lb;
+      $sql   .= $args{where} ? " AND $lb" : " WHERE $lb";
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
          . ' LIMIT ' . ($self->{chunk_size} - 1) . ', 1';
@@ -4585,7 +4571,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 6137
+# TableSyncer package 6373
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncer.pm
@@ -4670,23 +4656,18 @@ sub sync_table {
    MKDEBUG && _d('CRC column:', $crc_col);
 
    my $index_hint;
-   if ( !$args{replicate} ) {
-      my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
-                  && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
-               . ' INDEX';
-      if ( $args{chunk_index} ) {
-         MKDEBUG && _d('Using given chunk index for index hint');
-         $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
-      }
-      elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
-         MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
-         $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
-      }
-      MKDEBUG && _d('Index hint:', $index_hint);
+   my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
+               && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
+            . ' INDEX';
+   if ( $args{chunk_index} ) {
+      MKDEBUG && _d('Using given chunk index for index hint');
+      $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
    }
-   else {
-      MKDEBUG && _d('No index hint for --replicate');
+   elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
+      MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
+      $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
    }
+   MKDEBUG && _d('Index hint:', $index_hint);
 
    eval {
       $plugin->prepare_to_sync(
