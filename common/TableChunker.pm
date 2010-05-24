@@ -371,6 +371,7 @@ sub get_range_statistics {
    $col       = $q->quote($col);
 
    my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
+           . ($args{index_hint} ? " $args{index_hint}" : "")
            . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($dbh, $sql);
    my ( $min, $max );
@@ -456,7 +457,8 @@ sub get_range_statistics {
    }
 
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
-      . ($where ? " WHERE $where" : '');
+        . ($args{index_hint} ? " $args{index_hint}" : "")
+        . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    return (
