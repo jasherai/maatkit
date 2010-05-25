@@ -2082,6 +2082,9 @@ By default these MAGIC_attributes are printed in this order:
    InnoDB_rec_lock_wait
    InnoDB_queue_wait
    InnoDB_pages_distinct
+   Last_errno
+   Killed
+   InnoDB_trx_id
    db
    fingerprint
    arg
