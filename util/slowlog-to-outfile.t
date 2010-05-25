@@ -21,8 +21,8 @@ my $output = '';
 $output = `$cmd $sample/slow001.txt`;
 is(
    $output,
-"0x7F7D57ACDD8A346E\t071015 21:43:52\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\ttest\tselect sleep(?) from n\tselect sleep(2) from n
-0x3A99CC42AEDCCFCD\t071015 21:45:10\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tsakila\tselect sleep(?) from test.n\tselect sleep(2) from test.n
+"0x7F7D57ACDD8A346E\t2007-10-15 21:43:52\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\ttest\tselect sleep(?) from n\tselect sleep(2) from n
+0x3A99CC42AEDCCFCD\t2007-10-15 21:45:10\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tsakila\tselect sleep(?) from test.n\tselect sleep(2) from test.n
 ",
    "slow001.txt"
 );
@@ -30,8 +30,8 @@ is(
 $output = `$cmd --attributes db,ts,arg $sample/slow001.txt`;
 is(
    $output,
-"test\t071015 21:43:52\tselect sleep(2) from n
-sakila\t071015 21:45:10\tselect sleep(2) from test.n
+"test\t2007-10-15 21:43:52\tselect sleep(2) from n
+sakila\t2007-10-15 21:45:10\tselect sleep(2) from test.n
 ",
    "slow001.txt --attributes db,ts,arg"
 );
@@ -39,7 +39,7 @@ sakila\t071015 21:45:10\tselect sleep(2) from test.n
 $output = `$cmd --filter '\$event->{db} eq "sakila"' $sample/slow001.txt`;
 is(
    $output,
-"0x3A99CC42AEDCCFCD\t071015 21:45:10\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tsakila\tselect sleep(?) from test.n\tselect sleep(2) from test.n
+"0x3A99CC42AEDCCFCD\t2007-10-15 21:45:10\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tsakila\tselect sleep(?) from test.n\tselect sleep(2) from test.n
 ",
    "slow001.txt --filter"
 );
@@ -55,7 +55,7 @@ is(
 $output = `$cmd $sample/slow003.txt`;
 is(
    $output,
-"0x85FFF5AA78E5FF6A\t071218 11:48:27\t10\t0.000012\t0.000000\t0\t0\tNo\tNo\tNo\tNo\tNo\tNo\tNo\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tbegin\tBEGIN
+"0x85FFF5AA78E5FF6A\t2007-12-18 11:48:27\t10\t0.000012\t0.000000\t0\t0\tNo\tNo\tNo\tNo\tNo\tNo\tNo\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tbegin\tBEGIN
 ",
    "slow003.txt"
 );
@@ -64,7 +64,7 @@ is(
 #$output = `$cmd --no-fingerprints $sample/slow003.txt`;
 #is(
 #   $output,
-#"071218 11:48:27\t10\t0.000012\t0.000000\t0\t0\tNo\tNo\tNo\tNo\tNo\tNo\tNo\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tBEGIN
+#"2007-12-18 11:48:27\t10\t0.000012\t0.000000\t0\t0\tNo\tNo\tNo\tNo\tNo\tNo\tNo\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tBEGIN
 #",
 #   "slow003.txt --no-fingerprints"
 #);
@@ -72,7 +72,7 @@ is(
 $output = `$cmd $sample/slow004.txt`;
 is(
    $output,
-"0xB16C9E5B3D9C484F\t071015 21:43:52\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tselect ?_?_foo from (select ?oo from ?_bar) as ?z\tselect 12_13_foo from (select 12foo from 123_bar) as 123baz
+"0xB16C9E5B3D9C484F\t2007-10-15 21:43:52\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tselect ?_?_foo from (select ?oo from ?_bar) as ?z\tselect 12_13_foo from (select 12foo from 123_bar) as 123baz
 ",
    "slow004.txt"
 );

@@ -1835,13 +1835,29 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-Transformers->import(qw(make_checksum));
+Transformers->import(qw(make_checksum parse_timestamp));
 
 use sigtrap 'handler', \&sig_int, 'normal-signals';
 my $oktorun = 1;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
+
+   # Transform an attribute's value.
+   my %trf_for = (
+      arg => sub {
+         my ( $event, $attrib ) = @_;
+         # arg may have newlines which will break outfile.
+         my $arg = $event->{arg};
+         $arg    =~ s/\n+/ /g;
+         return $arg;
+      },
+      ts  => sub {
+         my ( $event, $attrib ) = @_;
+         return unless $event->{$attrib};
+         return parse_timestamp($event->{$attrib});
+      },
+   );
 
    # #########################################################################
    # Get configuration information.
@@ -1947,15 +1963,10 @@ sub main {
 
                my @row = map { undef } keys %attribs;
                foreach my $attrib ( keys %attribs ) {
-                  if ( $attrib eq 'arg' ) {
-                     # arg may have newlines which will break outfile.
-                     my $arg = $event->{arg};
-                     $arg    =~ s/\n+/ /g;
-                     $row [ $attribs{arg} ] = $arg;
+                  if ( my $trf = $trf_for{$attrib} ) {
+                     $event->{$attrib} = $trf->($event, $attrib);
                   }
-                  else {
-                     $row[ $attribs{$attrib} ] = $event->{$attrib};
-                  }
+                  $row[ $attribs{$attrib} ] = $event->{$attrib};
                }
                print Outfile::escape(\@row), "\n"
                   or die "Cannot print to STDOUT: $OS_ERROR";
