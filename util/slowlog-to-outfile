@@ -1919,6 +1919,8 @@ sub main {
       push @ARGV, '-'; # Magical STDIN filename.
    }
 
+   my $last_ts;
+
    FILE:
    while ( $oktorun ) {
       if ( !$fh ) {
@@ -1940,6 +1942,7 @@ sub main {
             }
             MKDEBUG && _d('Reading', $file);
          }
+         $last_ts = undef;
       }
       my $next_event  = sub { return <$fh>;    };
       my $tell        = sub { return tell $fh; };
@@ -1962,6 +1965,16 @@ sub main {
 
                $event->{fingerprint} = $qr->fingerprint($event->{arg} || '');
                $event->{checksum}    = "0x".make_checksum($event->{fingerprint}); 
+
+               # Inherit last seen ts if this event doesn't have one and
+               # there's a last seen ts.
+               if ( !$event->{ts} && $last_ts ) {
+                  $event->{ts} = $last_ts;
+                  MKDEBUG && _d('Event inherits ts', $last_ts);
+               }
+               else {
+                  $last_ts = $event->{ts};
+               }
 
                my @row = map { undef } keys %attribs;
                foreach my $attrib ( keys %attribs ) {

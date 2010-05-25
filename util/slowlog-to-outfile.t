@@ -80,7 +80,8 @@ is(
 $output = `$cmd $sample/slow044.txt`;
 is(
    $output,
-"0x7CE9953EA3A36141\t\\N\t342\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t1\t2\t\\N\t\\N\tselect foo\tselect /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo
+"0x7CE9953EA3A36141\t2010-05-25 10:22:00\t342\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t1\t2\t\\N\t\\N\tselect foo\tselect /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo
+0x7CE9953EA3A36141\t2010-05-25 10:22:00\t342\t0.000173\t0.000048\t19\t19\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t3\t4\t\\N\t\\N\tselect foo\tselect /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo
 ",
    "Schema: Last_errno: 1"
 );
