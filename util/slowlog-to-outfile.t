@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 use MaatkitTest;
 require "$trunk/util/slowlog-to-outfile";
@@ -84,6 +84,15 @@ is(
 0x7CE9953EA3A36141\t2010-05-25 10:22:00\t342\t0.000173\t0.000048\t19\t19\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t3\t4\t\\N\t\\N\tselect foo\tselect /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo
 ",
    "Schema: Last_errno: 1"
+);
+
+$output = `$cmd $sample/slow045.txt`;
+is(
+   $output,
+"0xB5C92ABD838A97F9\t\\N\t342\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t0\t0\t839DE234\tdb1\tselect col from tbl\tselect /*not for mqd*/ col from tbl
+0x813031B8BBC3B329\t\\N\t342\t0.000019\t0.000000\t0\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t0\t0\t839DE234\tdb1\tcommit\tcommit
+",
+   "Add InnoDB_trx_id to COMMIT from same Thread_id"
 );
 
 # #############################################################################

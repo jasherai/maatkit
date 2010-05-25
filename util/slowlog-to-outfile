@@ -1976,6 +1976,8 @@ sub main {
                   $last_ts = $event->{ts};
                }
 
+               inherit_idb_trx_id($event);
+
                my @row = map { undef } keys %attribs;
                foreach my $attrib ( keys %attribs ) {
                   if ( my $trf = $trf_for{$attrib} ) {
@@ -2004,6 +2006,31 @@ sub main {
 # ##########################################################################
 # Subroutines
 # ##########################################################################
+
+{
+   my %idb_trx_id_for = ();
+   sub inherit_idb_trx_id {
+      my ( $event ) = @_;
+      
+      # Normal query with transaction id and thread id.  Save the (last)
+      # idb txn id for this thread id.
+      if ( $event->{InnoDB_trx_id} && $event->{Thread_id} ) {
+         $idb_trx_id_for{ $event->{Thread_id} } = $event->{InnoDB_trx_id};
+      }
+
+      # A commit which should have a thread id but not an idb txn id.
+      # Fill in the idb txn id from the (last) thread id (saved above).
+      if (    $event->{arg}
+           && $event->{arg} =~ m/^commit/
+           && $event->{Thread_id}
+           && !$event->{InnoDB_trx_id} )
+      {
+         $event->{InnoDB_trx_id} = $idb_trx_id_for{ $event->{Thread_id} };
+      }
+
+      return;
+   }
+}
 
 # Catches signals so we can exit gracefully.
 sub sig_int {
