@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 use MaatkitTest;
 require "$trunk/util/slowlog-to-outfile";
@@ -93,6 +93,14 @@ is(
 0x813031B8BBC3B329\t\\N\t342\t0.000019\t0.000000\t0\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t0\t0\t839DE234\tdb1\tcommit\tcommit
 ",
    "Add InnoDB_trx_id to COMMIT from same Thread_id"
+);
+
+$output = `$cmd $sample/slow046.txt`;
+is(
+   $output,
+"0xDB08692E489004B4\t\\N\t\\N\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tselect abc, xyz from `a tbl`, `t?` where ? != ? and ?<>? or ? or ?\tselect abc, XYZ FROM `a tbl`, `t-2` WHERE 1 != 2 AND 3<>3 OR \"\" OR '\"`\"'
+",
+   "Remove non-ASCII/printable characters"
 );
 
 # #############################################################################
