@@ -41,13 +41,33 @@ my $mk_table_checksum = "$trunk/mk-table-checksum/mk-table-checksum F=/tmp/12345
 
 # Re-using this table for this issue.  It has 100 pk rows.
 $sb->load_file('master', 'mk-table-sync/t/samples/issue_375.sql');
+wait_until(
+   sub {
+      my $row;
+      eval {
+         $row = $slave_dbh->selectrow_hashref("select * from issue_375.t where id=35");
+      };
+      return 1 if $row && $row->{foo} eq 'ai';
+   },
+);
 
 # Make the tables differ.  These diff rows are all in chunk 1.
 $slave_dbh->do("update issue_375.t set foo='foo' where id in (21, 25, 35)");
+wait_until(
+   sub {
+      my $row;
+      eval {
+         $row = $slave_dbh->selectrow_hashref("select * from issue_375.t where id=35");
+      };
+      return 1 if $row && $row->{foo} eq 'foo';
+   },
+   0.5, 10,
+);
 
 # mk-table-checksum the table with 5 chunks of 20 rows.
 $output = `$mk_table_checksum --replicate issue_375.checksums --create-replicate-table`;
-sleep 2;
+sleep 1;
+
 $output = `$mk_table_checksum --replicate issue_375.checksums --replicate-check 1`;
 like(
    $output,
@@ -85,5 +105,5 @@ diag(`rm -rf $file >/dev/null`);
 # #############################################################################
 # Done.
 # #############################################################################
-# $sb->wipe_clean($master_dbh);
+$sb->wipe_clean($master_dbh);
 exit;
