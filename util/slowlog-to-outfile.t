@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 use MaatkitTest;
 require "$trunk/util/slowlog-to-outfile";
@@ -75,6 +75,14 @@ is(
 "0xB16C9E5B3D9C484F\t2007-10-15 21:43:52\t\\N\t2\t0\t1\t0\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tselect ?_?_foo from (select ?oo from ?_bar) as ?z\tselect 12_13_foo from (select 12foo from 123_bar) as 123baz
 ",
    "slow004.txt"
+);
+
+$output = `$cmd $sample/slow044.txt`;
+is(
+   $output,
+"0x7CE9953EA3A36141\t\\N\t342\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t1\t2\t\\N\t\\N\tselect foo\tselect /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo
+",
+   "Schema: Last_errno: 1"
 );
 
 # #############################################################################

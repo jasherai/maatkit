@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -647,7 +647,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -978,12 +978,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6043
-# This package is a copy without comments from the original.  The original
-# with comments and its test file can be found in the SVN repository at,
-#   trunk/common/SlowLogParser.pm
-#   trunk/common/t/SlowLogParser.t
-# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# HACKED SlowLogParser package.  This is from r6043 and modified to handle
+# "# Thread_id: 850 Schema: Last_errno: 0 Killed: 0".  The empty Schema
+# attrib stuck there in the middle is not handled by the normal package.
 # ###########################################################################
 package SlowLogParser;
 
@@ -1093,6 +1090,11 @@ sub parse_event {
 
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
+               if ( $line =~ m/Schema:\s+\w+: / ) {
+                  MKDEBUG && _d('Removing empty Schema attrib');
+                  $line =~ s/Schema:\s+//;
+                  MKDEBUG && _d($line);
+               }
                my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
