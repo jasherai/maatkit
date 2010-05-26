@@ -186,7 +186,7 @@ sub parse_timestamp {
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;

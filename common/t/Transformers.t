@@ -12,7 +12,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 45;
+use Test::More tests => 48;
 
 use Transformers;
 use MaatkitTest;
@@ -74,6 +74,13 @@ is(percentage_of(25, 100), '25', 'Percentage as int');
 is(parse_timestamp('071015  1:43:52'), '2007-10-15 01:43:52', 'timestamp');
 is(parse_timestamp('071015  1:43:52.108'), '2007-10-15 01:43:52.108000',
    'timestamp with microseconds');
+
+is(parse_timestamp('071015  1:43:00.123456'), '2007-10-15 01:43:00.123456',
+   "timestamp with 0 second.micro");
+is(parse_timestamp('071015  1:43:01.123456'), '2007-10-15 01:43:01.123456',
+   "timestamp with 1 second.micro");
+is(parse_timestamp('071015  1:43:09.123456'), '2007-10-15 01:43:09.123456',
+   "timestamp with 9 second.micro");
 
 # #############################################################################
 # unix_timestamp() tests.
