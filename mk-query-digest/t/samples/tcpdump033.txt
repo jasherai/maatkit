@@ -1,20 +1,20 @@
 
-# Overall: 15 total, 3 unique, 0 QPS, 0x concurrency _____________________
+# Overall: 15 total, 3 unique, 3.51k QPS, 0.42x concurrency ______________
 #                    total     min     max     avg     95%  stddev  median
 # Exec time            2ms       0   247us   119us   236us    70us   125us
-# Time range        2009-12-18 08:44:7.234727 to 2009-12-18 08:44:7.238999
+# Time range        2009-12-18 08:44:07.234727 to 2009-12-18 08:44:07.238999
 # bytes                577      20      45   38.47   42.48    9.13   42.48
 # Rows affe              0       0       0       0       0       0       0
 # Warning c              0       0       0       0       0       0       0
 #  46% (7)    No_index_used
 
-# Query 1: 0 QPS, 0x concurrency, ID 0x6EE88728F6F29C72 at byte 800 ______
+# Query 1: 2.03k QPS, 0.28x concurrency, ID 0x6EE88728F6F29C72 at byte 800
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         46       7
 # Exec time     54   975us   119us   170us   139us   167us    16us   131us
 # Hosts                  1 127.0.0.1
-# Time range 2009-12-18 08:44:7.235011 to 2009-12-18 08:44:7.238467
+# Time range 2009-12-18 08:44:07.235011 to 2009-12-18 08:44:07.238467
 # bytes         51     300      42      44   42.86   42.48    0.91   42.48
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
@@ -38,13 +38,13 @@ EXECUTE select * from d.t where name="adam"\G
 # EXPLAIN
 select * from d.t where name="adam"\G
 
-# Query 2: 0 QPS, 0x concurrency, ID 0xECBCD0412B5E497A at byte 9215 _____
+# Query 2: 1.17k QPS, 0.19x concurrency, ID 0xECBCD0412B5E497A at byte 9215
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         33       5
 # Exec time     45   817us   103us   247us   163us   236us    64us   113us
 # Hosts                  1 127.0.0.1
-# Time range 2009-12-18 08:44:7.234727 to 2009-12-18 08:44:7.238999
+# Time range 2009-12-18 08:44:07.234727 to 2009-12-18 08:44:07.238999
 # bytes         37     217      42      45   43.40   44.60    1.31   42.48
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
@@ -67,13 +67,13 @@ PREPARE select * from d.t where name="daniel"\G
 # EXPLAIN
 select * from d.t where name="daniel"\G
 
-# Query 3: 0 QPS, 0x concurrency, ID 0x559914DA8A7B7F28 at byte 8202 _____
+# Query 3: 1.70k QPS, 0x concurrency, ID 0x559914DA8A7B7F28 at byte 8202 _
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         20       3
 # Exec time      0       0       0       0       0       0       0       0
 # Hosts                  1 127.0.0.1
-# Time range 2009-12-18 08:44:7.236509 to 2009-12-18 08:44:7.238274
+# Time range 2009-12-18 08:44:07.236509 to 2009-12-18 08:44:07.238274
 # bytes         10      60      20      20      20      20       0      20
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
