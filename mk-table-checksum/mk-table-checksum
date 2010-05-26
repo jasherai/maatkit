@@ -4410,8 +4410,18 @@ sub main {
    };
 
    # Post-process command-line options and arguments.
-   $o->set('lock', 1)      if $o->get('wait');
-   $o->set('slave-lag', 1) if $o->get('lock');
+   if ( $o->get('replicate') ) {
+      # --replicate says that it disables these options.  We don't
+      # check got() because these opts aren't used in do_tbl_replicate()
+      # or its caller so they're completely useless with --replicate.
+      $o->set('lock',      undef);
+      $o->set('wait',      undef);
+      $o->set('slave-lag', undef);
+   }
+   else {
+      $o->set('lock', 1)      if $o->get('wait');
+      $o->set('slave-lag', 1) if $o->get('lock');
+   }
 
    if ( !@ARGV ) {
       $o->save_error("No hosts specified.");

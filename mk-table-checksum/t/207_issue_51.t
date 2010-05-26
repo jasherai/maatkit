@@ -38,6 +38,7 @@ my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.1";
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 $sb->load_file('master', 'mk-table-checksum/t/samples/issue_94.sql');
+sleep 1;
 
 # #############################################################################
 # Issue 51: --wait option prevents data from being inserted

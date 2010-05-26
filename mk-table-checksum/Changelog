@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * --replicate with InnoDB checksum table didn't work with --wait (issue 51).
    * Connections did not preserve server SQL modes (issue 801).
    * --empty-replicate-table did not work with replication filters (issue 982).
    * --replicate-check=0 did not skip the checksumming step (issue 1020).
