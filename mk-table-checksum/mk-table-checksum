@@ -4721,6 +4721,28 @@ sub main {
    }
 
    # ########################################################################
+   # Set transaction isolation level.
+   # http://code.google.com/p/maatkit/issues/detail?id=720
+   # ########################################################################
+   if ( $o->get('replicate') ) {
+      my $sql = "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ";
+      eval {
+         MKDEBUG && _d($main_dbh, $sql);
+         $main_dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to $sql: $EVAL_ERROR\n"
+            . "If the --replicate table is InnoDB and the default server "
+            . "transaction isolation level is not REPEATABLE-READ then "
+            . "checksumming may fail with errors like \"Binary logging not "
+            . "possible. Message: Transaction level 'READ-COMMITTED' in "
+            . "InnoDB is not safe for binlog mode 'STATEMENT'\".  In that "
+            . "case you will need to manually set the transaction isolation "
+            . "level to REPEATABLE-READ.";
+      }
+   }
+
+   # ########################################################################
    # Iterate through databases and tables and do the checksums.
    # ########################################################################
 

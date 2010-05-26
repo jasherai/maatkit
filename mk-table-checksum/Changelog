@@ -4,6 +4,7 @@ Changelog for mk-table-checksum and mk-checksum-filter:
    * Connections did not preserve server SQL modes (issue 801).
    * --empty-replicate-table did not work with replication filters (issue 982).
    * --replicate-check=0 did not skip the checksumming step (issue 1020).
+   * --replicate didn't set needed session tx isolation level (issue 720).
    * The --replicate table was not required to specify a database (issue 982).
    * Added --[no]check-replication-filters for --replicate sanity (issue 993).
    * Added --replicate-database to select a single default database (issue 982).
