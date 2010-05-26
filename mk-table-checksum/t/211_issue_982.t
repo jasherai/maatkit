@@ -50,6 +50,9 @@ is(
    "Slave checksum table has row"
 );
 
+$master_dbh->disconnect();
+$slave_dbh->disconnect();
+
 # Add a replication filter to the slave.
 diag(`/tmp/12346/stop >/dev/null`);
 diag(`/tmp/12345/stop >/dev/null`);
@@ -153,8 +156,8 @@ ok(
 # #############################################################################
 # Restore original config.
 # #############################################################################
-#$master_dbh->disconnect();
-#$slave_dbh->disconnect();
+$master_dbh->disconnect();
+$slave_dbh->disconnect();
 
 diag(`/tmp/12346/stop >/dev/null`);
 diag(`/tmp/12345/stop >/dev/null`);
@@ -171,13 +174,18 @@ $slave_dbh  = $sb->get_dbh_for('slave1');
 diag(`$trunk/sandbox/mk-test-env reset`);
 sleep 1;
 
+# To speed this test up, ignore these tables.
+# http://code.google.com/p/maatkit/issues/detail?id=1027
+my $it = "payment,rental,help_topic,help_keyword,inventory,film_actor";
+
 $output = output(
    sub { mk_table_checksum::main("F=$cnf",
-      qw(--replicate=test.checksum --chunk-size 10k))
+      qw(--replicate=test.checksum), '--ignore-tables', $it, qw(--chunk-size 20k))
    },
    undef,
    stderr => 1,
 );
+sleep 1;
 
 my $row = $master_dbh->selectrow_hashref('show master status');
 $output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use ' | sort -u`;
@@ -195,11 +203,12 @@ sleep 1;
 
 $output = output(
    sub { mk_table_checksum::main("F=$cnf", qw(--replicate-database test),
-      qw(--replicate=test.checksum --chunk-size 10k))
+      qw(--replicate=test.checksum), '--ignore-tables', $it, qw(--chunk-size 20k))
    },
    undef,
    stderr => 1,
 );
+sleep 1;
 
 $row = $master_dbh->selectrow_hashref('show master status');
 $output = `mysqlbinlog /tmp/12345/data/$row->{File} | grep 'use '`;

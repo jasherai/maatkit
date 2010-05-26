@@ -15,7 +15,8 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-table-checksum/mk-table-checksum";
 
-# This runs immediately if the server is already running, else it starts it.
+diag(`$trunk/sandbox/mk-test-env reset`);
+diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null`);
 diag(`$trunk/sandbox/start-sandbox slave 12347 12346 >/dev/null`);
 
 my $dp = new DSNParser(opts=>$dsn_opts);
@@ -260,6 +261,8 @@ is(
    'Started slave SQL thread on slave2'
 ) or BAIL_OUT("Failed to restart SQL thread on slave2 (12347)");
 
+sleep 1;
+
 $row = $slave1_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
@@ -277,5 +280,7 @@ is(
 # #############################################################################
 # Done.
 # #############################################################################
-# $sb->wipe_clean($master_dbh);
+diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null`);
+$sb->wipe_clean($master_dbh);
+diag(`$trunk/sandbox/mk-test-env reset >/dev/null`);
 exit;

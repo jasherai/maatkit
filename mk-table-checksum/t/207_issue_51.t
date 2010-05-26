@@ -61,8 +61,9 @@ $master_dbh->do('DELETE FROM test.checksum');
 # Give it something to think about. 
 $slave_dbh->do('DELETE FROM test.issue_94 WHERE a > 5');
 `$cmd --replicate=test.checksum --algorithm=BIT_XOR --databases test --tables issue_94 --chunk-size 500000 --wait 900`;
+my $row = $master_dbh->selectrow_arrayref("SELECT * FROM test.checksum");
 is(
-   $master_dbh->selectrow_arrayref("SELECT * FROM test.checksum")->[1],
+   $row->[1],
    'issue_94',
    '--wait does not prevent update to --replicate tbl (issue 51)'
 );

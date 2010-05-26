@@ -48,14 +48,22 @@ $slave_dbh->do("update test.checksum set this_crc='' where test.checksum.tbl = '
 # Can't use $cmd; see http://code.google.com/p/maatkit/issues/detail?id=802
 `$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
 
-$output = `$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 --recheck | diff $trunk/mk-table-checksum/t/samples/issue_69.txt -`;
-ok(!$output, '--recheck reports inconsistent table like --replicate');
+$output = `$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 --recheck`;
+like(
+   $output,
+   qr/^test\s+issue_21\s+0\s+127.1\s+InnoDB\s+5\s+b88b4eff\s+\d\s+NULL\s+NULL\s+NULL$/m,
+   '--recheck reports inconsistent table like --replicate'
+);
 
 # Now check that --recheck actually caused the inconsistent table to be
 # re-checksummed on the master.
 $output = 'foo';
 $output = `$cmd --replicate test.checksum --replicate-check 1`;
-ok(!$output, '--recheck re-checksummed inconsistent table; it is now consistent');
+is(
+   $output,
+   '',
+   '--recheck re-checksummed inconsistent table; it is now consistent'
+);
 
 # #############################################################################
 # Done.

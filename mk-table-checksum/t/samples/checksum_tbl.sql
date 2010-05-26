@@ -11,4 +11,4 @@ CREATE TABLE checksum (
  master_cnt int              NULL,
  ts         timestamp    NOT NULL,
  PRIMARY KEY (db, tbl, chunk)
-);
+) ENGINE=InnoDB;
