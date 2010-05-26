@@ -36,6 +36,11 @@ my $cnf = '/tmp/12345/my.sandbox.cnf';
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 
+# Normally checksum tbl is InnoDB but mk-table-checksum commits a txn
+# for each chunk which is really slow.  Using MyISAM takes a minute off
+# the runtime of this test.
+$master_dbh->do("alter table test.checksum engine=myisam");
+
 # #############################################################################
 # Issue 982: --empty-replicate-table does not work with binlog-ignore-db
 # #############################################################################
