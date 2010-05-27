@@ -605,37 +605,45 @@ sub get_valid_end_points {
                . "has at least one valid value for this column"
                . ($args{where} ? " where $args{where}." : ".");
 
-   # Get a valid min end point.
-   MKDEBUG && _d("Validating min end point:", $real_min);
-   my $valid_min = $self->_get_valid_end_point(
-      %args,
-      val      => $real_min,
-      endpoint => 'min',
-   );
-   die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
-      unless defined $valid_min;
-
-   # Just for the min end point, get the first non-zero row if a
-   # zero (or zero-equivalent) min is not allowed.
-   if ( !$args{zero_min} ) {
-      $valid_min = $self->get_nonzero_value(
+   # Validate min value if it's not NULL.  NULL is valid.
+   my $valid_min = $real_min;
+   if ( defined $valid_min ) {
+      # Get a valid min end point.
+      MKDEBUG && _d("Validating min end point:", $real_min);
+      $valid_min = $self->_get_valid_end_point(
          %args,
-         val => $valid_min
+         val      => $real_min,
+         endpoint => 'min',
       );
-   }
-   die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
-      unless defined $valid_min;
+      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+         unless defined $valid_min;
 
-   # Get a valid max end point.  So far I've not found a case where
-   # the actual max val is invalid, but check anyway just in case.
-   MKDEBUG && _d("Validating max end point:", $real_min);
-   my $valid_max = $self->_get_valid_end_point(
-      %args,
-      val      => $real_max,
-      endpoint => 'max',
-   );
-   die sprintf($err_fmt, 'maximum', 'maximum', ($real_max || "NULL"))
-      unless defined $valid_max;
+      # Just for the min end point, get the first non-zero row if a
+      # zero (or zero-equivalent) min is not allowed.
+      if ( !$args{zero_min} ) {
+         $valid_min = $self->get_nonzero_value(
+            %args,
+            val => $valid_min
+         );
+      }
+      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+         unless defined $valid_min;
+   }
+   
+   # Validate max value if it's not NULL.  NULL is valid.
+   my $valid_max = $real_max;
+   if ( defined $valid_max ) {
+      # Get a valid max end point.  So far I've not found a case where
+      # the actual max val is invalid, but check anyway just in case.
+      MKDEBUG && _d("Validating max end point:", $real_min);
+      $valid_max = $self->_get_valid_end_point(
+         %args,
+         val      => $real_max,
+         endpoint => 'max',
+      );
+      die sprintf($err_fmt, 'maximum', 'maximum', ($real_max || "NULL"))
+         unless defined $valid_max;
+   }
 
    return $valid_min, $valid_max;
 }
