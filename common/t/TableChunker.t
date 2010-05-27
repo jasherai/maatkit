@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 43;
+   plan tests => 61;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -146,10 +146,10 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`film_id` < 30',
-         '`film_id` >= 30 AND `film_id` < 60',
-         '`film_id` >= 60 AND `film_id` < 90',
-         '`film_id` >= 90',
+         "`film_id` < '30'",
+         "`film_id` >= '30' AND `film_id` < '60'",
+         "`film_id` >= '60' AND `film_id` < '90'",
+         "`film_id` >= '90'",
       ],
       'Got the right chunks from dividing 100 rows into 30-row chunks',
    );
@@ -200,9 +200,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`original_language_id` < 50',
-         '`original_language_id` >= 50',
-         '`original_language_id` IS NULL',
+         "`original_language_id` < '50'",
+         "`original_language_id` >= '50'",
+         "`original_language_id` IS NULL",
       ],
       'Nullable column adds IS NULL chunk',
    );
@@ -221,11 +221,11 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "2001-04-01"',
-         '`a` >= "2001-04-01" AND `a` < "2001-06-30"',
-         '`a` >= "2001-06-30" AND `a` < "2001-09-28"',
-         '`a` >= "2001-09-28" AND `a` < "2001-12-27"',
-         '`a` >= "2001-12-27"',
+         "`a` < '2001-04-01'",
+         "`a` >= '2001-04-01' AND `a` < '2001-06-30'",
+         "`a` >= '2001-06-30' AND `a` < '2001-09-28'",
+         "`a` >= '2001-09-28' AND `a` < '2001-12-27'",
+         "`a` >= '2001-12-27'",
       ],
       'Date column chunks OK',
    );
@@ -243,9 +243,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "2001-12-20"',
-         '`a` >= "2001-12-20" AND `a` < "2003-12-09"',
-         '`a` >= "2003-12-09"',
+         "`a` < '2001-12-20'",
+         "`a` >= '2001-12-20' AND `a` < '2003-12-09'",
+         "`a` >= '2003-12-09'",
       ],
       'Date column chunks OK',
    );
@@ -262,9 +262,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "0668-08-20"',
-         '`a` >= "0668-08-20" AND `a` < "1337-04-09"',
-         '`a` >= "1337-04-09"',
+         "`a` < '0668-08-20'",
+         "`a` >= '0668-08-20' AND `a` < '1337-04-09'",
+         "`a` >= '1337-04-09'",
       ],
       'Date column where min date is 0000-00-00',
    );
@@ -282,9 +282,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "1949-12-28 19:52:02"',
-         '`a` >= "1949-12-28 19:52:02" AND `a` < "1977-12-12 10:25:41"',
-         '`a` >= "1977-12-12 10:25:41"',
+         "`a` < '1949-12-28 19:52:02'",
+         "`a` >= '1949-12-28 19:52:02' AND `a` < '1977-12-12 10:25:41'",
+         "`a` >= '1977-12-12 10:25:41'",
       ],
       'Datetime column chunks OK',
    );
@@ -301,9 +301,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "0668-08-19 16:19:47"',
-         '`a` >= "0668-08-19 16:19:47" AND `a` < "1337-04-08 08:39:34"',
-         '`a` >= "1337-04-08 08:39:34"',
+         "`a` < '0668-08-19 16:19:47'",
+         "`a` >= '0668-08-19 16:19:47' AND `a` < '1337-04-08 08:39:34'",
+         "`a` >= '1337-04-08 08:39:34'",
       ],
       'Datetime where min is 0000-00-00 00:00:00',
    );
@@ -321,9 +321,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "03:40:38"',
-         '`a` >= "03:40:38" AND `a` < "06:21:57"',
-         '`a` >= "06:21:57"',
+         "`a` < '03:40:38'",
+         "`a` >= '03:40:38' AND `a` < '06:21:57'",
+         "`a` >= '06:21:57'",
       ],
       'Time column chunks OK',
    );
@@ -341,9 +341,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < 33.99966',
-         '`a` >= 33.99966 AND `a` < 66.99933',
-         '`a` >= 66.99933',
+         "`a` < '33.99966'",
+         "`a` >= '33.99966' AND `a` < '66.99933'",
+         "`a` >= '66.99933'",
       ],
       'Double column chunks OK',
    );
@@ -360,8 +360,8 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < 1.6',
-         '`a` >= 1.6',
+         "`a` < '1.6'",
+         "`a` >= '1.6'",
       ],
       'Double column chunks OK with smaller-than-int values',
    );
@@ -396,9 +396,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < 33.99966',
-         '`a` >= 33.99966 AND `a` < 66.99933',
-         '`a` >= 66.99933',
+         "`a` < '33.99966'",
+         "`a` >= '33.99966' AND `a` < '66.99933'",
+         "`a` >= '66.99933'",
       ],
       'Float column chunks OK',
    );
@@ -416,9 +416,9 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < 33.99966',
-         '`a` >= 33.99966 AND `a` < 66.99933',
-         '`a` >= 66.99933',
+         "`a` < '33.99966'",
+         "`a` >= '33.99966' AND `a` < '66.99933'",
+         "`a` >= '66.99933'",
       ],
       'Decimal column chunks OK',
    );
@@ -436,8 +436,8 @@ SKIP: {
             where      => 'film_id>'
          )
       },
-      qr/WHERE clause: /,
-      'shows full SQL on error',
+      qr/WHERE \(film_id>\)/,
+      'Shows full SQL on error',
    );
 
    throws_ok(
@@ -452,17 +452,17 @@ SKIP: {
       'Rejects chunk size',
    );
 
-   is(
-      $c->size_to_rows(
+   is_deeply(
+      [ $c->size_to_rows(
          dbh        => $dbh,
          db         => 'sakila',
          tbl        => 'film',
          chunk_size => '5'
-      ),
-      5,
+      ) ],
+      [5, undef],
       'Numeric size'
    );
-   my $size = $c->size_to_rows(
+   my ($size) = $c->size_to_rows(
       dbh        => $dbh,
       db         => 'sakila',
       tbl        => 'film',
@@ -617,10 +617,10 @@ test_zero_row(
    'i',
    { min=>100, max=>107, rows_in_range=>9 },
    [
-      '`i` < 102',
-      '`i` >= 102 AND `i` < 104',
-      '`i` >= 104 AND `i` < 106',
-      '`i` >= 106',
+      "`i` < '102'",
+      "`i` >= '102' AND `i` < '104'",
+      "`i` >= '104' AND `i` < '106'",
+      "`i` >= '106'",
    ],
 );
 
@@ -628,11 +628,11 @@ test_zero_row(
    'i_null',
    { min=>100, max=>107, rows_in_range=>9 },
    [
-      '`i_null` < 102',
-      '`i_null` >= 102 AND `i_null` < 104',
-      '`i_null` >= 104 AND `i_null` < 106',
-      '`i_null` >= 106',
-      '`i_null` IS NULL',
+      "`i_null` < '102'",
+      "`i_null` >= '102' AND `i_null` < '104'",
+      "`i_null` >= '104' AND `i_null` < '106'",
+      "`i_null` >= '106'",
+      "`i_null` IS NULL",
    ],
 );
 
@@ -644,8 +644,8 @@ test_zero_row(
       rows_in_range => '6'
    },
    [
-      '`d` < "2010-03-03"',
-      '`d` >= "2010-03-03"',
+      "`d` < '2010-03-03'",
+      "`d` >= '2010-03-03'",
    ],
 );
 
@@ -657,9 +657,9 @@ test_zero_row(
       rows_in_range => '6',
    },
    [
-      '`dt` < "2010-03-02 09:30:40"',
-      '`dt` >= "2010-03-02 09:30:40" AND `dt` < "2010-03-03 17:00:20"',
-      '`dt` >= "2010-03-03 17:00:20"',
+      "`dt` < '2010-03-02 09:30:40'",
+      "`dt` >= '2010-03-02 09:30:40' AND `dt` < '2010-03-03 17:00:20'",
+      "`dt` >= '2010-03-03 17:00:20'",
    ],
 );
 
@@ -780,6 +780,49 @@ is_deeply(
    },
    "Gets valid min after zero row"
 );
+
+
+# #############################################################################
+# Test _validate_temporal_value() because it's magical.
+# #############################################################################
+my @invalid_t = (
+   '00:00:60',
+   '00:60:00',
+   '0000-00-00',
+   '2009-00-00',
+   '2009-13-00',
+   '0000-00-00 00:00:00',
+   '1000-00-00 00:00:00',
+   '2009-00-00 00:00:00',
+   '2009-13-00 00:00:00',
+   '2009-05-26 00:00:60',
+   '2009-05-26 00:60:00',
+   '2009-05-26 24:00:00',
+);
+foreach my $t ( @invalid_t ) {
+   my $res = TableChunker::_validate_temporal_value($dbh, $t);
+   is(
+      $res,
+      undef,
+      "$t is invalid"
+   );
+}
+
+my @valid_t = (
+   '00:00:01',
+   '1000-01-01',
+   '2009-01-01',
+   '1000-01-01 00:00:00',
+   '2009-01-01 00:00:00',
+   '2010-05-26 17:48:30',
+);
+foreach my $t ( @valid_t ) {
+   my $res = TableChunker::_validate_temporal_value($dbh, $t);
+   ok(
+      defined $res,
+      "$t is valid"
+   );
+}
 
 # #############################################################################
 # Done.

@@ -144,7 +144,7 @@ sub prepare_to_sync {
    $self->{crc_col}         = $args{crc_col};
    $self->{index_hint}      = $args{index_hint};
    $self->{key_cols}        = $args{key_cols};
-   $self->{chunk_size}      = $self->{TableChunker}->size_to_rows(%args);
+   ($self->{chunk_size})    = $self->{TableChunker}->size_to_rows(%args);
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
    $self->{small_table}     = $args{small_table};
    $self->{ChangeHandler}   = $args{ChangeHandler};

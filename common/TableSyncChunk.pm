@@ -151,7 +151,7 @@ sub prepare_to_sync {
    my @chunks;
    my %range_params = $chunker->get_range_statistics(%args);
    if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
-      $args{chunk_size} = $chunker->size_to_rows(%args);
+      ($args{chunk_size}) = $chunker->size_to_rows(%args);
       @chunks = $chunker->calculate_chunks(%args, %range_params);
    }
    else {

@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,12 +17,31 @@
 # ###########################################################################
 # TableChunker package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableChunker;
 
+# This package helps figure out how to "chunk" a table.  Chunk are
+# pre-determined ranges of rows defined by boundary values (sometimes
+# also called endpoints) on numeric or numeric-like columns.  Any column
+# type that MySQL can do positional comparisons (<, <=, >, >=) on works.
+# Usually chunks range over all rows in a table but sometimes they only
+# range over a subset of rows if an optional where arg is passed to various
+# subs.  In either case a chunk is like "`col` >= 5 AND `col` < 10".
+# If col is type int then that chunk ranges over up to 5 rows.  Chunks
+# are included in WHERE clauses by various tools to do work on discrete
+# chunks of the table instead of trying to work on the entire table at once.
+# Chunks do not overlap and their size is configurable via the chunk_size
+# arg passed to several subs.  The chunk_size can be a number of rows or
+# a size like 1M.  Real chunk sizes are usually close to the requested
+# chunk_size but unless the optional exact arg is passed the real chunk
+# sizes are approximate.  Sometimes the distribution of values on the
+# chunk colun can skew chunking.  If, for example, col has values 0, 100,
+# 101, ... then the zero value skews chunking.  The zero_row arg handles
+# this.
+
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
 use POSIX qw(ceil);
 use List::Util qw(min max);
 use Data::Dumper;
@@ -31,16 +50,6 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-# MySQL functions used to evalute whether a value for a column type is
-# real or not.  If func(val) returns any defined, non-zero value then
-# it's real.
-my %mysql_func_for = (
-   timestamp => 'UNIX_TIMESTAMP',
-   date      => 'TO_DAYS',
-   time      => 'TIME_TO_SEC',
-   datetime  => 'TO_DAYS',
-);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -136,19 +145,22 @@ sub find_chunk_columns {
    return ($can_chunk_exact, @result);
 }
 
+# Calculate chunks for the given range statistics.  Args min, max and
+# rows_in_range are returned from get_range_statistics() which is usually
+# called before this sub.  Min and max are expected to be valid values
+# (NULL is valid).
 # Arguments:
-#   * tbl_struct     Return value from TableParser::parse()
-#   * chunk_col      Which column to chunk on
-#   * min            Min value of col
-#   * max            Max value of col
-#   * rows_in_range  How many rows are in the table between min and max
-#   * chunk_size     How large each chunk should be (not adjusted)
-#   * dbh            A DBI connection to MySQL
-#   * exact          Whether to chunk exactly (optional)
-#
-# Returns a list of WHERE clauses, one for each chunk.  Each is quoted with
-# double-quotes, so it'll be easy to enclose them in single-quotes when used as
-# command-line arguments.
+#   * dbh            dbh
+#   * tbl_struct     hashref: retval of TableParser::parse()
+#   * chunk_col      scalar: column name to chunk on
+#   * min            scalar: min col value
+#   * max            scalar: max col value
+#   * rows_in_range  scalar: number of rows to chunk
+#   * chunk_size     scalar: requested size of each chunk
+#   * exact          bool: use exact chunk_size if true else use approximates
+# Returns a list of WHERE predicates like "`col` >= '10' AND `col` < '20'",
+# one for each chunk.  All values are single-quoted due to
+# http://code.google.com/p/maatkit/issues/detail?id=1002
 sub calculate_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(dbh tbl_struct chunk_col min max rows_in_range
@@ -157,42 +169,45 @@ sub calculate_chunks {
    }
    MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
    my $dbh = $args{dbh};
+   my $q   = $self->{Quoter};
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
    MKDEBUG && _d('chunk col type:', $col_type);
 
-   # Determine chunk size in "distance between endpoints" that will give
-   # approximately the right number of rows between the endpoints.  Also
-   # find the start/end points as a number that Perl can do + and < on.
+   # MySQL functions to convert a non-numeric value to a number
+   # so we can do basic math on it in Perl.  Right now we just
+   # convert temporal values but later we'll need to convert char
+   # and hex values.
+   my %mysql_conv_func_for = (
+      timestamp => 'UNIX_TIMESTAMP',
+      date      => 'TO_DAYS',
+      time      => 'TIME_TO_SEC',
+      datetime  => 'TO_DAYS',
+   );
 
+   # Convert min/max values to start/end point numbers, i.e. numbers
+   # we can do arithmetic with.
    eval {
-      my $func = $mysql_func_for{$col_type};
       if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+         # These types are already numbers.
          $start_point = $args{min};
          $end_point   = $args{max};
          $range_func  = 'range_num';
       }
-      elsif ( $col_type eq 'timestamp' ) {
-         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
-         MKDEBUG && _d($sql);
-         ($start_point, $end_point) = $dbh->selectrow_array($sql);
-         $range_func  = 'range_timestamp';
-      }
-      elsif ( $col_type eq 'date' ) {
-         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
-         MKDEBUG && _d($sql);
-         ($start_point, $end_point) = $dbh->selectrow_array($sql);
-         $range_func  = 'range_date';
-      }
-      elsif ( $col_type eq 'time' ) {
-         my $sql = "SELECT $func('$args{min}'), $func('$args{max}')";
-         MKDEBUG && _d($sql);
-         ($start_point, $end_point) = $dbh->selectrow_array($sql);
-         $range_func  = 'range_time';
+      elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+         # These are temporal values.  Convert them using a MySQL func.
+         my $func = $mysql_conv_func_for{$col_type};
+         my $sql = "SELECT $func(?), $func(?)";
+         MKDEBUG && _d($dbh, $sql, $args{min}, $args{max});
+         my $sth = $dbh->prepare($sql);
+         $sth->execute($args{min}, $args{max});
+         ($start_point, $end_point) = $sth->fetchrow_array();
+         $range_func  = "range_$col_type";
       }
       elsif ( $col_type eq 'datetime' ) {
+         # This type is temporal, too, but needs special handling.
          # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
          # to maintain just one kind of code, so I do it all with DATE_ADD().
          $start_point = $self->timestampdiff($dbh, $args{min});
@@ -223,9 +238,11 @@ sub calculate_chunks {
       }
    }
 
-   # The endpoints could easily be undef, because of things like dates that
-   # are '0000-00-00'.  The only thing to do is make them zeroes and
-   # they'll be done in a single chunk then.
+   # The end points might be NULL in the pathological case that the table
+   # has nothing but NULL values.  If there's at least one non-NULL value
+   # then MIN() and MAX() will return it.  Otherwise, the only thing to do
+   # is make NULL end points zero to make the code below work and any NULL
+   # values will be handled by the special "IS NULL" chunk.
    if ( !defined $start_point ) {
       MKDEBUG && _d('Start point is undefined');
       $start_point = 0;
@@ -236,9 +253,10 @@ sub calculate_chunks {
    }
    MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
 
-   # Calculate the chunk size, in terms of "distance between endpoints."  If
-   # possible and requested, forbid chunks from being any bigger than
-   # specified.
+   # Calculate the chunk size in terms of "distance between endpoints"
+   # that will give approximately the right number of rows between the
+   # endpoints.  If possible and requested, forbid chunks from being any
+   # bigger than specified.
    my $interval = $args{chunk_size}
                 * ($end_point - $start_point)
                 / $args{rows_in_range};
@@ -259,7 +277,7 @@ sub calculate_chunks {
    # >= 30 AND < 60
    # >= 60 AND < 90
    # >= 90
-   my $col = $self->{Quoter}->quote($args{chunk_col});
+   my $col = $q->quote($args{chunk_col});
    if ( $start_point < $end_point ) {
       my ( $beg, $end );
       my $iter = 0;
@@ -268,11 +286,11 @@ sub calculate_chunks {
 
          # The first chunk.
          if ( $iter++ == 0 ) {
-            push @chunks, "$col < " . $self->quote($end);
+            push @chunks, "$col < " . $q->quote_val($end);
          }
          else {
             # The normal case is a chunk in the middle of the range somewhere.
-            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+            push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
          }
       }
 
@@ -282,7 +300,7 @@ sub calculate_chunks {
       my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
       pop @chunks;
       if ( @chunks ) {
-         push @chunks, "$col >= " . $self->quote($beg);
+         push @chunks, "$col >= " . $q->quote_val($beg);
       }
       else {
          push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
@@ -290,7 +308,6 @@ sub calculate_chunks {
       if ( $nullable ) {
          push @chunks, "$col IS NULL";
       }
-
    }
    else {
       # There are no chunks; just do the whole table in one chunk.
@@ -314,6 +331,7 @@ sub get_first_chunkable_column {
 # TABLE STATUS.  If the size is a string with a suffix of M/G/k, interpret it as
 # mebibytes, gibibytes, or kibibytes respectively.  If it's just a number, treat
 # it as a number of rows and return right away.
+# Returns an array: number of rows, average row size.
 sub size_to_rows {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db tbl chunk_size);
@@ -348,11 +366,25 @@ sub size_to_rows {
       }
    }
 
-   return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
+   return $n_rows, $avg_row_length;
 }
 
 # Determine the range of values for the chunk_col column on this table.
-# The $where could come from many places; it is not trustworthy.
+# Arguments:
+#   * dbh        dbh
+#   * db         scalar: database name
+#   * tbl        scalar: table name
+#   * chunk_col  scalar: column name to chunk on
+#   * tbl_struct hashref: retval of TableParser::parse()
+# Optional arguments:
+#   * where      scalar: WHERE clause without "WHERE" to restrict range
+#   * index_hint scalar: "FORCE INDEX (...)" clause
+#   * tries      scalar: number of tries to get next real value
+#   * zero_row   bool: allow zero row value as min
+# Returns an array:
+#   * min row value
+#   * max row values
+#   * rows in range (given optional where)
 sub get_range_statistics {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db tbl chunk_col tbl_struct);
@@ -360,9 +392,9 @@ sub get_range_statistics {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $db, $tbl, $col) = @args{@required_args};
-   my $where  = $args{where};
-   my $q      = $self->{Quoter};
-   
+   my $where = $args{where};
+   my $q     = $self->{Quoter};
+
    my $col_type       = $args{tbl_struct}->{type_for}->{$col};
    my $col_is_numeric = $args{tbl_struct}->{is_numeric}->{$col};
 
@@ -370,109 +402,50 @@ sub get_range_statistics {
    my $db_tbl = $q->quote($db, $tbl);
    $col       = $q->quote($col);
 
-   my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
-           . ($args{index_hint} ? " $args{index_hint}" : "")
-           . ($where ? " WHERE $where" : '');
-   MKDEBUG && _d($dbh, $sql);
-   my ( $min, $max );
+   my ($min, $max);
    eval {
-      ( $min, $max ) = $dbh->selectrow_array($sql);
+      # First get the actual end points, whatever MySQL considers the
+      # min and max values to be for this column.
+      my $sql = "SELECT MIN($col), MAX($col) FROM $db_tbl"
+              . ($args{index_hint} ? " $args{index_hint}" : "")
+              . ($where ? " WHERE ($where)" : '');
+      MKDEBUG && _d($dbh, $sql);
+      ($min, $max) = $dbh->selectrow_array($sql);
+      MKDEBUG && _d("Actual end points:", $min, $max);
+
+      # Now, for two reasons, get the valid end points.  For one, an
+      # end point may be 0 or some zero-equivalent and the user doesn't
+      # want that because it skews the range.  Or two, an end point may
+      # be an invalid value like date 2010-00-00 and we can't use that.
+      ($min, $max) = $self->get_valid_end_points(
+         %args,
+         dbh      => $dbh,
+         db_tbl   => $db_tbl,
+         col      => $col,
+         col_type => $col_type,
+         min      => $min,
+         max      => $max,
+      );
+      MKDEBUG && _d("Valid end points:", $min, $max);
    };
    if ( $EVAL_ERROR ) {
-      chomp $EVAL_ERROR;
-      if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
-         die "$EVAL_ERROR (WHERE clause: $where)";
-      }
-      else {
-         die $EVAL_ERROR;
-      }
+      die "Error getting min and max values for table $db_tbl "
+         . "on column $col: $EVAL_ERROR";
    }
 
-   # If the column type is temporal (date, timestamp, datetime, etc.)
-   # and its value is defined (i.e. not NULL), then check that the value
-   # evaluates to a real time.  A real time is not NULL, undefined or
-   # zero.  Unreal times are ignored because MySQL can't always do
-   # arithmetic with them, therefore they cannot be used for chunking.
-   # first_real_value() will return the first value that evalutes to
-   # something real.  A MySQL func is used to evalute the value.  For example,
-   # TO_DAYS('0000-00-00') evalutes to NULL because 0000-00-00 is an unreal
-   # date even though it's valid/storable in MySQL.
-   if ( $col_type =~ m/date|time/i ) {
-      if ( defined $min ) {
-         my $real_min = $self->first_real_value(
-            val      => $min,
-            col_type => $col_type,
-            endpoint => 'min',
-            tries    => $args{tries},
-            dbh      => $dbh,
-            db_tbl   => $db_tbl,
-            col      => $col,
-            where    => $where,
-         );
-         if ( !$real_min ) {
-            die "Error finding a valid minimum value for table $db_tbl on "
-               . "column $col. The real minimum value $min is invalid and "
-               . "no other valid values were found.  Verify that the table "
-               . "has at least one valid value for this column"
-               . ($where ? " where $where." : ".");
-         }
-         $min = $real_min;  # may be original $min, maybe next real min value
-      }
-
-      # Same as above but for max value, although it should be pretty rare
-      # that the max value is invalid.
-      if ( defined $max ) {
-         my $real_max = $self->first_real_value(
-            val      => $max,
-            col_type => $col_type,
-            endpoint => 'max',
-            tries    => $args{tries},
-            dbh      => $dbh,
-            db_tbl   => $db_tbl,
-            col      => $col,
-            where    => $where,
-         );
-         if ( !$real_max ) {
-            die "Error finding a valid maximum value for table $db_tbl on "
-               . "column $col. The real maximum value $max is invalid and "
-               . "no other valid values were found.  Verify that the table "
-               . "has at least one valid value for this column "
-               . ($where ? "where $where." : ".");
-         }
-         $max = $real_max;  # may be original $max, maybe next real max value
-      }
-   }
-   elsif ( $col_is_numeric && !$args{zero_row} && ($min || 0) == 0 ) {
-      # Don't want minimum row if its zero.
-      MKDEBUG && _d('Discarding zero min:', $min);
-      $sql = "SELECT $col FROM $db_tbl "
-           . "WHERE $col > ? "
-           . ($where ? " AND $where " : '')
-           . "LIMIT 1";
-      MKDEBUG && _d($sql);
-      my $sth = $dbh->prepare($sql);
-      $sth->execute($min);
-      ($min) = $sth->fetchrow_array();
-      MKDEBUG && _d('New min:', $min);
-   }
-
-   $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
-        . ($args{index_hint} ? " $args{index_hint}" : "")
-        . ($where ? " WHERE $where" : '');
+   # Finally get the total number of rows in range, usually the whole
+   # table unless there's a where arg restricting the range.
+   my $sql = "EXPLAIN SELECT * FROM $db_tbl"
+           . ($args{index_hint} ? " $args{index_hint}" : "")
+           . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
+
    return (
       min           => $min,
       max           => $max,
       rows_in_range => $expl->{rows},
    );
-}
-
-# Quotes values only when needed, and uses double-quotes instead of
-# single-quotes (see comments earlier).
-sub quote {
-   my ( $self, $val ) = @_;
-   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
 }
 
 # Takes a query prototype and fills in placeholders.  The 'where' arg should be
@@ -588,98 +561,251 @@ sub timestampdiff {
    return $diff;
 }
 
+
+# #############################################################################
+# End point validation.
+# #############################################################################
+
+# These sub require val (or min and max) args which usually aren't NULL
+# but could be zero so the usual "die ... unless $args{$arg}" check does
+# not work.
+
+# Returns valid min and max values.  A valid val evaluates to a non-NULL value.
 # Arguments:
-#   * val       scalar: the current value, may be real, maybe not
-#   * col_type  scalar: column type, e.g. "datetime"
-#   * endpoint  scalar: "min" or "max", i.e. find first endpoint() real val
 #   * dbh       dbh
-#   * db_tbl    scalar: quoted db.tbl
-#   * col       scalar: quoted column name
-# Find and return first real (i.e. not NULL/undef or zero) value in the
-# given db.tbl.col.  Returns the first real value, else returns undef.
-sub first_real_value {
+#   * db_tbl    scalar: quoted `db`.`tbl`
+#   * col       scalar: quoted `column`
+#   * col_type  scalar: column type of the value
+#   * min       scalar: any scalar value
+#   * max       scalar: any scalar value
+# Optional arguments:
+#   * index_hint scalar: "FORCE INDEX (...)" hint
+#   * where      scalar: WHERE clause without "WHERE"
+#   * tries      scalar: only try this many times/rows to find a real value
+#   * zero_min   bool: allow zero or zero-equivalent min
+# Some column types can store invalid values, like most of the temporal
+# types.  When evaluated, invalid values return NULL.  If the value is
+# NULL to begin with, then it is not invalid because NULL is valid.
+# For example, TO_DAYS('2009-00-00') evalues to NULL because that date
+# is invalid, even though it's storable.
+sub get_valid_end_points {
    my ( $self, %args ) = @_;
-   my @required_args = qw(val col_type endpoint dbh db_tbl col);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless defined $args{$arg};
-   }
-   my ($val, $col_type, $endpoint, $dbh, $db_tbl, $col) = @args{@required_args};
-   my $tries = defined $args{tries} ? $args{tries} : 5;
-
-   # We don't eval all column types, just those in %mysql_func_for.
-   if ( !$mysql_func_for{$col_type} ) {
-      MKDEBUG && _d('No MySQL func to eval', $col_type, 'type column');
-      return $val;
-   }
-
-   # Evaluate the current value.  It may be real.  If so, return it.
-   my $real_val = $self->_eval_val(
-      dbh  => $dbh,
-      val  => $val,
-      func => $mysql_func_for{$col_type},
-   );
-
-   # Current value isn't real so start looking for the first real val.
-   if ( !$real_val ) {
-      MKDEBUG && _d($endpoint, 'value is not real, finding first real',
-         $endpoint, 'value');
-
-      # Prep a sth for fetching the next col val.
-      my $cmp = $endpoint =~ m/min/i ? '>' : '<';
-      my $sql = "SELECT $col FROM $db_tbl WHERE $col $cmp ? "
-              . ($args{where} ? "WHERE $args{where} " : "")
-              . "LIMIT 1";
-      MKDEBUG && _d($dbh, $sql);
-      my $sth = $dbh->prepare($sql);
-
-      # Fetch the next col val from the db.tbl until we find a real one
-      # or run out of rows.  Only try a limited number of next rows.
-      my $last_val = $val;
-      while ( $tries-- && !$real_val ) {
-         $sth->execute($last_val);
-         my ($alt_val) = $sth->fetchrow_array();
-         MKDEBUG && _d('Next value:', $alt_val, '; tries left:', $tries);
-         if ( !defined $alt_val ) {
-            MKDEBUG && _d('No more rows in table');
-            last;
-         }
-         $real_val = $self->_eval_val(
-            dbh  => $dbh,
-            val  => $alt_val,
-            func => $mysql_func_for{$col_type},
-         );
-         $val      = $alt_val if defined $real_val;
-         $last_val = $alt_val;
-      }
-   }
-
-   # Set val to first real value, if any was found, then return it.
-   $val = undef unless $real_val;
-   return $val;
-}
-
-# Evaluate the given val with the given MySQL func(tion).
-# E.g. SELECT TO_DAYS('2010-00-09') evaluates to NULL/undef.
-sub _eval_val {
-   my ( $self, %args ) = @_;
-   my @required_args = qw(dbh val func);
+   my @required_args = qw(dbh db_tbl col col_type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dbh, $val, $func) = @args{@required_args};
+   my ($dbh, $db_tbl, $col, $col_type) = @args{@required_args};
+   my ($real_min, $real_max)           = @args{qw(min max)};
 
-   my $sql = "SELECT $func('$val')";
+   # Common error message format in case there's a problem with
+   # finding a valid min or max value.
+   my $err_fmt = "Error finding a valid %s value for table $db_tbl on "
+               . "column $col. The real %s value %s is invalid and "
+               . "no other valid values were found.  Verify that the table "
+               . "has at least one valid value for this column"
+               . ($args{where} ? " where $args{where}." : ".");
+
+   # Get a valid min end point.
+   MKDEBUG && _d("Validating min end point:", $real_min);
+   my $valid_min = $self->_get_valid_end_point(
+      %args,
+      val      => $real_min,
+      endpoint => 'min',
+   );
+   die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+      unless defined $valid_min;
+
+   # Just for the min end point, get the first non-zero row if a
+   # zero (or zero-equivalent) min is not allowed.
+   if ( !$args{zero_min} ) {
+      $valid_min = $self->get_nonzero_value(
+         %args,
+         val => $valid_min
+      );
+   }
+   die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+      unless defined $valid_min;
+
+   # Get a valid max end point.  So far I've not found a case where
+   # the actual max val is invalid, but check anyway just in case.
+   MKDEBUG && _d("Validating max end point:", $real_min);
+   my $valid_max = $self->_get_valid_end_point(
+      %args,
+      val      => $real_max,
+      endpoint => 'max',
+   );
+   die sprintf($err_fmt, 'maximum', 'maximum', ($real_max || "NULL"))
+      unless defined $valid_max;
+
+   return $valid_min, $valid_max;
+}
+
+# Does the actual work for get_valid_end_points() for each end point.
+sub _get_valid_end_point {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db_tbl col col_type);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db_tbl, $col, $col_type) = @args{@required_args};
+   my $val = $args{val};
+
+   # NULL is valid.
+   return $val unless defined $val;
+
+   # Right now we only validate temporal types, but when we begin
+   # chunking char and hex columns we'll need to validate those.
+   # E.g. HEX('abcdefg') is invalid and we'll probably find some
+   # combination of char val + charset/collation that's invalid.
+   my $validate = $col_type =~ m/time|date/ ? \&_validate_temporal_value
+                :                             undef;
+
+   # If we cannot validate the value, assume it's valid.
+   if ( !$validate ) {
+      MKDEBUG && _d("No validator for", $col_type, "values");
+      return $val;
+   }
+
+   # Return the value if it's already valid.
+   return $val if defined $validate->($dbh, $val);
+
+   # The value is not valid so find the first one in the table that is.
+   MKDEBUG && _d("Value is invalid, getting first valid value");
+   $val = $self->get_first_valid_value(
+      %args,
+      val      => $val,
+      validate => $validate,
+   );
+
+   return $val;
+}
+
+# Arguments:
+#   * dbh       dbh
+#   * db_tbl    scalar: quoted `db`.`tbl`
+#   * col       scalar: quoted `column` name
+#   * val       scalar: the current value, may be real, maybe not
+#   * validate  coderef: returns a defined value if the given value is valid
+#   * endpoint  scalar: "min" or "max", i.e. find first endpoint() real val
+# Optional arguments:
+#   * tries      scalar: only try this many times/rows to find a real value
+#   * index_hint scalar: "FORCE INDEX (...)" hint
+#   * where      scalar: WHERE clause without "WHERE"
+# Returns the first column value from the given db_tbl that does *not*
+# evaluate to NULL.  This is used mostly to eliminate unreal temporal
+# values which MySQL allows to be stored, like "2010-00-00".  Returns
+# undef if no real value is found.
+sub get_first_valid_value {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db_tbl col validate endpoint);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db_tbl, $col, $validate, $endpoint) = @args{@required_args};
+   my $tries = defined $args{tries} ? $args{tries} : 5;
+   my $val   = $args{val};
+
+   # NULL values are valid and shouldn't be passed to us.
+   return unless defined $val;
+
+   # Prep a sth for fetching the next col val.
+   my $cmp = $endpoint =~ m/min/i ? '>'
+           : $endpoint =~ m/max/i ? '<'
+           :                        die "Invalid endpoint arg: $endpoint";
+   my $sql = "SELECT $col FROM $db_tbl "
+           . ($args{index_hint} ? "$args{index_hint} " : "")
+           . "WHERE $col $cmp ? AND $col IS NOT NULL "
+           . ($args{where} ? "AND ($args{where}) " : "")
+           . "ORDER BY $col LIMIT 1";
    MKDEBUG && _d($dbh, $sql);
-   my $eval_val;
+   my $sth = $dbh->prepare($sql);
+
+   # Fetch the next col val from the db.tbl until we find a valid one
+   # or run out of rows.  Only try a limited number of next rows.
+   my $last_val = $val;
+   while ( $tries-- ) {
+      $sth->execute($last_val);
+      my ($next_val) = $sth->fetchrow_array();
+      MKDEBUG && _d('Next value:', $next_val, '; tries left:', $tries);
+      if ( !defined $next_val ) {
+         MKDEBUG && _d('No more rows in table');
+         last;
+      }
+      if ( defined $validate->($dbh, $next_val) ) {
+         MKDEBUG && _d('First valid value:', $next_val);
+         $sth->finish();
+         return $next_val;
+      }
+      $last_val = $next_val;
+   }
+   $sth->finish();
+   $val = undef;  # no valid value found
+
+   return $val;
+}
+
+# Evalutes any temporal value, returns NULL if it's invalid, else returns
+# a value (possible zero). It's magical but tested.  See also,
+# http://hackmysql.com/blog/2010/05/26/detecting-invalid-and-zero-temporal-values/
+sub _validate_temporal_value {
+   my ( $dbh, $val ) = @_;
+   my $sql = "SELECT IF(TIME_FORMAT(?,'%H:%i:%s')=?, TIME_TO_SEC(?), TO_DAYS(?))";
+   my $res;
    eval {
-      ($eval_val) = $dbh->selectrow_array($sql);
+      MKDEBUG && _d($dbh, $sql, $val);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($val, $val, $val, $val);
+      ($res) = $sth->fetchrow_array();
+      $sth->finish();
    };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d($EVAL_ERROR);
-      return;
    }
-   MKDEBUG && _d('Value evaluates to', $eval_val);
-   return $eval_val;
+   return $res;
+}
+
+sub get_nonzero_value {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db_tbl col col_type);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db_tbl, $col, $col_type) = @args{@required_args};
+   my $tries = defined $args{tries} ? $args{tries} : 5;
+   my $val   = $args{val};
+
+   # Right now we only need a special check for temporal values.
+   # _validate_temporal_value() does double-duty for this.  The
+   # default anonymous sub handles ints.
+   my $is_nonzero = $col_type =~ m/time|date/ ? \&_validate_temporal_value
+                  :                             sub { return $_[1]; };
+
+   if ( !$is_nonzero->($dbh, $val) ) {  # quasi-double-negative, sorry
+      MKDEBUG && _d('Discarding zero value:', $val);
+      my $sql = "SELECT $col FROM $db_tbl "
+              . ($args{index_hint} ? "$args{index_hint} " : "")
+              . "WHERE $col > ? AND $col IS NOT NULL "
+              . ($args{where} ? "AND ($args{where}) " : '')
+              . "ORDER BY $col LIMIT 1";
+      MKDEBUG && _d($sql);
+      my $sth = $dbh->prepare($sql);
+
+      my $last_val = $val;
+      while ( $tries-- ) {
+         $sth->execute($last_val);
+         my ($next_val) = $sth->fetchrow_array();
+         if ( $is_nonzero->($dbh, $next_val) ) {
+            MKDEBUG && _d('First non-zero value:', $next_val);
+            $sth->finish();
+            return $next_val;
+         }
+         $last_val = $next_val;
+      }
+      $sth->finish();
+      $val = undef;  # no non-zero value found
+   }
+
+   return $val;
 }
 
 sub _d {

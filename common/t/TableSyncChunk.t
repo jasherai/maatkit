@@ -175,8 +175,8 @@ $t->set_checksum_queries(
 is_deeply(
    $t->{chunks},
    [
-      '`a` < 3',
-      '`a` >= 3',
+      "`a` < '3'",
+      "`a` >= '3'",
    ],
    'Chunks'
 );
@@ -187,7 +187,7 @@ like(
       database => 'test',
       table    => 'test1',
    ),
-   qr/SELECT .*?CONCAT_WS.*?`a` < 3/,
+   qr/SELECT .*?CONCAT_WS.*?`a` < '3'/,
    'First chunk SQL (without index hint)',
 );
 
@@ -201,7 +201,7 @@ like($t->get_sql(
       table      => 'test1',
       index_hint => 'USE INDEX (`PRIMARY`)',
    ),
-   qr/SELECT .*?CONCAT_WS.*?FROM `test`\.`test1` USE INDEX \(`PRIMARY`\) WHERE.*?`a` >= 3/,
+   qr/SELECT .*?CONCAT_WS.*?FROM `test`\.`test1` USE INDEX \(`PRIMARY`\) WHERE.*?`a` >= '3'/,
    'Second chunk SQL (with index hint)',
 );
 
@@ -236,7 +236,7 @@ is(
       table    => 'test1',
    ),
    "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
-      . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < 3)"
+      . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < '3')"
       . " ORDER BY `a`",
    'SQL now working inside chunk'
 );
@@ -363,7 +363,7 @@ is(
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*test.test1:1/2*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` < 3) AND ((x > 1 AND x <= 9))",
+   "SELECT /*test.test1:1/2*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` < '3') AND ((x > 1 AND x <= 9))",
    'Chunk within chunk (chunk sql)'
 );
 
@@ -378,7 +378,7 @@ is(
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (`a` < 3) AND (x > 1 AND x <= 9) ORDER BY `a`",
+   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (`a` < '3') AND (x > 1 AND x <= 9) ORDER BY `a`",
    'Chunk within chunk (row sql)'
 );
 
@@ -390,7 +390,7 @@ is(
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*test.test1:2/2*/ 1 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` >= 3) AND ((x > 1 AND x <= 9))",
+   "SELECT /*test.test1:2/2*/ 1 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `test`.`test1`  WHERE (`a` >= '3') AND ((x > 1 AND x <= 9))",
    'Second chunk within chunk'
 );
 
