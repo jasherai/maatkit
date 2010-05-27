@@ -377,6 +377,7 @@ case $opt in
       # mk-table-sync/t/110_replicate_do_db.t.  It's not checked;
       # user beware.
       /tmp/12345/use -e "RESET MASTER"
+      /tmp/12346/use -e "RESET MASTER"
       /tmp/12346/use -e "STOP SLAVE"
       /tmp/12346/use -e "change master to master_host='127.0.0.1', master_user='msandbox', master_password='msandbox', master_port=12345, master_log_file='mysql-bin.000001', master_log_pos=0"
       /tmp/12346/use -e "START SLAVE"
