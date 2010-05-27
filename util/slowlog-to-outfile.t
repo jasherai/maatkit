@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 use MaatkitTest;
 require "$trunk/util/slowlog-to-outfile";
@@ -101,6 +101,14 @@ is(
 "0xDB08692E489004B4\t\\N\t\\N\t0.000173\t0.000048\t18\t18\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tselect abc, xyz from `a tbl`, `t?` where ? != ? and ?<>? or ? or ?\tselect abc, XYZ FROM `a tbl`, `t-2` WHERE 1 != 2 AND 3<>3 OR \"\" OR '\"`\"'
 ",
    "Remove non-ASCII/printable characters"
+);
+
+$output = `$cmd $sample/slow047.txt`;
+is(
+   $output,
+"0xD5A5141863B44217\t\\N\t\\N\t1\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\t\\N\tfoo=?\tfoo=\"good\"
+",
+   "Remove ASCII characters 0x00-0x1F"
 );
 
 # #############################################################################

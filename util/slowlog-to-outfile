@@ -1852,7 +1852,7 @@ sub main {
          # arg may have newlines which will break outfile.
          my $arg = $event->{arg};
          $arg    =~ s/\n+/ /g;
-         $arg    =~ tr/\x7F-\xFF//d;  # delete non-ascii/printable chars
+         $arg    =~ tr/\x00-\x1F\x7F-\xFF//d; # delete non-ascii/printable chars
          return $arg;
       },
       ts  => sub {
