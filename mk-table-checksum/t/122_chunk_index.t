@@ -33,11 +33,11 @@ my @args = ('-F', $cnf, 'h=127.1', qw(-d issue_519 --explain --chunk-size 3));
 
 $sb->load_file('master', "mk-table-checksum/t/samples/issue_519.sql");
 
-my $default_output = "issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`PRIMARY`) WHERE (`i` < 4)
-issue_519 t     `i` < 4
-issue_519 t     `i` >= 4 AND `i` < 7
-issue_519 t     `i` >= 7 AND `i` < 10
-issue_519 t     `i` >= 10
+my $default_output = "issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`PRIMARY`) WHERE (`i` < '4')
+issue_519 t     `i` < '4'
+issue_519 t     `i` >= '4' AND `i` < '7'
+issue_519 t     `i` >= '7' AND `i` < '10'
+issue_519 t     `i` >= '10'
 ";
 
 $output = output(
@@ -66,11 +66,11 @@ $output = output(
 
 is(
    $output,
-"issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`myidx`) WHERE (`i` < 4)
-issue_519 t     `i` < 4
-issue_519 t     `i` >= 4 AND `i` < 7
-issue_519 t     `i` >= 7 AND `i` < 10
-issue_519 t     `i` >= 10
+"issue_519 t     SELECT /*issue_519.t:1/4*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_519`.`t` FORCE INDEX (`myidx`) WHERE (`i` < '4')
+issue_519 t     `i` < '4'
+issue_519 t     `i` >= '4' AND `i` < '7'
+issue_519 t     `i` >= '7' AND `i` < '10'
+issue_519 t     `i` >= '10'
 ",
    "Use --chunk-index"
 );
