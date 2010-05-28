@@ -80,9 +80,8 @@ sub new {
    return bless $self, $class;
 }
 
-# Takes a list of config hashrefs (from MySQLConfig::get_config()),
-# compares the first to the others, returns an arrayref of hashrefs
-# of variables that differ, like:
+# Takes an arrayref of MySQLConfig objects and compares the first to the others.
+# Returns an arrayref of hashrefs of variables that differ, like:
 #   {
 #      var  => max_connections,
 #      vals => [ 100, 50 ],
@@ -95,12 +94,18 @@ sub new {
 # Called missing() to discover which vars are missing in the configs.
 sub diff {
    my ( $self, %args ) = @_;
-   my $configs  = $args{configs};
-   my $versions = $args{versions};
+   my @required_args = qw(configs);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($config_objs) = @args{@required_args};
+
    my @diffs;
-   die "diff() requires at least one config" if @$configs < 1;
-   return \@diffs if @$configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('diff configs:', Dumper($configs));
+   return @diffs if @$config_objs < 2;  # nothing to compare
+   MKDEBUG && _d('diff configs:', Dumper($config_objs));
+
+   my $configs  = [ map { $_->get_config() } @$config_objs ];
+   my $versions = [ map { $_->version() }    @$config_objs ];
 
    # Get list of vars that exist in all configs (intersection of their keys).
    my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
@@ -124,7 +129,7 @@ sub diff {
    } @vars;
 
    VAR:
-   foreach my $var ( keys %vals ) {
+   foreach my $var ( sort keys %vals ) {
       my $vals     = $vals{$var};
       my $last_val = scalar @$vals - 1;
 
@@ -153,47 +158,22 @@ sub diff {
       }
    } # VAR
 
-   return \@diffs;
-}
-
-# Given a MySQLConfig obj, returns an arrayref of hashrefs for each
-# variable whose online value is different from it's config/offline
-# value.  This is the same as diff()ing the config's online vals
-# against its offline vals.
-sub stale_variables {
-   my ( $self, $config ) = @_;
-   return unless $config;
-
-   MKDEBUG && _d('Getting stale variables (online, offline)');
-   my $diffs = $self->diff(
-      configs => [
-         $config->get_config(),
-         $config->get_config(offline=>1),
-      ],
-      versions => [
-         $config->{version},
-         $config->{version},
-      ],
-   );
-
-   # Convert diff struct to something more explicit.
-   my @stale_vars = map {
-      {
-         var         => $_->{var},
-         online_val  => $_->{vals}->[0],
-         offline_val => $_->{vals}->[1],
-      }
-   } @$diffs;
-
-   return \@stale_vars;
+   return @diffs;
 }
 
 sub missing {
-   my ( $self, @configs ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(configs);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($config_objs) = @args{@required_args};
+
    my @missing;
-   die "missing() requires at least one config" if @configs < 1;
-   return \@missing if @configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('missing configs:', Dumper(\@configs));
+   return @missing if @$config_objs < 2;  # nothing to compare
+   MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
+
+   my @configs = map { $_->get_config() } @$config_objs;
 
    # Get all unique vars and how many times each exists.
    my %vars;
@@ -211,7 +191,7 @@ sub missing {
       }
    }
 
-   return \@missing;
+   return @missing;
 }
 
 # True if x is val1 or val2 and y is val1 or val2.

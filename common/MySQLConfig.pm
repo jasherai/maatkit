@@ -102,6 +102,11 @@ sub get_duplicate_variables {
    return $self->{duplicate_vars};
 }
 
+sub version {
+   my ( $self ) = @_;
+   return $self->{version};
+}
+
 # Arguments:
 #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
 #   when from=mysqld or my_print_defaults:
