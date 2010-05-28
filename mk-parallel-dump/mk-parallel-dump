@@ -3759,6 +3759,11 @@ sub main {
          MKDEBUG && _d('No children reaped, sleeping');
          sleep 1;
       }
+
+      MKDEBUG && _d(scalar @chunks, "chunks left; ",
+         "outstanding child processes:\n", join("\n",
+            map { "PID $_ $kids{$_}->{D}.$kids{$_}->{N} chunk $kids{$_}->{C}" }
+            keys %kids));
    } # while chunks or kids
 
    # ########################################################################
