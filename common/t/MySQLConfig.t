@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 13;
 
 use MySQLConfig;
 use DSNParser;
@@ -305,27 +305,15 @@ is_deeply(
    'set_config(from=>mysqld, file=>mysqldhelp001.txt)'
 );
 
-is_deeply(
-   $config->get_config(),
-   {},
-   "Didn't set online config"
-);
-
-is(
-   $config->get('wait_timeout'),
-   undef,
-   'get(), default online but not loaded'
-);
-
 is(
    $config->get('wait_timeout', offline=>1),
    28800,
-   'get(), offline'
+   'get() from mysqld'
 );
 
 ok(
    $config->has('wait_timeout'),
-   'has(), has it from offline'
+   'has() from mysqld'
 );
 
 ok(
@@ -350,18 +338,12 @@ is_deeply(
 is(
    $config->get('foo'),
    'bar',
-   'get()',
-);
-
-is(
-   $config->get('foo', offline=>1),
-   undef,
-   "Didn't load online var into offline"
+   'get() from show variables'
 );
 
 ok(
    $config->has('foo'),
-   'has(), has it from online'
+   'has() from show variables'
 );
 
 # #############################################################################

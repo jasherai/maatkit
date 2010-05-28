@@ -19,6 +19,12 @@
 # ###########################################################################
 package MySQLConfig;
 
+# This package encapsulates a MySQL config (i.e. its system variables)
+# from different sources: SHOW VARIABLES, mysqld --help --verbose, etc.
+# (See set_config() for full list of valid input.)  It basically just
+# parses the config into a common data struct, then MySQLConfig objects
+# are passed to other modules like MySQLConfigComparer.
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -56,8 +62,7 @@ sub new {
 
    my $self = {
       # defaults
-      defaults_file  => undef, 
-      show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
+      defaults_file  => undef,
       version        => '',
 
       # override defaults
@@ -66,10 +71,7 @@ sub new {
       # private
       default_defaults_files => [],
       duplicate_vars         => {},
-      config                 => {
-         offline => {},  # vars as set by defaults files
-         online  => {},  # vars as currently set on running server
-      },
+      config                 => {},
    };
 
    return bless $self, $class;
@@ -78,24 +80,21 @@ sub new {
 # Returns true if the MySQL config has the given system variable.
 sub has {
    my ( $self, $var ) = @_;
-   return exists $self->{config}->{offline}->{$var}
-       || exists $self->{config}->{online}->{$var};
+   return exists $self->{config}->{$var};
 }
 
 # Returns the value for the given system variable.  Returns its
 # online/effective value by default.
 sub get {
-   my ( $self, $var, %args ) = @_;
+   my ( $self, $var ) = @_;
    return unless $var;
-   return $args{offline} ? $self->{config}->{offline}->{$var}
-      :                    $self->{config}->{online}->{$var};
+   return $self->{config}->{$var};
 }
 
-# Returns the whole online (default) or offline hashref of config vals.
+# Returns the whole hashref of config vals.
 sub get_config {
    my ( $self, %args ) = @_;
-   return $args{offline} ? $self->{config}->{offline}
-      :                    $self->{config}->{online};
+   return $self->{config};
 }
 
 sub get_duplicate_variables {
@@ -145,8 +144,7 @@ sub set_config {
       }
 
       die "Failed to parse MySQL config from $from" unless $config;
-      @{$self->{config}->{offline}}{keys %$config} = values %$config;
-
+      $self->{config}                 = $config;
       $self->{default_defaults_files} = $ddf   if $ddf;
       $self->{duplicate_vars}         = $dupes if $dupes;
    }
@@ -157,28 +155,17 @@ sub set_config {
 
       my $rows = $args{rows};
       if ( $args{dbh} ) {
-         my $sql = $self->{show_variables};
-         MKDEBUG && _d($args{dbh}, $sql);
-         $rows = $args{dbh}->selectall_arrayref($sql);
-
+         $rows = $self->_show_variables($args{dbh});
          $self->_set_version($args{dbh}) unless $self->{version};
       }
-      $self->set_online_config($rows);
+      if ( $rows ) {
+         my %config = map { @$_ } @$rows;
+         $self->{config} = \%config;
+      }
    }
    else {
       die "I don't know how to set the MySQL config from $from";
    }
-   return;
-}
-
-# Set online config given the arrayref of rows.  This arrayref is
-# usually from SHOW VARIABLES.  This sub is usually called via
-# set_config().
-sub set_online_config {
-   my ( $self, $rows ) = @_;
-   return unless $rows;
-   my %config = map { @$_ } @$rows;
-   $self->{config}->{online} = \%config;
    return;
 }
 
@@ -308,6 +295,14 @@ sub _parse_varvals {
    }
 
    return \%config, \%duplicates;
+}
+
+sub _show_variables {
+   my ( $self, $dbh ) = @_;
+   my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
+   MKDEBUG && _d($dbh, $sql);
+   my $rows = $dbh->selectall_arrayref($sql);
+   return $rows;
 }
 
 sub _set_version {
