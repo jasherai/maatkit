@@ -25,7 +25,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -642,7 +647,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -1328,7 +1333,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -1369,7 +1379,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -1447,7 +1458,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -1488,7 +1499,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
@@ -1631,7 +1644,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 6192
+# MySQLConfig package 6397
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
@@ -1639,6 +1652,7 @@ sub _d {
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLConfig;
+
 
 use strict;
 use warnings FATAL => 'all';
@@ -1676,18 +1690,14 @@ sub new {
    my ( $class, %args ) = @_;
 
    my $self = {
-      defaults_file  => undef, 
-      show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
+      defaults_file  => undef,
       version        => '',
 
       %args,
 
       default_defaults_files => [],
       duplicate_vars         => {},
-      config                 => {
-         offline => {},  # vars as set by defaults files
-         online  => {},  # vars as currently set on running server
-      },
+      config                 => {},
    };
 
    return bless $self, $class;
@@ -1695,26 +1705,28 @@ sub new {
 
 sub has {
    my ( $self, $var ) = @_;
-   return exists $self->{config}->{offline}->{$var}
-       || exists $self->{config}->{online}->{$var};
+   return exists $self->{config}->{$var};
 }
 
 sub get {
-   my ( $self, $var, %args ) = @_;
+   my ( $self, $var ) = @_;
    return unless $var;
-   return $args{offline} ? $self->{config}->{offline}->{$var}
-      :                    $self->{config}->{online}->{$var};
+   return $self->{config}->{$var};
 }
 
 sub get_config {
    my ( $self, %args ) = @_;
-   return $args{offline} ? $self->{config}->{offline}
-      :                    $self->{config}->{online};
+   return $self->{config};
 }
 
 sub get_duplicate_variables {
    my ( $self ) = @_;
    return $self->{duplicate_vars};
+}
+
+sub version {
+   my ( $self ) = @_;
+   return $self->{version};
 }
 
 sub set_config {
@@ -1749,8 +1761,7 @@ sub set_config {
       }
 
       die "Failed to parse MySQL config from $from" unless $config;
-      @{$self->{config}->{offline}}{keys %$config} = values %$config;
-
+      $self->{config}                 = $config;
       $self->{default_defaults_files} = $ddf   if $ddf;
       $self->{duplicate_vars}         = $dupes if $dupes;
    }
@@ -1761,25 +1772,17 @@ sub set_config {
 
       my $rows = $args{rows};
       if ( $args{dbh} ) {
-         my $sql = $self->{show_variables};
-         MKDEBUG && _d($args{dbh}, $sql);
-         $rows = $args{dbh}->selectall_arrayref($sql);
-
+         $rows = $self->_show_variables($args{dbh});
          $self->_set_version($args{dbh}) unless $self->{version};
       }
-      $self->set_online_config($rows);
+      if ( $rows ) {
+         my %config = map { @$_ } @$rows;
+         $self->{config} = \%config;
+      }
    }
    else {
       die "I don't know how to set the MySQL config from $from";
    }
-   return;
-}
-
-sub set_online_config {
-   my ( $self, $rows ) = @_;
-   return unless $rows;
-   my %config = map { @$_ } @$rows;
-   $self->{config}->{online} = \%config;
    return;
 }
 
@@ -1877,6 +1880,14 @@ sub _parse_varvals {
    return \%config, \%duplicates;
 }
 
+sub _show_variables {
+   my ( $self, $dbh ) = @_;
+   my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
+   MKDEBUG && _d($dbh, $sql);
+   my $rows = $dbh->selectall_arrayref($sql);
+   return $rows;
+}
+
 sub _set_version {
    my ( $self, $dbh ) = @_;
    my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
@@ -1902,7 +1913,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 6192
+# MySQLConfigComparer package 6397
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
@@ -1969,12 +1980,18 @@ sub new {
 
 sub diff {
    my ( $self, %args ) = @_;
-   my $configs  = $args{configs};
-   my $versions = $args{versions};
+   my @required_args = qw(configs);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($config_objs) = @args{@required_args};
+
    my @diffs;
-   die "diff() requires at least one config" if @$configs < 1;
-   return \@diffs if @$configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('diff configs:', Dumper($configs));
+   return @diffs if @$config_objs < 2;  # nothing to compare
+   MKDEBUG && _d('diff configs:', Dumper($config_objs));
+
+   my $configs  = [ map { $_->get_config() } @$config_objs ];
+   my $versions = [ map { $_->version() }    @$config_objs ];
 
    my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
 
@@ -1992,7 +2009,7 @@ sub diff {
    } @vars;
 
    VAR:
-   foreach my $var ( keys %vals ) {
+   foreach my $var ( sort keys %vals ) {
       my $vals     = $vals{$var};
       my $last_val = scalar @$vals - 1;
 
@@ -2017,42 +2034,22 @@ sub diff {
       }
    } # VAR
 
-   return \@diffs;
-}
-
-sub stale_variables {
-   my ( $self, $config ) = @_;
-   return unless $config;
-
-   MKDEBUG && _d('Getting stale variables (online, offline)');
-   my $diffs = $self->diff(
-      configs => [
-         $config->get_config(),
-         $config->get_config(offline=>1),
-      ],
-      versions => [
-         $config->{version},
-         $config->{version},
-      ],
-   );
-
-   my @stale_vars = map {
-      {
-         var         => $_->{var},
-         online_val  => $_->{vals}->[0],
-         offline_val => $_->{vals}->[1],
-      }
-   } @$diffs;
-
-   return \@stale_vars;
+   return @diffs;
 }
 
 sub missing {
-   my ( $self, @configs ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(configs);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($config_objs) = @args{@required_args};
+
    my @missing;
-   die "missing() requires at least one config" if @configs < 1;
-   return \@missing if @configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('missing configs:', Dumper(\@configs));
+   return @missing if @$config_objs < 2;  # nothing to compare
+   MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
+
+   my @configs = map { $_->get_config() } @$config_objs;
 
    my %vars;
    map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
@@ -2067,7 +2064,7 @@ sub missing {
       }
    }
 
-   return \@missing;
+   return @missing;
 }
 
 sub _veq { 
@@ -2539,6 +2536,8 @@ sub main {
    my @config_names;
    foreach my $config_src ( @ARGV ) {
       my $config = new MySQLConfig();
+      my $config_name;
+
       if ( -f $config_src ) {
          MKDEBUG && _d('Config source', $config_src, 'is a file');
          eval {
@@ -2549,8 +2548,7 @@ sub main {
             );
          };
          die $EVAL_ERROR if $EVAL_ERROR;
-         push @configs, $config;
-         push @config_names, $config_src;
+         $config_name = $config_src;  # the file name
       }
       else {
          MKDEBUG && _d('Config source', $config_src, 'is a DSN');
@@ -2558,16 +2556,16 @@ sub main {
          my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
          $dp->fill_in_dsn($dbh, $dsn);
          $last_dsn = $dsn;
-         my $name = ($dsn->{h} || $dsn->{S} || $dsn->{F})
-                  . ($dsn->{P} ? ":$dsn->{P}" : '');
-
          eval {
             $config->set_config(from=>'show_variables', dbh=>$dbh);
          };
          die $EVAL_ERROR if $EVAL_ERROR;
-         push @configs, $config;
-         push @config_names, $name || 'unknown host';
+         $config_name = ($dsn->{h} || $dsn->{S} || $dsn->{F})
+                      . ($dsn->{P} ? ":$dsn->{P}" : '');
       }
+
+      push @configs, $config;
+      push @config_names, $config_name;
    }
 
    # ##########################################################################
@@ -2602,17 +2600,14 @@ sub main {
          line_prefix => '',
          line_width  => 78,
       );
-      $report->set_title('MySQL '
-         . ($o->get('offline') ? 'offline' : 'online') . ' config diff');
+      $report->set_title('MySQL config diff');
       $report->set_columns(
          { name => 'Variable', width=>25, },
          map { { name => $_ } } @config_names,
       );
 
-      my $offline = $o->get('offline');
-      my $diffs   = $config_cmp->diff(
-            map { $_->get_config(offline=>$offline) } @configs);
-      foreach my $diff ( @$diffs ) {
+      my @diffs = $config_cmp->diff(configs=>\@configs);
+      foreach my $diff ( @diffs ) {
          $report->add_line($diff->{var}, @{$diff->{vals}});
       }
 
@@ -2833,14 +2828,6 @@ Ignore these rule IDs.
 
 Specify a comma-separated list of rule IDs (e.g. LIT.001,RES.002,etc.)
 to ignore.
-
-=item --offline
-
-Diff and compare offline variable values.
-
-By default mk-config-diff diffs online variable values, i.e. values from
-SHOW VARIABLES.  This option causes the offline variable values from
-C<mysqld --help --verbose> and C<my_print_defaults> to be diffed instead.
 
 =item --password
 
