@@ -20,22 +20,23 @@
 package TableChunker;
 
 # This package helps figure out how to "chunk" a table.  Chunk are
-# pre-determined ranges of rows defined by boundary values (sometimes
-# also called endpoints) on numeric or numeric-like columns.  Any column
-# type that MySQL can do positional comparisons (<, <=, >, >=) on works.
-# Usually chunks range over all rows in a table but sometimes they only
-# range over a subset of rows if an optional where arg is passed to various
-# subs.  In either case a chunk is like "`col` >= 5 AND `col` < 10".
-# If col is type int then that chunk ranges over up to 5 rows.  Chunks
-# are included in WHERE clauses by various tools to do work on discrete
+# pre-determined ranges of rows defined by boundary values (sometimes also
+# called endpoints) on numeric or numeric-like columns, including date/time
+# types.  Any numeric column type that MySQL can do positional comparisons (<,
+# <=, >, >=) on works.  Chunking over character data is not supported yet (but
+# see issue 568).  Usually chunks range over all rows in a table but sometimes
+# they only range over a subset of rows if an optional where arg is passed to
+# various subs.  In either case a chunk is like "`col` >= 5 AND `col` < 10".  If
+# col is of type int and is unique, then that chunk ranges over up to 5 rows.
+# Chunks are included in WHERE clauses by various tools to do work on discrete
 # chunks of the table instead of trying to work on the entire table at once.
-# Chunks do not overlap and their size is configurable via the chunk_size
-# arg passed to several subs.  The chunk_size can be a number of rows or
-# a size like 1M.  Real chunk sizes are usually close to the requested
-# chunk_size but unless the optional exact arg is passed the real chunk
-# sizes are approximate.  Sometimes the distribution of values on the
-# chunk colun can skew chunking.  If, for example, col has values 0, 100,
-# 101, ... then the zero value skews chunking.  The zero_row arg handles
+# Chunks do not overlap and their size is configurable via the chunk_size arg
+# passed to several subs.  The chunk_size can be a number of rows or a size like
+# 1M, in which case it's in estimated bytes of data.  Real chunk sizes are
+# usually close to the requested chunk_size but unless the optional exact arg is
+# passed the real chunk sizes are approximate.  Sometimes the distribution of
+# values on the chunk colun can skew chunking.  If, for example, col has values
+# 0, 100, 101, ... then the zero value skews chunking.  The zero_row arg handles
 # this.
 
 use strict;
