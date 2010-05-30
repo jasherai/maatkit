@@ -8,8 +8,11 @@ use warnings FATAL => 'all';
 my $d = 3;
 if ( @ARGV && $ARGV[0] =~ m/^\d+$/ ) {
    $d = shift @ARGV;
+   $d = `date -d "$d days ago" +%F`;
 }
-$d = `date -d "3 days ago" +%F`;
+else {
+   $d = `date -d "3 days ago" +%F`;
+}
 
 my @packages = @ARGV;
 if ( !@packages ) {
