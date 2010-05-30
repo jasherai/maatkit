@@ -1,6 +1,6 @@
 Changelog for mk-table-sync:
 
-   * Did not chunk/nibble inside --replicate range (issue 996).
+   * --replicate caused chunking parameters to be ignored (issue 996).
    * Connections did not preserve server SQL modes (issue 801).
 
 2010-05-03: version 1.0.27
