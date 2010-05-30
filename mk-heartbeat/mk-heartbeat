@@ -3031,7 +3031,8 @@ and restart C<mk-heartbeat> every hour (just to make sure that it is restarted
 every hour, in case of a server crash or some other problem), you could use a
 C<crontab> line like this:
 
- 0 * * * * mk-heartbeat --update -D test --stop --sentinel /tmp/mk-heartbeatup
+ 0 * * * * mk-heartbeat --update -D test --stop \
+   --sentinel /tmp/mk-heartbeat-hourly
 
 The non-default L<"--sentinel"> will make sure the hourly C<cron> job stops
 only instances previously started with the same options (that is, from the

@@ -12047,7 +12047,8 @@ server, then use the timings from replaying them to analyze their performance:
 
 Print the structure of events so you can construct a complex L<"--filter">:
 
- mk-query-digest /path/to/slow.log --filter 'print Dumper($event)' --no-report
+ mk-query-digest /path/to/slow.log --no-report \
+   --filter 'print Dumper($event)'
 
 Watch SHOW FULL PROCESSLIST and output a log in slow query log format:
 
@@ -13044,7 +13045,7 @@ Print these sections of the query analysis report.
   date         Current local date and time
   files        Input files read/parse
   header       Summary of the entire analysis run
-  profile      Compact table of queries for an at-a-glance view of the report
+  profile      Compact table of queries for a quick view of the report
   query_report Detailed information about each unique query
   prepared     Prepared statements
 
@@ -13287,9 +13288,12 @@ several types:
   * Simple time value N with optional suffix: N[shmd], where
     s=seconds, h=hours, m=minutes, d=days (default s if no suffix
     given); this is like saying "since N[shmd] ago"
-  * Full date with optional hours:minutes:seconds: YYYY-MM-DD [HH:MM::SS]
-  * Short, MySQL-style date: YYMMDD [HH:MM:SS]
-  * Any time expression evaluated by MySQL: C<CURRENT_DATE - INTERVAL 7 DAY>
+  * Full date with optional hours:minutes:seconds:
+    YYYY-MM-DD [HH:MM::SS]
+  * Short, MySQL-style date:
+    YYMMDD [HH:MM:SS]
+  * Any time expression evaluated by MySQL:
+    CURRENT_DATE - INTERVAL 7 DAY
 
 If you give a MySQL time expression, then you must also specifiy a DSN
 so that mk-query-digest can connect to MySQL to evalue the expression.  If you
@@ -13372,9 +13376,9 @@ For example, this:
 
 will print something like:
 
-  # ########################################################################
+  # ########################################################
   # distill report
-  # ########################################################################
+  # ########################################################
   # 2009-07-25 11:19:27 1+00:00:01   2 SELECT foo
   # 2009-07-27 11:19:30      00:01   2 SELECT bar
   # 2009-07-27 11:30:00 1+06:30:00   2 SELECT foo
