@@ -4782,7 +4782,7 @@ sub main {
          $main_dbh->do($sql);
       };
       if ( $EVAL_ERROR ) {
-         warn "Failed to $sql: $EVAL_ERROR\n"
+         die "Failed to $sql: $EVAL_ERROR\n"
             . "If the --replicate table is InnoDB and the default server "
             . "transaction isolation level is not REPEATABLE-READ then "
             . "checksumming may fail with errors like \"Binary logging not "
