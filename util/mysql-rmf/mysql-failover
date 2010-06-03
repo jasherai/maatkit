@@ -2084,9 +2084,9 @@ sub main {
    if ( $o->get('ask-pass') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
       foreach my $opt ( qw(monitor update) ) {
-         my $dsn       = $o->get($opt);
-         $dsn->{p}     = $pass;
-         $o->get($opt) = $dsn;
+         my $dsn   = $o->get($opt);
+         $dsn->{p} = $pass;
+         $o->set($opt, $dsn);
       }
    }
 
@@ -2503,54 +2503,112 @@ sub failover {
    my ($dead_master, $new_master, $live_master, $servers, $state)
       = @args{@required_args};
    my $dry_run = $args{dry_run};
-
+   
    _log("Beginning failover" . ($dry_run ? " (DRY RUN)" : ""));
 
-   foreach my $server ( $new_master, $live_master ) {
-      my $sql = "STOP SLAVE IO_THREAD /* $server->{name} */";
-      _log($sql);
-      $server->{dbh}->do($sql) unless $dry_run;
-   }
+   my $sql = "STOP SLAVE SQL_THREAD /* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
 
-   my $new_master_status;
-
+   # See where new and live master are relative to dead master.
    my $new  = get_status('slave', $new_master);
    my $live = get_status('slave', $live_master);
-   _log("New master read to dead slave pos $new->{read_master_log_pos}, "
-      . "live master to $live->{read_master_log_pos}");
+   _log("New master read/exec pos on dead master: "
+      . "$new->{read_master_log_pos}/$new->{exec_master_log_pos}");
+   _log("Live master read/exec pos on dead master: "
+      . "$live->{read_master_log_pos}/$live->{exec_master_log_pos}");
+
+   # ########################################################################
+   # Determine where to start live master on new master.
+   # ########################################################################
+
+   # When live master changes to new master it will start at this
+   # new master positiion.  It's critical this pos be correct else
+   # live master may miss extra events as noted in Case 2 below.
+   my $new_master_status;
+
+   # Handle two cases when new master has "extra events", i.e. when it
+   # read more from dead master than live master read.  Example:
+   #    new master read pos: 200
+   #   live master read pos: 150
+   #           extra events: 151-200
    if ( $new->{read_master_log_pos} > $live->{read_master_log_pos} ) {
-      my $sql = "STOP SLAVE SQL_THREAD /* $new_master->{name} */";
-      _log($sql);
-      $new_master->{dbh}->do($sql) unless $dry_run;
 
-      if ( $new->{exec_master_log_pos} > $live->{read_master_log_pos} ) {
-         # TODO: handle this by starting live at some new Position < its
-         # Pos right now.
-         _log("*** WARNING *** New master has executed to pos "
-            . $new->{exec_master_log_pos} . " which is past live master "
-            . "read pos " . $live->{read_master_log_pos} . " from dead master! "
-            . "Live master will miss events between dead master pos "
-            . $live->{read_master_log_pos} . "-" . $new->{exec_master_log_pos}
-         );
+      # Case 1: new master read more than live master but it did not
+      # execute the extra events.  Start new master until it executes to
+      # where live master read.  Then start live master at this new master
+      # pos so it will get the extra events.
+      if ( $new->{exec_master_log_pos} <= $live->{read_master_log_pos} ) {
+         _log("New master read greater than live master read pos");
+         $sql = "START SLAVE SQL_THREAD UNTIL "
+              . "MASTER_LOG_FILE='$live->{relay_master_log_file}', "
+              . "MASTER_LOG_POS=$live->{read_master_log_pos} "
+              . "/* $new_master->{name} */";
+         _log($sql);
+         $new_master->{dbh}->do($sql) unless $dry_run;
+
+         $new_master_status = get_status('master', $new_master,
+            'start pos for live master');
       }
-
-      $sql = "START SLAVE SQL_THREAD UNTIL "
-           . "MASTER_LOG_FILE='$new->{relay_master_log_file}', "
-           . "MASTER_LOG_POS=$live->{read_master_log_pos} "
-           . "/* $new_master->{name} */";
-      _log($sql);
-      $new_master->{dbh}->do($sql) unless $dry_run;
-
-      $new_master_status = get_status('master', $new_master,
-         'start pos for live master');
-
-      $sql = "START SLAVE SQL_THREAD /* $new_master->{name} */";
-      _log($sql);
-      $new_master->{dbh}->do($sql) unless $dry_run;
+      # Case 2: new master already executed the extra events.  Start live
+      # master at an earlier new master pos before it executed the extra
+      # events.
+      else {
+         _log("New master exec pos greater than live master read pos");
+         my $last_new_master_state = get_last_server_state(
+            name  => $new_master->{name},
+            state => $state,
+            where => "exec_master_log_pos <= $live->{read_master_log_pos} "
+                   . "AND relay_master_log_file = '$live->{relay_master_log_file}'",
+         );
+         if ( !$last_new_master_state || !@$last_new_master_state ) {
+            die "Cannot determine last new master statue";
+         }
+         $new_master_status = $last_new_master_state->[0];
+         _log("Will start live master at earlier new master position "
+            . "$new_master_status->{position} in file "
+            . $new_master_status->{file});
+      }
    }
 
+   # If the condition above wasn't true then new master read less events
+   # than live master.  Example:
+   #    new master read pos: 200 
+   #   live master read pos: 300
+   # We can start live master at any new master pos but to avoid
+   # re-execing events we'll get $new_master_status later, after
+   # new master execs everything it read.  E.g. if we start live
+   # master on new master when it has only exec'ed to pos 100 of 200,
+   # then live master will re-exec 100-200 and 200-300, but if we
+   # wait for new master to exec to its max 200, then live master
+   # will only re-exec 200-300.
+
+   # ########################################################################
+   # Determine where to start new master on live master by getting
+   # dead master state at its Time Of Dead (TOD) relative to caught up
+   # new master state.
+   # ########################################################################
+
+   # Wait for new master to catch up to itself, i.e. exec everything it read
+   # from dead master, then get its status.  This will be as close to dead
+   # master's TOD as possible.
+   $sql = "START SLAVE SQL_THREAD /* $new_master->{name} */";
+   _log($sql);
+   $new_master->{dbh}->do($sql) unless $dry_run;
    my $slave_status = wait_for_sql_thread(%args, server => $new_master);
 
+   if ( !$new_master_status ) {
+      $new_master_status = get_status('master', $new_master,
+         'start pos for live master');
+   }
+
+   # Get dead master state at its Time of Death (TOD).  Since new master
+   # has just executed everything it read from dead master, dead master's
+   # TOD relative to new master is when its pos was <= new master's
+   # read/exec pos.  And since dead master was slaved to live master, its 
+   # slave status at TOD tells us where we should start new master on
+   # live master (i.e. start new master at live master pos where dead master
+   # had executed to at TOD).
    my $dead_master_state = get_last_server_state(
       name  => $dead_master->{name},
       state => $state,
@@ -2565,11 +2623,7 @@ sub failover {
    print_observations($dead_master_state,
          "Dead master state near time of death:\n");
 
-   if ( !$new_master_status ) {
-      $new_master_status = get_status('master', $new_master,
-         'start pos for live server');
-   }
-
+   # Change new master from dead master to live master.
    change_master_to(
       %args,
       server          => $new_master,
@@ -2579,14 +2633,10 @@ sub failover {
       master_log_pos  => $dead_master_state->[0]->{exec_master_log_pos},
    );
 
-   # Wait until the slave sql thread on the 2nd master (the one that
-   # the dead master used to be connected to) has caught up to the
-   # io thread.  The io thread should not be advancing because the
-   # dead master should be dead and all we did above was attach
-   # another slave (new master <- 2nd master).  The io thread is stopped
-   # on live master anyway.
+   # ########################################################################
+   # Change live master to new master.
+   # ######################################################################## 
    wait_for_sql_thread(%args, server => $live_master);
-
    change_master_to(
       %args,
       server          => $live_master,
@@ -2596,7 +2646,10 @@ sub failover {
       master_log_pos  => $new_master_status->{position},
    ); 
 
-   my $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
+   # ########################################################################
+   # Allows writes to new master.
+   # ########################################################################
+   $sql = "SET GLOBAL read_only=0 /* $new_master->{name} */";
    _log($sql);
    $new_master->{dbh}->do($sql) unless $dry_run;
 

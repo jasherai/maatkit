@@ -28,7 +28,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 16;
+   plan tests => 17;
 }
 
 my $output = '';
@@ -336,11 +336,20 @@ like(
 # s1 exec > m2 read == bad, m2 will writes
 # #############################################################################
 
+# Add a state record for s1 that shows it was at Position 4242 when it was
+# exec'ing dead m1 pos 65, the closest record pos to m2 read pos 70. 
+$dbh->do("insert into repl.state values('daniel','s1',now(),'mysql-bin.2902',4242,'m1',2900,'mysql-bin.2900',90,'mysql-bin.2900',65,null,1,1,null,1)");
+
+@s1_slave  = ();
+@s1_master = ();
+@m2_slave  = ();
+@m2_master = ();
+
 # First get_status() to see if new pos > live pos.
 push @s1_slave, {
    %s1_slave,
    read_master_log_pos => 100,
-   exec_master_log_pos => 71,
+   exec_master_log_pos => 80,    # s1 has exec'ed past where m2 has read
 };
 push @m2_slave, {
    %m2_slave,
@@ -351,17 +360,20 @@ push @m2_slave, {
 # First get_status() caught up new, common Position.
 push @s1_master, {
    %s1_master,
-   position => 442,  # m2 should start at this pos
+   position => 500,  # m2 should *NOT* start at this pos,
+                     # it should start at 4242 from the insert above
 };
 
-# 2nd get_status() after new master_pos_wait.
+# Get earlier s1 slave status where s1 exec <= m2 read pos 70
+
+# 2nd get_status() for slave to catch up to itself.
 push @s1_slave,  {
    %s1_slave,
    read_master_log_pos => 100,
    exec_master_log_pos => 100,
 };
 
-# get_status() after live master_pos_wait.
+# get_status() for live master to catch up to itself.
 push @m2_slave, {
    %m2_slave,
    read_master_log_pos => 70,
@@ -383,8 +395,14 @@ $output = output(
 
 like(
    $output,
-   qr/ WARNING /,
-   "s1 exec > m2 read, warning"
+   qr/SELECT \* FROM repl\.state WHERE server='s1' AND exec_master_log_pos <= 70 AND relay_master_log_file = 'mysql-bin\.2900' ORDER BY ts DESC LIMIT 1/,
+   "Get last s1 state <= m2 read pos"
+);
+
+like(
+   $output,
+   qr/CHANGE MASTER TO MASTER_HOST='127.1', MASTER_PORT=2902, MASTER_LOG_FILE='mysql-bin.2902', MASTER_LOG_POS=4242 \/\* m2 \*\//,
+   "Start m2 at earlier s1 pos"
 );
 
 # #############################################################################

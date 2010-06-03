@@ -1937,10 +1937,10 @@ sub main {
    if ( $o->get('ask-pass') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
       foreach my $opt ( qw(servers state) ) {
-         my $dsn       = $o->get($opt);
+         my $dsn   = $o->get($opt);
          next if $dsn->{p};
-         $dsn->{p}     = $pass;
-         $o->get($opt) = $dsn;
+         $dsn->{p} = $pass;
+         $o->set($opt, $dsn);
       }
    }
 
