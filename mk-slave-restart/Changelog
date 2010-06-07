@@ -1,6 +1,7 @@
 Changelog for mk-slave-restart:
 
    * Connections did not preserve server SQL modes (issue 801).
+   * Sleep time reported by --verbose might have been incorrect.
 
 2010-04-01: version 1.0.21
 
