@@ -71,7 +71,7 @@ sleep 1;
 $output = `$mk_table_checksum --replicate issue_375.checksums --replicate-check 1`;
 like(
    $output,
-   qr/issue_375\s+t\s+1\s+0\s+1\s+`id` >= 21 AND `id` < 41/,
+   qr/issue_375\s+t\s+1\s+0\s+1\s+`id` >= '21' AND `id` < '41'/,
    "Chunk checksum diff"
 );
 
