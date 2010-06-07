@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 31;
 
 use ChangeHandler;
 use Quoter;
@@ -356,7 +356,7 @@ $ch = new ChangeHandler(
 
 is(
    $ch->make_fetch_back_query('1=1'),
-   "SELECT `a`, CONCAT('0x', HEX(`x`)) AS `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
+   "SELECT `a`, IF(HEX(`x`)='', '', CONCAT('0x', HEX(`x`))) AS `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
    "Wraps BLOB column in CONCAT('0x', HEX(col)) AS col"
 );
 
@@ -378,6 +378,34 @@ is(
    "SELECT `a`, `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
    "Disable blob hexing"
 );
+
+# #############################################################################
+# Issue 1052: mk-table-sync inserts "0x" instead of "" for empty blob and text
+# column values
+# #############################################################################
+$tbl_struct = {
+   cols     => [qw(t)],
+   type_for => {t=>'text'},
+};
+$ch = new ChangeHandler(
+   Quoter     => $q,
+   left_db    => 'test',
+   left_tbl   => 't',
+   right_db   => 'test',
+   right_tbl  => 't',
+   actions    => [ sub {} ],
+   replace    => 0,
+   queue      => 0,
+   tbl_struct => $tbl_struct,
+);
+
+is(
+   $ch->make_fetch_back_query('1=1'),
+   "SELECT IF(HEX(`t`)='', '', CONCAT('0x', HEX(`t`))) AS `t` FROM `test`.`t` WHERE 1=1 LIMIT 1",
+   "Don't prepend 0x to blank blob/text column value (issue 1052)"
+);
+
+# #############################################################################
 
 SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh;
