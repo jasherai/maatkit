@@ -2472,7 +2472,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 6435
+# ChangeHandler package 6437
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ChangeHandler.pm
@@ -2760,7 +2760,7 @@ sub make_fetch_back_query {
             my $col = $_;
             if (    $self->{hex_blob}
                  && $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
-               $col = "IF(HEX(`$col`)='', '', CONCAT('0x', HEX(`$col`))) AS `$col`";
+               $col = "IF(`$col`='', '', CONCAT('0x', HEX(`$col`))) AS `$col`";
             }
             else {
                $col = "`$col`";
