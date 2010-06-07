@@ -2700,10 +2700,11 @@ sub watch_server {
       # there is no error when it wakes up after 1 second, because 1 was too
       # short.  Now it doubles $sleep, back to 512.  $sleep has the same value
       # it did before the error was ever found.
+      my $sleep_time = $increase_sleep ? $sleep : min($sleep, $o->get('sleep'));
       if ( $o->get('verbose') > 2 ) {
-         printf("%s sleeping %f\n", $dp->as_string($dsn), $sleep);
+         printf("%s sleeping %f\n", $dp->as_string($dsn), $sleep_time);
       }
-      sleep($increase_sleep ? $sleep : min($sleep, $o->get('sleep')));
+      sleep $sleep_time;
    }
 
    MKDEBUG && _d('All done with server', $dp->as_string($dsn));
