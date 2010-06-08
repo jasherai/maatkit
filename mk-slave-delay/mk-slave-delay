@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -649,7 +649,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -1389,7 +1389,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -1435,7 +1435,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -1513,7 +1514,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -1554,7 +1555,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
@@ -1573,7 +1576,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5715
+# Transformers package 6387
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -1735,7 +1738,7 @@ sub parse_timestamp {
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
@@ -1925,35 +1928,7 @@ sub main {
 
       $now = time();
 
-      eval{ 
-         $status = $slave->selectrow_hashref("SHOW SLAVE STATUS"); 
-      };
-      $status = undef if ( $EVAL_ERROR );
-
-      if ( $EVAL_ERROR && $o->got('reconnect') ) {
-         my ($counter, $reconnect_attempt) = (0, 0);
-         my $reconnect_time = $o->get('reconnect');
-
-         while ( $counter != 1 ) { 
-            eval { 
-               $slave = get_dbh($dp, $slave_dsn);
-               $status = $slave->selectrow_hashref("SHOW SLAVE STATUS"); 
-            };
-
-            $counter = 1 if ( $status->{master_host} || $reconnect_attempt >= 3 );
-
-            sleep $reconnect_time;
-            $reconnect_attempt++;
-
-            info("Attempting to re-connect to the slave.");
-            info("Re-connection to the slave was successful.") 
-              if ( $counter == 1 && $reconnect_attempt < 3 );
-
-            MKDEBUG && _d("Reconnect attempt: $reconnect_attempt");
-            MKDEBUG && _d("Reconnect time: $reconnect_time");
-         }
-      }
-
+      $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
       if ( !$status || ! %$status ) {
          die "No SLAVE STATUS found.\n";
       }
@@ -2311,12 +2286,6 @@ Port number to use for connection.
 short form: -q
 
 Don't print informational messages about operation.  See L<OUTPUT> for details.
-
-=item --reconnect
-
-type: time
-
-Attempt to reconnect to a disconnect slave 3 times. Need to specify the reconnect time between each attempts.
 
 =item --run-time
 
