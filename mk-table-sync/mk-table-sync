@@ -5323,7 +5323,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6320
+# MasterSlave package 6452
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -6027,7 +6027,7 @@ sub get_replication_filters {
       my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
       MKDEBUG && _d($dbh, $sql);
       my $row = $dbh->selectrow_arrayref($sql);
-      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+      $filters{slave_skip_errors} = $row->[1] if $row->[1] && $row->[1] ne 'OFF';
    }
 
    return \%filters; 
@@ -6532,7 +6532,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5715
+# Transformers package 6387
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -6694,7 +6694,7 @@ sub parse_timestamp {
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;

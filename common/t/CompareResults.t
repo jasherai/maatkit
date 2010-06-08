@@ -791,5 +791,6 @@ like(
    '_d() works'
 );
 diag(`rm -rf $tmpdir`);
+diag(`rm -rf /tmp/*outfile.txt`);
 $sb->wipe_clean($dbh1);
 exit;

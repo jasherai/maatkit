@@ -382,7 +382,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -1004,7 +1004,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -1728,7 +1728,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5998
+# MySQLDump package 6345
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLDump.pm
@@ -1839,17 +1839,10 @@ sub _use_db {
       MKDEBUG && _d('No new DB to use');
       return;
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
+   my $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
-   return $curr;
+   return;
 }
 
 sub get_create_table {
@@ -1862,7 +1855,7 @@ sub get_create_table {
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $href;
@@ -1871,7 +1864,7 @@ sub get_create_table {
          warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
          return;
       }
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       MKDEBUG && _d($sql);
@@ -1894,11 +1887,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -2663,7 +2656,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6240
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -2720,6 +2713,19 @@ sub literal_like {
    return "'$like'";
 }
 
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
@@ -2727,7 +2733,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5715
+# Transformers package 6387
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -2889,7 +2895,7 @@ sub parse_timestamp {
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
@@ -3037,7 +3043,7 @@ sub get_number_of_cpus {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -3083,7 +3089,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -3161,7 +3168,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -3202,7 +3209,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 

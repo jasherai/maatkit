@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6240
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -85,6 +85,19 @@ sub literal_like {
    return "'$like'";
 }
 
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
@@ -92,7 +105,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -714,7 +727,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -1454,7 +1467,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6184
+# MasterSlave package 6452
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -2122,6 +2135,48 @@ sub is_replication_thread {
    return $match;
 }
 
+sub get_replication_filters {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my %filters = ();
+
+   my $status = $self->get_master_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         binlog_do_db
+         binlog_ignore_db
+      );
+   }
+
+   $status = $self->get_slave_status($dbh);
+   if ( $status ) {
+      map { $filters{$_} = $status->{$_} }
+      grep { defined $status->{$_} && $status->{$_} ne '' }
+      qw(
+         replicate_do_db
+         replicate_ignore_db
+         replicate_do_table
+         replicate_ignore_table 
+         replicate_wild_do_table
+         replicate_wild_ignore_table
+      );
+
+      my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
+      MKDEBUG && _d($dbh, $sql);
+      my $row = $dbh->selectrow_arrayref($sql);
+      $filters{slave_skip_errors} = $row->[1] if $row->[1] && $row->[1] ne 'OFF';
+   }
+
+   return \%filters; 
+}
+
 sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
@@ -2143,7 +2198,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Daemon.pm
@@ -2189,7 +2244,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -2267,7 +2323,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -2308,7 +2364,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 

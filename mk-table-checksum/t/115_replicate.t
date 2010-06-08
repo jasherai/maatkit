@@ -124,24 +124,29 @@ is(
 # Issue 720: mk-table-checksum --replicate should set transaction isolation
 # level
 # #############################################################################
-empty_repl_tbl();
-set_binlog_format('row');
-set_tx_isolation('read committed');
+SKIP: {
+   skip "binlog_format test for MySQL v5.1+", 6
+      unless $sandbox_version gt '5.0';
 
-$output = output(
-   sub { mk_table_checksum::main(@args) },
-   undef,
-   stderr   => 1,
-   dont_die => 1,
-);
-like(
-   $output,
-   qr/test\s+checksum_test\s+0\s+127.0.0.1\s+MyISAM\s+1\s+83dcefb7/,
-   "Set session transaction isolation level repeatable read"
-);
+   empty_repl_tbl();
+   set_binlog_format('row');
+   set_tx_isolation('read committed');
 
-set_binlog_format('statement');
-set_tx_isolation('repeatable read');
+   $output = output(
+      sub { mk_table_checksum::main(@args) },
+      undef,
+      stderr   => 1,
+      dont_die => 1,
+   );
+   like(
+      $output,
+      qr/test\s+checksum_test\s+0\s+127.0.0.1\s+MyISAM\s+1\s+83dcefb7/,
+      "Set session transaction isolation level repeatable read"
+   );
+
+   set_binlog_format('statement');
+   set_tx_isolation('repeatable read');
+}
 
 # #############################################################################
 # Done.
