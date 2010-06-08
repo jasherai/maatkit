@@ -860,7 +860,8 @@ sub get_replication_filters {
       my $sql = "SHOW VARIABLES LIKE 'slave_skip_errors'";
       MKDEBUG && _d($dbh, $sql);
       my $row = $dbh->selectrow_arrayref($sql);
-      $filters{slave_skip_errors} = $row->[1] if $row->[1];
+      # "OFF" in 5.0, "" in 5.1
+      $filters{slave_skip_errors} = $row->[1] if $row->[1] && $row->[1] ne 'OFF';
    }
 
    return \%filters; 
