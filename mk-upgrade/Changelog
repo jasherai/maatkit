@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2010-06-08: version 0.9.8
+
    * Connections did not preserve server SQL modes (issue 801).
 
 2010-05-03: version 0.9.7

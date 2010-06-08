@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2010-06-08: version 1.0.18
+
    * Connections did not preserve server SQL modes (issue 801).
    * Added --[no]inject-columns (issue 1003).
    * Added --relay-log-dir (issue 288).

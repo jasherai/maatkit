@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+2010-06-08: version 1.0.22
+
    * Connections did not preserve server SQL modes (issue 801).
 
 2010-04-01: version 1.0.21

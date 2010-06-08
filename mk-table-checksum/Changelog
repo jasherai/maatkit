@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2010-06-08: version 1.2.15
+
    * Chunking did not work with invalid dates (issue 602).
    * --replicate with InnoDB checksum table didn't work with --wait (issue 51).
    * Connections did not preserve server SQL modes (issue 801).

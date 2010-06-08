@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2010-06-08: version 1.0.25
+
    * Connections did not preserve server SQL modes (issue 801).
 
 2010-05-03: version 1.0.24
