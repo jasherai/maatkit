@@ -5,6 +5,7 @@ mk-error-log
 mk-fifo-split
 mk-find
 mk-heartbeat
+mk-index-usage
 mk-kill
 mk-loadavg
 mk-log-player
