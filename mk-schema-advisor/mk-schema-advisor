@@ -2034,14 +2034,18 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# KeySize package 3923
+# KeySize package 6439
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/KeySize.pm
+#   trunk/common/t/KeySize.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package KeySize;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use DBI;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -2092,7 +2096,8 @@ sub get_key_size {
    my $sth = $dbh->prepare($sql);
    eval { $sth->execute(); };
    if ( $EVAL_ERROR ) {
-      $self->{error} = "Cannot get size of $name key: $DBI::errstr";
+      chomp $EVAL_ERROR;
+      $self->{error} = "Cannot get size of $name key: $EVAL_ERROR";
       return;
    }
    $explain = $sth->fetchrow_hashref();
@@ -2118,7 +2123,7 @@ sub get_key_size {
       return;
    }
 
-   return wantarray ? ($key_size, $chosen_key) : $key_size;
+   return $key_size, $chosen_key;
 }
 
 sub query {

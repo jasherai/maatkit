@@ -2160,7 +2160,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# KeySize package 5266
+# KeySize package 6439
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/KeySize.pm
@@ -2249,7 +2249,7 @@ sub get_key_size {
       return;
    }
 
-   return wantarray ? ($key_size, $chosen_key) : $key_size;
+   return $key_size, $chosen_key;
 }
 
 sub query {
