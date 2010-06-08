@@ -4678,7 +4678,7 @@ exports, for purposes such as quickly loading data into test systems.  Do not
 use mk-parallel-dump for backups.
 
 At the time of this release there is a bug that prevents L<"--lock-tables"> from
-working correctly.
+working correctly and an unconfirmed bug that prevents the tool from finishing.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

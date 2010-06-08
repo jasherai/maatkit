@@ -8078,8 +8078,8 @@ or unique index, it might be best to sychronize that data by another means.
 
 At the time of this release, there is a potential bug using
 L<"--lock-and-rename"> with MySQL 5.1, a bug detecting certain differences,
-a bug using ROUND() across different platforms, a bug mixing collations,
-and a bug chunking inside mk-table-checksum boundaries.
+a bug using ROUND() across different platforms, a bug mixing collations, and
+a limitation quoting strings starting with "0x" that look like binary data.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

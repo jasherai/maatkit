@@ -4488,6 +4488,9 @@ This tool is read-only.  It tries to read a log of queries and EXPLAIN them.  It
 also gathers information about all tables in all databases.  It should be very
 low-risk.
 
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
+
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
 see a list of such issues at the following URL:
