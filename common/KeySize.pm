@@ -31,8 +31,7 @@ sub new {
    return bless $self, $class;
 }
 
-# Returns the key's size in scalar context; returns the key's size
-# and the key that MySQL actually chose in list context.
+# Returns the key's size and the key that MySQL actually chose.
 # Required args:
 #    name       => name of key
 #    cols       => arrayref of key's cols
@@ -126,7 +125,7 @@ sub get_key_size {
       return;
    }
 
-   return wantarray ? ($key_size, $chosen_key) : $key_size;
+   return $key_size, $chosen_key;
 }
 
 # Returns the last explained query.

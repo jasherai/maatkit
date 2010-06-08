@@ -60,16 +60,16 @@ is(
 
 # Populate the table to make the WHERE possible.
 $dbh->do('INSERT INTO test.dupe_key VALUE (1,2,3),(4,5,6),(7,8,9),(0,0,0)');
-is(
-   $ks->get_key_size(%key),
-   '20',
+is_deeply(
+   [$ks->get_key_size(%key)],
+   [20, 'a'],
    'Single column int key'
 );
 
 $key{name} = 'a_2';
-is(
-   $ks->get_key_size(%key),
-   '40',
+is_deeply(
+   [$ks->get_key_size(%key)],
+   [40, 'a_2'],
    'Two column int key'
 );
 
