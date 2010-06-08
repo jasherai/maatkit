@@ -2470,7 +2470,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6391
+# TableChunker package 6402
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
