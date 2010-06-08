@@ -8,6 +8,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...v/maatkit/mk-find/mk-find   12.2    2.5    5.9   32.1    n/a    0.1   10.1
 ...logger/mk-fk-error-logger   43.9   28.4   32.1   56.2    n/a  100.0   39.0
 ...mk-heartbeat/mk-heartbeat   12.4    2.4    5.9   30.6    n/a  100.0    9.9
+...ndex-usage/mk-index-usage   44.6   25.3   24.9   61.8    n/a  100.0   38.5
 ...v/maatkit/mk-kill/mk-kill   47.4   30.6   31.4   61.6    n/a  100.0   41.6
 ...kit/mk-loadavg/mk-loadavg   15.8    2.4    7.5   33.1    n/a  100.0   12.5
 ...-log-player/mk-log-player   14.5    2.1    6.6   41.7    n/a  100.0   11.8
