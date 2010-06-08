@@ -61,7 +61,7 @@ $output = `cat $basedir/test/t1.000001.txt`;
 is($output, "999\n", 'Second chunk of csv dump (issue 275)');
 
 $output = `cat $basedir/test/t1.chunks`;
-is($output, "`a` < 500\n`a` >= 500\n", 'Chunks of csv dump (issue 275)');
+is($output, "`a` < '500'\n`a` >= '500'\n", 'Chunks of csv dump (issue 275)');
 
 # #############################################################################
 # Done.

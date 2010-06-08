@@ -190,7 +190,7 @@ SKIP: {
        E => 'InnoDB',
        L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
-       W => '`actor_id` < 51',
+       W => "`actor_id` < '51'",
        Z => 4050,
        first_tbl_in_db => 1
      },
@@ -200,7 +200,7 @@ SKIP: {
        E => 'InnoDB',
        L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
-       W => '`actor_id` >= 51 AND `actor_id` < 101',
+       W => "`actor_id` >= '51' AND `actor_id` < '101'",
        Z => 4050
      },
      {
@@ -209,7 +209,7 @@ SKIP: {
        E => 'InnoDB',
        L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
-       W => '`actor_id` >= 101 AND `actor_id` < 151',
+       W => "`actor_id` >= '101' AND `actor_id` < '151'",
        Z => 4050
      },
      {
@@ -218,7 +218,7 @@ SKIP: {
        E => 'InnoDB',
        L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
-       W => '`actor_id` >= 151',
+       W => "`actor_id` >= '151'",
        Z => 4050,
        last_chunk_in_tbl => 1
      }
