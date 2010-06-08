@@ -2744,7 +2744,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5715
+# Transformers package 6387
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -2777,7 +2782,6 @@ our @EXPORT_OK   = qw(
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
 our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
-                                         # like a MySQL YYMMDD without hh:mm:ss.
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -2787,12 +2791,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -2813,7 +2813,6 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
    my $p   = $args{p} || 0; # float precision
@@ -2826,7 +2825,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -2849,8 +2847,6 @@ sub secs_to_time {
          $secs % 60);
 }
 
-# Convert time values to number of seconds:
-# 1s = 1, 1m = 60, 1h = 3600, 1d = 86400.
 sub time_to_secs {
    my ( $val, $default_suffix ) = @_;
    die "I need a val argument" unless defined $val;
@@ -2888,8 +2884,6 @@ sub shorten {
       $num, $units[$n]);
 }
 
-# Turns a unix timestamp into an ISO8601 formatted date and time.  $gmt makes
-# this relative to GMT, for test determinism.
 sub ts {
    my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
@@ -2906,23 +2900,18 @@ sub ts {
    return $val;
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
-# handles a timestamp with fractions after it.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
 }
 
-# Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch).  Optional microseconds are printed.  $gmt
-# makes it use GMT time instead of local time (to make tests deterministic).
 sub unix_timestamp {
    my ( $val, $gmt ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
@@ -2938,15 +2927,6 @@ sub unix_timestamp {
    return $val;
 }
 
-# Turns several different types of timestamps into a unix timestamp.
-# Each type is auto-detected.  Supported types are:
-#   * N[shdm]                Now - N[shdm]
-#   * 071015 21:43:52        MySQL slow log timestamp
-#   * 2009-07-01 [3:43:01]   Proper timestamp with options HH:MM:SS
-#   * NOW()                  A MySQL time express
-# For the last type, the callback arg is required.  It is passed the
-# given value/expression and is expected to return a single value
-# (the result of the expression).
 sub any_unix_timestamp {
    my ( $val, $callback ) = @_;
 
@@ -2960,9 +2940,6 @@ sub any_unix_timestamp {
       return time - $n;
    }
    elsif ( $val =~ m/^\d{9,}/ ) {
-      # unix timestamp 100000000 is roughly March, 1973, so older
-      # dates won't be caught here; they'll probably be mistaken
-      # for a MySQL slow log timestamp.
       MKDEBUG && _d('ts is already a unix timestamp');
       return $val;
    }
@@ -2985,7 +2962,6 @@ sub any_unix_timestamp {
    return;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
@@ -3057,7 +3033,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5998
+# MySQLDump package 6345
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLDump.pm
@@ -3168,17 +3144,10 @@ sub _use_db {
       MKDEBUG && _d('No new DB to use');
       return;
    }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
+   my $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
-   return $curr;
+   return;
 }
 
 sub get_create_table {
@@ -3191,7 +3160,7 @@ sub get_create_table {
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $href;
@@ -3200,7 +3169,7 @@ sub get_create_table {
          warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
          return;
       }
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       MKDEBUG && _d($sql);
@@ -3223,11 +3192,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
+
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -4197,9 +4166,12 @@ sub main {
    }
    $o->usage_or_errors();
 
-   # Open the database connection.
+   # Open the database connection.  If no connection opts (-h, -P, etc.)
+   # are given on the cmd line then parse_options() will return undef,
+   # but get_cxn() required a defined dsn arg so use an empty hashref.
+   my $dsn = $dp->parse_options($o) || {};
    my $dbh = get_cxn(
-      dsn          => $dp->parse_options($o),
+      dsn          => $dsn,
       OptionParser => $o,
       DSNParser    => $dp,
    );
