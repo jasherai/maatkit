@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Chunking failed on invalid dates (issue 602).
    * --replicate caused chunking parameters to be ignored (issue 996).
    * "0x" was used instead of "" for empty blob and text values (issue 1052).
    * Connections did not preserve server SQL modes (issue 801).
