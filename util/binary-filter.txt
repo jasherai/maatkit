@@ -13,8 +13,6 @@ if ( $query && $query =~ m/_binary/ ) {
       my $quote_cnt = 2;
       pos $query = $start_pos[$i];
       $query =~ m/(?<!\\)'/cg;
-      my $z = pos $query;
-      print ">>>$start_pos[$i] - $z\n";
       push @end_pos, pos $query;
    }
 
