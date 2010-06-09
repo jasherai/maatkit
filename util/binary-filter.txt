@@ -1,0 +1,32 @@
+my $ok    = 1;
+my $query = $event->{arg};
+if ( $query && $query =~ m/_binary/ ) {
+   my @start_pos;
+   while ( $query =~ m/(_binary')/gi ) {
+      my $pos = pos $query;
+      push @start_pos, $pos;
+   }
+
+   @start_pos = reverse @start_pos;
+   my @end_pos;
+   for my $i ( 0..$#start_pos ) {
+      my $quote_cnt = 2;
+      pos $query = $start_pos[$i];
+      $query =~ m/(?<!\\)'/cg;
+      my $z = pos $query;
+      print ">>>$start_pos[$i] - $z\n";
+      push @end_pos, pos $query;
+   }
+
+   my $n = 0;
+   for my $i ( 0..$#start_pos ) {
+      my $offset   = $start_pos[$i];
+      my $len      = $end_pos[$i] - $start_pos[$i];
+      my $token    = "?'";
+      my $subquery = substr($query, $offset, $len, $token);
+      $n++;
+   }
+
+   $event->{arg} = $query;
+}
+$ok
