@@ -1816,6 +1816,104 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SlaveRestart package $Revision$
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SlaveRestart.pm
+#   trunk/common/t/SlaveRestart.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package SlaveRestart;
+
+use strict;
+use warnings FATAL => 'all';
+use POSIX qw(setsid);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ($class, %args) = @_;
+   foreach my $arg ( qw(dbh slave) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $self = {
+      show_slave_status => sub {
+         my ($dbh) = @_;
+         return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
+      },
+      filter            => [],
+      retries           => 1,
+      delay             => \sub { return 5 },
+
+      # Override defaults
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub retry {
+   my ($self, $args) = @_;
+   my ($status, $slave) = $self->_check_slave_status($self->{dbh});
+
+   if ( !$status && $self->{onfail} ) {
+      my ($counter, $reconnect_attempt) = (0, 0);
+      print "Attempting to reconnect to the slave.\n";
+
+      RETRY:
+      while ( $counter != 1 ) {
+         my $sleep_time = ${ $self->{delay} }->();
+         ($status, $slave) = $self->_check_slave_status();
+
+         print "Successfully reconnected to the slave.\n"
+            if ( $status->{master_host} && $reconnect_attempt <= $self->{retries} );
+         last RETRY if ( $status->{master_host} || 
+                         $reconnect_attempt > $self->{retries} );
+
+         sleep $sleep_time;
+         $reconnect_attempt++;
+         MKDEBUG && _d("Reconnect attempt: $reconnect_attempt");
+         MKDEBUG && _d("Reconnect time: $sleep_time");
+         next RETRY;
+      }
+   }  
+   return $status, $slave;
+};
+
+sub _check_slave_status {
+   my ($self, $args) = @_;
+
+   # If there is no argument, it will use the original slave info.
+   # Otherwise, it will attempt to connect to the slave database.
+   my $slave ||= $args;
+
+   my $show_slave_status = $self->{show_slave_status};
+   my $status;
+
+   eval{
+      $slave  = ${ $self->{slave} }->();
+      $status = $show_slave_status->($slave);
+   };
+   return $EVAL_ERROR ? undef : $status, $slave;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SlaveRestart package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1870,6 +1968,14 @@ sub main {
    if ( $o->get('run-time') ) {
       $o->set('run-time', max($o->get('run-time'), 1));
    }
+
+   my $restart = new SlaveRestart(
+      dbh     => get_dbh($dp, $slave_dsn),
+      slave   => \sub { get_dbh($dp, $slave_dsn) },
+      onfail  => $o->got('reconnect'),
+      retries => 3,
+      delay   => \sub { $o->get('reconnect') },
+   );
 
    $o->usage_or_errors();
 
@@ -1927,8 +2033,13 @@ sub main {
    ) {
 
       $now = time();
+      if ( $o->got('reconnect') ) {
+         ($status, $slave) = $restart->retry();
+      }
+      else {
+         $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+      }
 
-      $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
       if ( !$status || ! %$status ) {
          die "No SLAVE STATUS found.\n";
       }
@@ -2286,6 +2397,13 @@ Port number to use for connection.
 short form: -q
 
 Don't print informational messages about operation.  See L<OUTPUT> for details.
+
+=item --reconnect
+
+type: time
+
+Attempt to reconnect to a disconnect slave 3 times. Need to specify the 
+reconnect time between each attempts.
 
 =item --run-time
 
