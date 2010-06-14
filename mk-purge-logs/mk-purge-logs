@@ -1333,83 +1333,6 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6240
-# This package is a copy without comments from the original.  The original
-# with comments and its test file can be found in the SVN repository at,
-#   trunk/common/Quoter.pm
-#   trunk/common/t/Quoter.t
-# See http://code.google.com/p/maatkit/wiki/Developers for more information.
-# ###########################################################################
-package Quoter;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
-}
-
-sub quote {
-   my ( $self, @vals ) = @_;
-   foreach my $val ( @vals ) {
-      $val =~ s/`/``/g;
-   }
-   return join('.', map { '`' . $_ . '`' } @vals);
-}
-
-sub quote_val {
-   my ( $self, $val ) = @_;
-
-   return 'NULL' unless defined $val;         # undef = NULL
-   return "''" if $val eq '';                 # blank string = ''
-   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
-
-   $val =~ s/(['\\])/\\$1/g;
-   return "'$val'";
-}
-
-sub split_unquote {
-   my ( $self, $db_tbl, $default_db ) = @_;
-   $db_tbl =~ s/`//g;
-   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
-   if ( !$tbl ) {
-      $tbl = $db;
-      $db  = $default_db;
-   }
-   return ($db, $tbl);
-}
-
-sub literal_like {
-   my ( $self, $like ) = @_;
-   return unless $like;
-   $like =~ s/([%_])/\\$1/g;
-   return "'$like'";
-}
-
-sub join_quote {
-   my ( $self, $default_db, $db_tbl ) = @_;
-   return unless $db_tbl;
-   my ($db, $tbl) = split(/[.]/, $db_tbl);
-   if ( !$tbl ) {
-      $tbl = $db;
-      $db  = $default_db;
-   }
-   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
-   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
-   return $db ? "$db.$tbl" : $tbl;
-}
-
-1;
-
-# ###########################################################################
-# End Quoter package
-# ###########################################################################
-
-# ###########################################################################
 # MasterSlave package 6452
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
@@ -2342,6 +2265,11 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+use List::Util qw(min);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -2353,8 +2281,8 @@ sub main {
    # most options (see my $final_o below).
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] DSN [DSN...]',
-      description => '',
+      prompt      => '[OPTION...] DSN',
+      description => 'purges binary logs.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -2362,6 +2290,109 @@ sub main {
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   if ( !$o->get('help') ) {
+      # TODO: checks?
+   }
+
+   $o->usage_or_errors();
+
+   # ########################################################################
+   # Create purge rules.
+   # ########################################################################
+   my %purge_rules = %{ $o->get('purge-rules') };
+   if ( $purge_rules{size} ) {
+      my $max_size = $o->get('max-size');
+      # TODO: sanity check the size
+      $purge_rules{size} = $max_size;
+   }
+   if ( $purge_rules{age} ) {
+      my $max_age = $o->get('max-age');
+      $purge_rules{age} = $max_age;
+   }
+   MKDEBUG && _d("Purge rules:", Dumper(\%purge_rules));
+
+   # ########################################################################
+   # Make common modules.
+   # ########################################################################
+   my $ms = new MasterSlave();
+   my %common_modules = (
+      OptionParser => $o,
+      DSNParser    => $dp,
+      MasterSlave  => $ms,
+   );
+
+   # ########################################################################
+   # Connect to master server.
+   # ########################################################################
+   my $dsn_defaults = $dp->parse_options($o);
+   my $master_dsn   = $dp->parse(shift @ARGV, undef, $dsn_defaults);
+   my $master_dbh;
+   eval {
+      $master_dbh = get_cxn($master_dsn, %common_modules);
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot connect to " . $dp->as_string($master_dsn) . ": $EVAL_ERROR";
+      return 1;
+   }
+
+   # ########################################################################
+   # Get info about master binlogs.
+   # ########################################################################
+   my @master_binlogs = get_master_binlogs(
+      dbh => $master_dbh,
+      %common_modules,
+   );
+   MKDEBUG && _d("Master binlogs:", Dumper(\@master_binlogs));
+   if ( !@master_binlogs ) {
+      warn "No master binary logs";
+      return 1;
+   }
+
+   # ########################################################################
+   # Recurse to any slaves and get what binlog they're reading.
+   # ########################################################################
+   my @slave_binlogs = get_slave_binlogs(
+      dbh => $master_dbh,
+      dsn => $master_dsn,
+      %common_modules,
+   );
+   MKDEBUG && _d("Slave binlogs:", Dumper(\@slave_binlogs));
+   if ( !@slave_binlogs ) {
+      warn "No slaves found";
+      return 1;
+   }
+
+   # ########################################################################
+   # Determine which binlogs can be purged.
+   # ########################################################################
+   my $exit_status = 0;
+   eval {
+      my $purge_to = get_purgeable_binlogs(
+         master_binlogs => \@master_binlogs,
+         slave_binlogs  => \@slave_binlogs,
+         %purge_rules,
+      );
+
+      if ( $purge_to ) {
+         print "Purging to binary log $purge_to\n" if $o->get('verbose');
+         my ($n_purged, $size_purged) = purge_binlogs(
+            dbh            => $master_dbh,
+            purge_to       => $purge_to,
+            master_binlogs => \@master_binlogs,
+            purge          => $o->get('purge'),
+            print          => $o->get('print'),
+         );
+         print "Purged $n_purged binary logs, $size_purged total size\n"
+            if $o->get('verbose');
+      }
+      else {
+         print "No binary logs can be purged\n" if $o->get('verbose');
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      warn $EVAL_ERROR;
+      $exit_status = 1;
+   }
 
    return $exit_status;
 }
@@ -2370,24 +2401,187 @@ sub main {
 # Subroutines
 # ############################################################################
 
-sub get_cxn {
-   my ( $dsn, %args ) = @_;
-   foreach my $arg ( qw(o dp) ) {
+sub get_master_binlogs {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $dp  = $args{dp};
-   my $o   = $args{o};
+   my ($dbh, $dp) = @args{@required_args};
 
-   if ( $o->get('ask-pass') && !defined $dsn->{p} ) {
-      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $dsn->{h}: ");
+   my $sql = "SHOW BINARY LOGS";
+   MKDEBUG && _d($dbh, $sql);
+   my $rows = $dbh->selectall_arrayref($sql);
+
+   my @master_binlogs = map {
+      { binlog => $_->[0],
+        size   => $_->[1],
+      }
+   } @$rows;
+
+   return @master_binlogs;
+}
+
+sub get_slave_binlogs {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh dsn OptionParser MasterSlave DSNParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $dsn, $o, $ms, $dp) = @args{@required_args};
+   
+   my @slave_binlogs;
+   $ms->recurse_to_slaves(
+      {  dbh        => $dbh,
+         dsn        => $dsn,
+         dsn_parser => $dp,
+         recurse    => $o->get('recurse'),
+         method     => $o->get('recursion-method'),
+         callback   => sub {
+            my ( $dsn, $dbh, $level, $parent ) = @_;
+            return unless $level;
+            my $slave = $dp->as_string($dsn);
+            MKDEBUG && _d('Found slave:', $slave);
+            $dbh->{FetchHashKeyName} = 'NAME_lc';
+            my $sql = "SHOW SLAVE STATUS";
+            MKDEBUG && _d($dbh, $sql);
+            $dbh->selectrow_hashref($sql);
+            my $stat = $ms->get_slave_status($dbh);
+            push @slave_binlogs, {
+                  slave  => $slave,
+                  binlog => $stat->{master_log_file} || '',
+            };
+            return;
+         },
+      }
+   );
+
+   return @slave_binlogs;
+}
+
+# Arguments:
+#   * master_binlogs hashref: binlog info on master
+#   * slave_binlogs  arrayref: hashrefs with slave name and current master log
+# Optional arguments:
+#    * unused   bool: purge unused binlogs
+#    * size     scalar: max total size of binlogs, purge if exceeded
+#    * age      scalar: max age of binlogs, purge if older
+# Returns a binlog name for PURGE BINARY LOGS TO or undef if no binlogs can
+# be purged.  Dies on error.
+sub get_purgeable_binlogs {
+   my ( %args ) = @_;
+   my @required_args = qw(master_binlogs slave_binlogs);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($master_binlogs, $slave_binlogs) = @args{@required_args};
+
+   return if $args{none};
+
+   # There are several purge rules--unused, age, size--and each may
+   # allow purging to a different binlog.  For each rule find the
+   # binlog (by index number in @$master_binlogs) it can purge to then
+   # select the earliest binlog that satifies all purge rules (i.e.
+   # the min index number).
+   my @purge_to;
+
+   # Each rule should return early if it does not pass.  If it passes,
+   # it should push a value to @push_to.
+
+   if ( $args{unused} ) {
+      my %used_binlog = map { $_->{binlog} => $_ } @$slave_binlogs;
+      my $n_binlogs   = scalar @$master_binlogs; 
+      my $passes      = 0;
+      for my $i ( 0..$n_binlogs ) {
+         my $binlog = $master_binlogs->[$i]->{binlog};
+         if ( $used_binlog{ $binlog } ) {
+            if ( $i == 0 ) {
+               MKDEBUG && _d("First binlog is used");
+            }
+            else {
+               $passes = 1;
+               push @purge_to, $i;
+               MKDEBUG && _d("Earliest used binlog:",
+                  $master_binlogs->[$purge_to[-1]]->{binlog});
+            }
+            last;
+         }
+      }
+      if ( !$passes ) {
+         MKDEBUG && _d('No unused binlogs');
+         return;
+      }
    }
 
-   my $ac  = $o->get('lock') ? 0 : 1;
-   my $dbh = $dp->get_dbh(
-      $dp->get_cxn_params($dsn), { AutoCommit => $ac });
+   if ( !@purge_to ) {
+      MKDEBUG && _d("No binlogs can be purged");
+      return;
+   }
+
+   my $purge_to_file = $master_binlogs->[ min(@purge_to) ]->{binlog};
+   MKDEBUG && _d('Purge to:', $purge_to_file);
+   return $purge_to_file;
+}
+
+# Arguments:
+#   * dbh             dbh
+#   * purge_to        scalar: binlog name to PURGE BINARY LOGS TO
+#   * master_binlogs  arrayref
+# Optional arguments:
+#   * purge    bool: delete the binlogs
+#   * print    bool: print the binlog names to STDOUT
+# Returns the number of binlogs purged and their total size or 0, 0 if
+# purge isn't specified.
+sub purge_binlogs {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh purge_to master_binlogs);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $purge_to, $master_binlogs) = @args{@required_args};
+
+   my $n_purged    = 0;
+   my $size_purged = 0;
+   foreach my $binlog ( @$master_binlogs ) {
+      last if $binlog->{binlog} eq $purge_to;
+      if ( $args{purge} ) {
+         $n_purged++;
+         $size_purged += $binlog->{size};
+      }
+      print "$binlog->{binlog} $binlog->{size}\n" if $args{print};
+   }
+
+   if ( $args{purge} ) {
+      eval {
+         my $sql = "PURGE BINARY LOGS TO ?";
+         MKDEBUG && _d($dbh, $sql);
+         my $sth = $dbh->prepare($sql);
+         $sth->execute($purge_to);
+      };
+      if ( $EVAL_ERROR ) {
+         die "Failed to purge binary logs: $EVAL_ERROR";
+      }
+   }
+
+   return $n_purged, $size_purged;
+}
+
+sub get_cxn {
+   my ( $dsn, %args ) = @_;
+   my @required_args = qw(OptionParser DSNParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($o, $dp) = @args{@required_args};
+
+   if ( $o->get('ask-pass') ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password: ");
+   }
+
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
    $dp->fill_in_dsn($dbh, $dsn);
-   $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
    $dbh->{FetchHashKeyName} = 'NAME_lc';
+
    return $dbh;
 }
 
@@ -2444,6 +2638,10 @@ mk-purge-logs
 
 =head1 OPTIONS
 
+Specify at least one of L<"--purge"> or L<"--print">.
+
+=over
+
 =item --ask-pass
 
 group: Connection
@@ -2452,7 +2650,7 @@ Prompt for a password when connecting to MySQL.
 
 =item --config
 
-type: Array; group: Config
+type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
@@ -2466,9 +2664,19 @@ pathname.
 
 =item --help
 
-group: Help
-
 Show help and exit.
+
+=item --max-age
+
+type: time
+
+Purge logs if they are older than this value.
+
+=item --max-size
+
+type: size
+
+Purge logs if they use more than this much disk space.
 
 =item --password
 
@@ -2494,6 +2702,36 @@ contains no PID, then the script dies.
 short form: -P; type: int; group: Connection
 
 Port number to use for connection.
+
+=item --purge
+
+Purge (delete) binary logs that match all L<"--purge-rules">.
+
+=item --purge-rules
+
+type: Hash; default: unused
+
+Match binary logs for L<"--purge"> or L<"--print">.
+
+=over
+
+=item * age
+
+See L<"--max-age">.
+
+=item * size
+
+See L<"--max-size">.
+
+=item * unused
+
+Unused binlogs.
+
+=back
+
+=item --print
+
+Print which binlogs L<"--purge"> will purge.
 
 =item --recurse
 
@@ -2539,6 +2777,12 @@ Socket file to use for connection.
 short form: -u; type: string; group: Connection
 
 User for login if not current user.
+
+=item --verbose
+
+short form: -v; default: 0
+
+Print information about binary logs found and purged.
 
 =item --version
 
