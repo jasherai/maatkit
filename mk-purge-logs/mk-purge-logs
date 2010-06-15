@@ -2465,7 +2465,6 @@ sub get_slave_binlogs {
 # Optional arguments:
 #    * unused   bool: purge unused binlogs
 #    * size     scalar: max total size of binlogs, purge if exceeded
-#    * age      scalar: max age of binlogs, purge if older
 # Returns a binlog name for PURGE BINARY LOGS TO or undef if no binlogs can
 # be purged.  Dies on error.
 sub get_purge_to_binlog {

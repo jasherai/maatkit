@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 use MaatkitTest;
 require "$trunk/mk-purge-logs/mk-purge-logs";
@@ -165,6 +165,20 @@ is(
    $purge_to_binlog,
    undef,
    "Binglog for max size is used, no purge"
+);
+
+# Repeat same test but reverse the conditions: unused logs but
+# there's still enough space.
+$slave_binlogs->[0]->{name} = "mysql-bin.000003";
+$purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
+   %args,
+   unused   => 1,
+   max_size => 100_000,
+);
+is(
+   $purge_to_binlog,
+   undef,
+   "Unused binlogs don't exceed max size, no purge"
 );
 
 # #############################################################################
