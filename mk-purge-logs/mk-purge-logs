@@ -2271,6 +2271,9 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
+# Global for _log().
+my $verbose = 0;
+
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
@@ -2296,6 +2299,8 @@ sub main {
 
    $o->usage_or_errors();
 
+   $verbose = $o->get('verbose');
+
    # ########################################################################
    # Create purge rules.
    # ########################################################################
@@ -2309,7 +2314,7 @@ sub main {
       my $max_age = $o->get('max-age');
       $purge_rules{max_age} = $max_age;
    }
-   MKDEBUG && _d("Purge rules:", Dumper(\%purge_rules));
+   _log("Purge rules: " . Dumper(\%purge_rules));
 
    # ########################################################################
    # Make common modules.
@@ -2331,7 +2336,7 @@ sub main {
       $master_dbh = get_cxn($master_dsn, %common_modules);
    };
    if ( $EVAL_ERROR ) {
-      die "Cannot connect to " . $dp->as_string($master_dsn) . ": $EVAL_ERROR";
+      warn "Cannot connect to " . $dp->as_string($master_dsn) . ": $EVAL_ERROR";
       return 1;
    }
 
@@ -2342,7 +2347,6 @@ sub main {
       dbh => $master_dbh,
       %common_modules,
    );
-   MKDEBUG && _d("Master binlogs:", Dumper(\@master_binlogs));
    if ( !@master_binlogs ) {
       warn "No master binary logs";
       return 1;
@@ -2351,15 +2355,17 @@ sub main {
    # ########################################################################
    # Recurse to any slaves and get what binlog they're reading.
    # ########################################################################
-   my @slave_binlogs = get_slave_binlogs(
-      dbh => $master_dbh,
-      dsn => $master_dsn,
-      %common_modules,
-   );
-   MKDEBUG && _d("Slave binlogs:", Dumper(\@slave_binlogs));
-   if ( !@slave_binlogs ) {
-      warn "No slaves found";
-      return 1;
+   my @slave_binlogs;
+   if ( $purge_rules{unused} ) {
+      @slave_binlogs = get_slave_binlogs(
+         dbh => $master_dbh,
+         dsn => $master_dsn,
+         %common_modules,
+      );
+      if ( !@slave_binlogs ) {
+         warn "No slaves found";
+         return 1;
+      }
    }
 
    # ########################################################################
@@ -2368,13 +2374,13 @@ sub main {
    my $exit_status = 0;
    eval {
       my $purge_to = get_purge_to_binlog(
+         %purge_rules,
          master_binlogs => \@master_binlogs,
          slave_binlogs  => \@slave_binlogs,
-         %purge_rules,
       );
 
       if ( $purge_to ) {
-         print "Purging to binary log $purge_to\n" if $o->get('verbose');
+         _log("Purging to binary log $purge_to");
          my ($n_purged, $size_purged) = purge_binlogs(
             dbh            => $master_dbh,
             purge_to       => $purge_to,
@@ -2382,11 +2388,10 @@ sub main {
             purge          => $o->get('purge'),
             print          => $o->get('print'),
          );
-         print "Purged $n_purged binary logs, $size_purged total size\n"
-            if $o->get('verbose');
+         _log("Purged $n_purged binary logs, $size_purged bytes total");
       }
       else {
-         print "No binary logs can be purged\n" if $o->get('verbose');
+         _log("No binary logs can be purged");
       }
    };
    if ( $EVAL_ERROR ) {
@@ -2409,6 +2414,8 @@ sub get_master_binlogs {
    }
    my ($dbh, $dp) = @args{@required_args};
 
+   _log("Getting master binary logs");
+
    my $sql = "SHOW BINARY LOGS";
    MKDEBUG && _d($dbh, $sql);
    my $rows = $dbh->selectall_arrayref($sql);
@@ -2418,6 +2425,8 @@ sub get_master_binlogs {
         size => $_->[1],
       }
    } @$rows;
+
+   _log("Master binary logs: " . Dumper(\@master_binlogs));
 
    return @master_binlogs;
 }
@@ -2429,32 +2438,36 @@ sub get_slave_binlogs {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $dsn, $o, $ms, $dp) = @args{@required_args};
-   
+
+   _log("Getting slave binary logs");
+
    my @slave_binlogs;
    $ms->recurse_to_slaves(
       {  dbh        => $dbh,
          dsn        => $dsn,
          dsn_parser => $dp,
-         recurse    => $o->get('recurse'),
+         recurse    => 1,  # TODO: $o->get('recurse'),
          method     => $o->get('recursion-method'),
          callback   => sub {
             my ( $dsn, $dbh, $level, $parent ) = @_;
             return unless $level;
             my $slave = $dp->as_string($dsn);
-            MKDEBUG && _d('Found slave:', $slave);
+            _log("Found slave: $slave");
             $dbh->{FetchHashKeyName} = 'NAME_lc';
             my $sql = "SHOW SLAVE STATUS";
             MKDEBUG && _d($dbh, $sql);
             $dbh->selectrow_hashref($sql);
             my $stat = $ms->get_slave_status($dbh);
             push @slave_binlogs, {
-                  slave => $slave,
-                  name  => $stat->{master_log_file} || '',
+               slave => $slave,
+               name  => $stat->{master_log_file} || '',
             };
             return;
          },
       }
    );
+
+   _log("Slave binary logs: " . Dumper(\@slave_binlogs));
 
    return @slave_binlogs;
 }
@@ -2494,37 +2507,37 @@ sub get_purge_to_binlog {
          my $binlog = $master_binlogs->[$i]->{name};
          if ( $used_binlog{ $binlog } ) {
             if ( $i == 0 ) {
-               MKDEBUG && _d("First binlog is used");
+               _log("First binlog is used");
             }
             else {
                $passes = 1;
                push @purge_to, $i;
-               MKDEBUG && _d("Purge to for unused:", 
-                  $master_binlogs->[$purge_to[-1]]->{name});
+               _log("Purge to for unused: "
+                  . $master_binlogs->[$purge_to[-1]]->{name});
             }
             last;
          }
       }
       if ( !$passes ) {
-         MKDEBUG && _d('No unused binlogs');
+         _log("No unused binary logs");
          return;
       }
    }
    
    if ( my $max_size = $args{max_size} ) {
-      MKDEBUG && _d("Max allowed total binlog size:", $max_size);
+      _log("Max allowed total binlog size: $max_size");
       my $total_size = 0;
       foreach my $binlog ( @$master_binlogs ) {
          $total_size += $binlog->{size} || 0;
       }
-      MKDEBUG && _d("Current total binlog size:", $total_size);
+      _log("Current total binlog size: $total_size");
       return if $total_size <= $max_size;
 
       for my $i ( 0..$n_binlogs ) {
          $total_size -= $master_binlogs->[$i]->{size} || 0;
-         MKDEBUG && _d("Purging", $master_binlogs->[$i]->{name}, "removes",
-            $master_binlogs->[$i]->{size}, "bytes; new total size:",
-            $total_size);
+         _log("Purging $master_binlogs->[$i]->{name} removes "
+            . ($master_binlogs->[$i]->{size} || 0) . " bytes; new total size: "
+            . $total_size);
          if ( $total_size <= $max_size ) {
             # In normal cases, $i points to the last binlog that needs to be
             # purged to satisfy $max_size, so we purge *to* the next binlog
@@ -2535,17 +2548,14 @@ sub get_purge_to_binlog {
             last;
          }
       }
-      MKDEBUG && _d("Purge to for max size:",
-         $master_binlogs->[$purge_to[-1]]->{name});
+      _log("Purge to for max size: "
+         . $master_binlogs->[$purge_to[-1]]->{name});
    }
 
-   if ( !@purge_to ) {
-      MKDEBUG && _d("No binlogs can be purged");
-      return;
-   }
+   # No binary logs can be purged.
+   return unless @purge_to;
 
    my $purge_to_file = $master_binlogs->[ min(@purge_to) ]->{name};
-   MKDEBUG && _d('Purge to:', $purge_to_file);
    return $purge_to_file;
 }
 
@@ -2611,6 +2621,18 @@ sub get_cxn {
    return $dbh;
 }
 
+sub _log {
+   my ( $msg ) = @_;
+   if ( !$verbose ) {
+      MKDEBUG && _d($msg);
+   }
+   else {
+      my $ts = localtime;
+      print "$ts $msg\n";
+   }
+   return;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2637,7 +2659,14 @@ mk-purge-logs - Purge binary logs.
 
 =head1 SYNOPSIS
 
-  mk-purge-logs
+Print and purge all unused binary logs on master:
+
+  mk-purge-logs --print --purge h=master
+
+Silently purge oldest binary logs on master until their total size is less
+than 1M:
+
+  mk-purge --purge-rules max_size --max-size 1M h=master
 
 =head1 RISKS
 
@@ -2692,17 +2721,13 @@ pathname.
 
 Show help and exit.
 
-=item --max-age
-
-type: time
-
-Purge logs if they are older than this value.
-
 =item --max-size
 
 type: size
 
-Purge logs if they use more than this much disk space.
+Purge oldest binary logs until their total size is less than this amount.
+
+This option specifies the value for the L<"--purge-rules"> C<max_size> value.
 
 =item --password
 
@@ -2731,40 +2756,47 @@ Port number to use for connection.
 
 =item --purge
 
-Purge (delete) binary logs that match all L<"--purge-rules">.
+Purge (delete) binary logs that match all L<"--purge-rules">.  The server's
+master binary logs are purged using C<PURGE BINARY LOGS> when this option
+is specified and all L<"--purge-rules"> pass.  Else, no binary logs are
+purged.
+
+Specify L<"--print"> to see which binary logs are purged and their sizes, else
+all binary logs are purged silently unless there is an error.
 
 =item --purge-rules
 
 type: Hash; default: unused
 
-Match binary logs for L<"--purge"> or L<"--print">.
+Match binary logs that pass all of the specified rules.  The rules are
+mutually inclusive, so only binary logs that pass all rules are purged.
+
+Some rules, like C<max_size>, require an extra option to specify their
+value.
 
 =over
 
-=item * max_age
-
-See L<"--max-age">.
-
 =item * max_size
 
-See L<"--max-size">.
+Purge oldest binary logs until the total size of all binary logs is less
+than L<"--max-size">.  C<SHOW BINARY LOGS> lists the size of each binary log.
+If the total of these sizes is greater than L<"--max-size">, then the oldest
+binary logs are purged until the total size is less than or equal to
+L<"--max-size">.
 
 =item * unused
 
-Unused binlogs.
+Purge binary logs that are no longer being read by any slaves.  When this
+rule is specified, mk-purge-logs will recurse to the server's first-level
+slaves (i.e. only direct slaves of the server) and C<SHOW SLAVE STATUS> to
+find which master binary logs they are reading.  Master binary logs not being
+read by any slaves are unused and will be purged.
 
 =back
 
 =item --print
 
 Print which binlogs L<"--purge"> will purge.
-
-=item --recurse
-
-Number of levels to recurse in the hierarchy when discovering slaves.
-Default is infinite.
-
-See L<"--recursion-method">.
 
 =item --recursion-method
 
@@ -2808,7 +2840,9 @@ User for login if not current user.
 
 short form: -v; default: 0
 
-Print information about binary logs found and purged.
+Print information about binary logs found and purged.  By default mk-purge-logs
+operates silently, except for errors which are printed to STDERR.  Specifying
+this option prints extra information to STDOUT about what the tool is doing.
 
 =item --version
 
