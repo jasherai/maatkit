@@ -27,6 +27,7 @@
 #   pct_95             2           2
 #   stddev             0           0
 #   median             2           2
+use `test`;
 select id from test.t where id > 3
 
 # Statistics

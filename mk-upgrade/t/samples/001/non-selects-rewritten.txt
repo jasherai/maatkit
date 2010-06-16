@@ -63,6 +63,7 @@ select * from  t where id is not null
 #   median             2           2
 # Fingerprint
 #   select id from test.t where id > ?
+use `test`;
 select id from test.t where id > 3
 
 # Query 3: ID 0x37BA5C52702C61C6 at byte 0 _______________________________
