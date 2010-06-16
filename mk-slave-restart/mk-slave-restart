@@ -2662,6 +2662,10 @@ sub watch_server {
          next STAT;
       }
 
+      MKDEBUG && _d('Last/current relay log file:',
+         $last_log, $stat->{relay_log_file});
+      MKDEBUG && _d('Last/current relay log pos:',
+         $last_pos, $stat->{relay_log_pos});
       if ( !$last_log
            || $last_log ne $stat->{relay_log_file}   # Avoid infinite loops
            || $last_pos != $stat->{relay_log_pos}
@@ -2728,8 +2732,10 @@ sub watch_server {
                # twice in case another race condition happens -- I restart it,
                # then check the server and it hasn't yet cleared the error
                # message and restarted the SQL thread).
-               $last_log = $stat->{relay_log_file};
-               $last_pos = $stat->{relay_log_pos};
+               if ( $o->get('check-relay-log') ) {
+                  $last_log = $stat->{relay_log_file};
+                  $last_pos = $stat->{relay_log_pos};
+               }
             }
             else {
                MKDEBUG && _d('The slave is stopped, but without error');
@@ -2740,6 +2746,14 @@ sub watch_server {
             printf("%s delayed %s sec\n", $dp->as_string($dsn),
                (defined $stat->{seconds_behind_master} ?
                $stat->{seconds_behind_master} : 'NULL'));
+         }
+      }
+      else {
+         if ( $o->get('verbose') ) {
+            print "Not checking slave because relay log file or position has "
+               . "not changed "
+               . "(file " . ($last_log || '')
+               . " pos "  . ($last_pos || '') . ")\n";
          }
       }
 
@@ -2941,6 +2955,21 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
 runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
+
+=item --[no]check-relay-log
+
+default: yes
+
+Check the last relay log file and position before checking for slave errors.
+
+By default mk-slave-restart will not doing anything (it will just sleep)
+if neither the relay log file nor the relay log position have changed since
+the last check.  This prevents infinite loops (i.e. restarting the same
+error in the same relay log file at the same relay log position).
+
+For certain slave errors, however, this check needs to be disabled by
+specifying C<--no-check-relay-log>.  Do not do this unless you know what
+you are doing!
 
 =item --config
 
