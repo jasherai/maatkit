@@ -27,6 +27,7 @@
 #   pct_95             4           3
 #   stddev             0           0
 #   median             4           3
+use `test`;
 select i from t where i is not null
 
 /* 3C830E3839B916D7-1 */ select i from t where i is not null

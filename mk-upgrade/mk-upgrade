@@ -10370,6 +10370,7 @@ sub main {
             if ( $o->get('fingerprints') ) {
                print "# Fingerprint\n#   $item\n";
             }
+            print "use `$sample->{db}`;\n" if $sample->{db};
             $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
                if $o->get('shorten');
             print "$samp_query\n";
