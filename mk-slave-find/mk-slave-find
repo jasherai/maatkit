@@ -2381,6 +2381,7 @@ sub main {
          dsn        => $master_dsn,
          dsn_parser => $dp,
          recurse    => $o->get('recurse'),
+         method     => $o->get('recursion-method'),
          callback   => sub {
             my ( $dsn, $dbh, $level, $parent ) = @_;
             if ( !$parent ) {
@@ -2392,7 +2393,6 @@ sub main {
             }
             $slaves_found{$dp->as_string($dsn)} = $dsn;
          },
-         method => $o->get('recursion-method'),
       }
    );
 
@@ -2401,7 +2401,17 @@ sub main {
    $root->{h} ||= $dp->get_hostname($dbh);
 
    # Now that we've found them all, recurse through them and do stuff!
-   print_slaves($ms, $root);
+   my %print_node_sub_for = (
+      hostname => \&print_node_hostname,
+      summary  => \&print_node_summary,
+   );
+   my $print_node = $print_node_sub_for{lc($o->get('report-format'))};
+   print_slaves(
+      node        => $root,
+      print_node  => $print_node,
+      MasterSlave => $ms,
+      DSNParser   => $dp,
+   );
 
    return 0;
 }
@@ -2421,7 +2431,32 @@ sub main {
 #       +- 2
 #    +- 1
 sub print_slaves {
-   my ( $ms, $node, $level ) = @_;
+   my ( %args ) = @_;
+   my ($ms, $node, $level, $print_node)
+      = @args{qw(MasterSlave node level print_node)};
+   die "I need a node" unless $node;
+   $level ||= 0;
+
+   MKDEBUG && _d("Printing slaves, starting level", $level);
+
+   # Print this node.
+   $print_node->(%args);
+
+   # If this node has slaves, print them.
+   if ( $node->{children} ) {
+      MKDEBUG && _d($ms->short_host($node), "has slaves");
+      my @slaves = reverse @{$node->{children}};
+      foreach my $slave ( @slaves ) {
+         print_slaves(%args, node=>$slave, level=>$level + 1);
+      }
+   }
+
+   return;
+}
+
+sub print_node_hostname {
+   my ( %args ) = @_;
+   my ($ms, $node, $level) = @args{qw(MasterSlave node level)};
    die "I need a node" unless $node;
    $level ||= 0;
 
@@ -2433,14 +2468,10 @@ sub print_slaves {
    MKDEBUG && _d('level', $level, 'host', $host);
    print "$prefix$host\n";
 
-   if ( $node->{children} ) {
-      my @slaves = reverse @{$node->{children}};
-      foreach my $slave ( @slaves ) {
-         print_slaves($ms, $slave, $level + 1);
-      }
-   }
-
    return;
+}
+
+sub print_node_summary {
 }
 
 sub _d {
@@ -2620,6 +2651,42 @@ However, the hosts method is required if the server uses a non-standard
 port (not 3306).  Usually mk-slave-find does the right thing and finds
 the slaves, but you may give a preferred method and it will be used first.
 If it doesn't find any slaves, the other methods will be tried.
+
+=item --report-format
+
+type: string; default: hostname
+
+Set what information about the slaves is printed.  The report format can be
+one of the following:
+
+=over
+
+=item * hostname
+
+Print just the hostname name of the slaves.  This is the default format.  It
+looks like:
+
+  127.0.0.1:12345
+  +- 127.0.0.1:12346
+     +- 127.0.0.1:12347
+
+=item * summary
+
+Print a summary of each slave's settings.  This report shows more information
+about each slave, like:
+
+  db-slave1 (127.0.0.1:12346)
+  Version        5.1.34-log MySQL Community Server (GPL)
+  Server ID      12346
+  Uptime         11+03:19:00 (started 2010-06-16T08:43:52)
+  Replication    Is a slave, has 1 slaves connected
+  Filters        binlog-do-db=test; replicate-ignore-db=mysql
+  Binary logging STATEMENT
+  Slave status   230 seconds behind, is running, no errors
+  Slave mode     STRICT
+  Auto-increment 1/1
+
+=back
 
 =item --set-vars
 
