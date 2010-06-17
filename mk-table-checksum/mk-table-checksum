@@ -2470,7 +2470,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6402
+# TableChunker package 6487
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2697,8 +2697,46 @@ sub get_first_chunkable_column {
    foreach my $arg ( qw(tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
    my ($exact, @cols) = $self->find_chunk_columns(%args);
-   return ( $cols[0]->{column}, $cols[0]->{index} );
+   my $col = $cols[0]->{column};
+   my $idx = $cols[0]->{index};
+
+   my $wanted_col = $args{chunk_column};
+   my $wanted_idx = $args{chunk_index};
+   MKDEBUG && _d("Preferred chunk col/idx:", $wanted_col, $wanted_idx);
+
+   if ( $wanted_col && $wanted_idx ) {
+      foreach my $chunkable_col ( @cols ) {
+         if (    $wanted_col eq $chunkable_col->{column}
+              && $wanted_idx eq $chunkable_col->{index} ) {
+            $col = $wanted_col;
+            $idx = $wanted_idx;
+            last;
+         }
+      }
+   }
+   elsif ( $wanted_col ) {
+      foreach my $chunkable_col ( @cols ) {
+         if ( $wanted_col eq $chunkable_col->{column} ) {
+            $col = $wanted_col;
+            $idx = $chunkable_col->{index};
+            last;
+         }
+      }
+   }
+   elsif ( $wanted_idx ) {
+      foreach my $chunkable_col ( @cols ) {
+         if ( $wanted_idx eq $chunkable_col->{index} ) {
+            $col = $chunkable_col->{column};
+            $idx = $wanted_idx;
+            last;
+         }
+      }
+   }
+
+   MKDEBUG && _d('First chunkable col/index:', $col, $idx);
+   return $col, $idx;
 }
 
 sub size_to_rows {
@@ -4891,33 +4929,24 @@ sub save_tbl_to_checksum {
       my $create = $du->get_create_table($dbh, $q, $db, $tbl);
       my $struct = $tp->parse($create);
 
-      # If there's a preferred --chunk-column, use it if it's among the
-      # list of chunkable columns.  Else, use the first chunkable column.
-      my ($col, $idx);
-      if ( my $preferred_col = $final_o->get('chunk-column') ) {
-         my ($exact, @cols) = $ch->find_chunk_columns(tbl_struct=>$struct);
-         foreach my $chunkable_col ( @cols ) {
-            if ( $preferred_col eq $chunkable_col->{column} ) {
-               $col = $preferred_col;
-               $idx = $chunkable_col->{index};
-               last;
-            }
-         }
-      }
-      if ( !$col ) {
-         ($col, $idx) = $ch->get_first_chunkable_column(tbl_struct=>$struct);
-      }
-      MKDEBUG && _d('Chunk col:', $col);
+      # Get the first chunkable column and index, taking into account
+      # --chunk-column and --chunk-index.  If either of those options
+      # is specified, get_first_chunkable_column() will try to satisfy
+      # the request but there's no guarantee either will be selected.
+      # http://code.google.com/p/maatkit/issues/detail?id=519
+      my ($chunk_col, $chunk_index) = $ch->get_first_chunkable_column(
+         %args,
+         chunk_column => $final_o->get('chunk-column'),
+         chunk_index  => $final_o->get('chunk-index'),
+         tbl_struct => $struct,
+      );
 
-      if ( my $preferred_idx = $final_o->get('chunk-index') ) {
-         $idx = $preferred_idx if exists $struct->{keys}->{$preferred_idx};
+      my $index_hint;
+      if ( $final_o->get('use-index') && $chunk_col ) {
+         my $hint    = $vp->version_ge($dbh, '4.0.9') ? 'FORCE' : 'USE';
+         $index_hint = "$hint INDEX (" . $q->quote($chunk_index) . ")";
       }
-      $idx = undef if $final_o->get('no-use-index');
-      if ( $idx ) {
-         my $hint = $vp->version_ge($dbh, '4.0.9') ? 'FORCE' : 'USE';
-         $idx     = "$hint INDEX (" . $q->quote($idx) . ")";
-      }
-      MKDEBUG && _d('Index hint:', $idx);
+      MKDEBUG && _d('Index hint:', $index_hint);
 
       my @chunks = '1=1'; # Default.
       my $maxval = undef;
@@ -4925,7 +4954,7 @@ sub save_tbl_to_checksum {
          @chunks = @{$args{given_chunks}};
       }
       else {      
-         if ( $final_o->get('chunk-size') && $col ) {
+         if ( $final_o->get('chunk-size') && $chunk_col ) {
             my ($rows_per_chunk) = $ch->size_to_rows(
                dbh        => $dbh,
                db         => $db,
@@ -4938,14 +4967,14 @@ sub save_tbl_to_checksum {
                dbh        => $dbh,
                db         => $db,
                tbl        => $tbl,
-               chunk_col  => $col,
+               chunk_col  => $chunk_col,
                tbl_struct => $struct,
             );
             if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
                @chunks = $ch->calculate_chunks(
                   dbh        => $dbh,
                   tbl_struct => $struct,
-                  chunk_col  => $col,
+                  chunk_col  => $chunk_col,
                   chunk_size => $rows_per_chunk,
                   %params,
                );
@@ -4959,9 +4988,9 @@ sub save_tbl_to_checksum {
          create   => $create,
          database => $db,
          table    => $tbl,
-         column   => $col,
+         column   => $chunk_col,
          maxval   => $maxval,
-         index    => $idx,
+         index    => $index_hint,
          chunks   => \@chunks,
          final_o  => $final_o,
       };
@@ -6670,7 +6699,7 @@ In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
   algorithm chunk-column chunk-index chunk-size columns count crc function lock
-  modulo no-use-index offset optimize-xor probability separator save-since
+  modulo use-index offset optimize-xor probability separator save-since
   single-chunk since since-column sleep sleep-coef trim wait where
 
 Each of these columns corresponds to the long form of a command-line option.
@@ -6993,13 +7022,17 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
 
-=item --no-use-index
+=item --[no]use-index
 
-Do not add USE INDEX hint to SQL statements.
+default: yes
 
-By default C<mk-table-checksum> adds a C<USE INDEX> hint to each SQL statement
-to coerce MySQL into using the index for the column by which a table will be
-chunked.  This option causes C<mk-table-checksum> to omit C<USE INDEX> hints.
+Add FORCE INDEX hints to SQL statements.
+
+By default C<mk-table-checksum> adds an index hint (C<FORCE INDEX> for MySQL
+v4.0.9 and newer, C<USE INDEX> for older MySQL versions) to each SQL statement
+to coerce MySQL into using the L<"--chunk-index"> (whether the index is
+specified by the option or auto-detected).  Specifying C<--no-use-index> causes
+C<mk-table-checksum> to omit index hints.
 
 =item --offset
 

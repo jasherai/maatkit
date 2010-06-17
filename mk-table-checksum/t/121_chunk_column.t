@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 4;
+   plan tests => 5;
 }
 
 my $output;
@@ -68,6 +68,16 @@ is(
    $output,
    $default_output,
    "Chooses chunk column if --chunk-column isn't chunkable"
+);
+
+$output = output(
+   sub { mk_table_checksum::main(@args, qw(--chunk-column i --chunk-index y)) },
+);
+
+is(
+   $output,
+   $default_output,
+   "Chooses chunk column if it isn't chunkable with --chunk-index",
 );
 
 $output = output(

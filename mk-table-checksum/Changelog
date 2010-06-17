@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Changed --no-use-index to --[no]use-index.
+
 2010-06-08: version 1.2.15
 
    * Chunking did not work with invalid dates (issue 602).
