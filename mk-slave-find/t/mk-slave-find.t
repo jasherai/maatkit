@@ -36,8 +36,10 @@ elsif ( !$slave_2_dbh ) {
    plan skip_all => 'Cannot connect to second sandbox slave';
 }
 else {
-   plan tests => 4;
+   plan tests => 5;
 }
+
+my @args = ('h=127.0.0.1,P=12345,u=msandbox,p=msandbox');
 
 my $output = `$trunk/mk-slave-find/mk-slave-find --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
@@ -84,7 +86,31 @@ like(
 );
 `rm -rf /tmp/mk-script.pid`;
 
-# Stop and remove slave2.
+
+# #############################################################################
+# Summary report format.
+# #############################################################################
+my $outfile = "/tmp/mk-slave-find-output.txt";
+diag(`rm -rf $outfile >/dev/null`);
+
+$output = output(
+   sub { mk_slave_find::main(@args, qw(--report-format summary)) },
+   $outfile,
+);
+diag(`sed -i -e 's/Version.*/Version/g' $outfile`);
+diag(`sed -i -e 's/Uptime.*/Uptime/g' $outfile`);
+diag(`sed -i -e 's/[0-9]* seconds/0 seconds/g' $outfile`);
+
+is(
+   `diff $outfile $trunk/mk-slave-find/t/samples/summary001.txt`,
+   "",
+   "Summary report format"
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+diag(`rm -rf $outfile >/dev/null`);
 diag(`/tmp/12347/stop >/dev/null`);
 diag(`rm -rf /tmp/12347 >/dev/null`);
 exit;
