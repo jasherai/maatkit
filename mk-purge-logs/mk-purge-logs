@@ -2285,7 +2285,7 @@ sub main {
    my $o = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] DSN',
-      description => 'purges binary logs.',
+      description => 'purges binary logs on a master based on purge rules.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -2294,7 +2294,10 @@ sub main {
    $dp->prop('set-vars', $o->get('set-vars'));
 
    if ( !$o->get('help') ) {
-      # TODO: checks?
+      if ( $o->got('total-size') ) {
+         $o->save_error('--total-size must be greater than zero')
+            if $o->get('total-size') <= 0;
+      }
    }
 
    $o->usage_or_errors();
@@ -2305,15 +2308,7 @@ sub main {
    # Create purge rules.
    # ########################################################################
    my %purge_rules = %{ $o->get('purge-rules') };
-   if ( $purge_rules{max_size} ) {
-      my $max_size = $o->get('max-size');
-      # TODO: sanity check the size
-      $purge_rules{max_size} = $max_size;
-   }
-   if ( $purge_rules{max_age} ) {
-      my $max_age = $o->get('max-age');
-      $purge_rules{max_age} = $max_age;
-   }
+   $purge_rules{total_size} = $o->get('total-size') if $purge_rules{total_size};
    _log("Purge rules: " . Dumper(\%purge_rules));
 
    # ########################################################################
@@ -2331,12 +2326,13 @@ sub main {
    # ########################################################################
    my $dsn_defaults = $dp->parse_options($o);
    my $master_dsn   = $dp->parse(shift @ARGV, undef, $dsn_defaults);
+   my $master_host  = $dp->as_string($master_dsn);
    my $master_dbh;
    eval {
       $master_dbh = get_cxn($master_dsn, %common_modules);
    };
    if ( $EVAL_ERROR ) {
-      warn "Cannot connect to " . $dp->as_string($master_dsn) . ": $EVAL_ERROR";
+      warn "Cannot connect to $master_host: $EVAL_ERROR";
       return 1;
    }
 
@@ -2348,7 +2344,9 @@ sub main {
       %common_modules,
    );
    if ( !@master_binlogs ) {
-      warn "No master binary logs";
+      warn "No binary logs were found on $master_host by executing SHOW "
+         . "BINARY LOGS.  Make sure the server was started with the log-bin "
+         . "option.";
       return 1;
    }
 
@@ -2363,7 +2361,9 @@ sub main {
          %common_modules,
       );
       if ( !@slave_binlogs ) {
-         warn "No slaves found";
+         warn "Cannot check unused purge rule because no slaves were found "
+            . "on $master_host.  Make sure the server is a master with at "
+            . "least one slave.";
          return 1;
       }
    }
@@ -2372,14 +2372,14 @@ sub main {
    # Determine which binlogs can be purged.
    # ########################################################################
    my $exit_status = 0;
-   eval {
-      my $purge_to = get_purge_to_binlog(
-         %purge_rules,
-         master_binlogs => \@master_binlogs,
-         slave_binlogs  => \@slave_binlogs,
-      );
-
-      if ( $purge_to ) {
+   
+   my $purge_to = get_purge_to_binlog(
+      %purge_rules,
+      master_binlogs => \@master_binlogs,
+      slave_binlogs  => \@slave_binlogs,
+   );
+   if ( $purge_to ) {
+      eval {
          _log("Purging to binary log $purge_to");
          my ($n_purged, $size_purged) = purge_binlogs(
             dbh            => $master_dbh,
@@ -2387,16 +2387,17 @@ sub main {
             master_binlogs => \@master_binlogs,
             purge          => $o->get('purge'),
             print          => $o->get('print'),
+            dry_run        => $o->get('dry-run'),
          );
          _log("Purged $n_purged binary logs, $size_purged bytes total");
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to purge binary logs: $EVAL_ERROR";
+         $exit_status = 1;
       }
-      else {
-         _log("No binary logs can be purged");
-      }
-   };
-   if ( $EVAL_ERROR ) {
-      warn $EVAL_ERROR;
-      $exit_status = 1;
+   }
+   else {
+      _log("No binary logs can be purged with the given purge rules");
    }
 
    return $exit_status;
@@ -2406,6 +2407,7 @@ sub main {
 # Subroutines
 # ############################################################################
 
+# Returns SHOW BINARY LOGS as an array of hashrefs, one for each binlog.
 sub get_master_binlogs {
    my ( %args ) = @_;
    my @required_args = qw(dbh);
@@ -2416,21 +2418,31 @@ sub get_master_binlogs {
 
    _log("Getting master binary logs");
 
-   my $sql = "SHOW BINARY LOGS";
-   MKDEBUG && _d($dbh, $sql);
-   my $rows = $dbh->selectall_arrayref($sql);
+   my $rows;
+   eval {
+      my $sql = "SHOW BINARY LOGS";
+      MKDEBUG && _d($dbh, $sql);
+      $rows = $dbh->selectall_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      # Probably "ERROR 1381 (HY000): You are not using binary logging". 
+      _log($EVAL_ERROR);
+      return;
+   }
 
    my @master_binlogs = map {
       { name => $_->[0],
         size => $_->[1],
       }
    } @$rows;
-
    _log("Master binary logs: " . Dumper(\@master_binlogs));
 
    return @master_binlogs;
 }
 
+# Returns an array of hashrefs, one for each slave, containing the slave's
+# DSN as a string and which binlog on this master it's reading.  Only level 1
+# slaves (i.e. those directly connected to the master) are searched.
 sub get_slave_binlogs {
    my ( %args ) = @_;
    my @required_args = qw(dbh dsn OptionParser MasterSlave DSNParser);
@@ -2458,6 +2470,10 @@ sub get_slave_binlogs {
             MKDEBUG && _d($dbh, $sql);
             $dbh->selectrow_hashref($sql);
             my $stat = $ms->get_slave_status($dbh);
+            if ( !$stat ) {
+               warn "SHOW SLAVE STATUS on $slave returns nothing";
+               return;
+            }
             push @slave_binlogs, {
                slave => $slave,
                name  => $stat->{master_log_file} || '',
@@ -2466,20 +2482,19 @@ sub get_slave_binlogs {
          },
       }
    );
-
    _log("Slave binary logs: " . Dumper(\@slave_binlogs));
 
    return @slave_binlogs;
 }
 
 # Arguments:
-#   * master_binlogs hashref: binlog info on master
-#   * slave_binlogs  arrayref: hashrefs with slave name and current master log
+#   * master_binlogs arrayref: hashrefs with master's binglogs
+#   * slave_binlogs  arrayref: hashrefs with slave name and master binlog
 # Optional arguments:
-#    * unused   bool: purge unused binlogs
-#    * size     scalar: max total size of binlogs, purge if exceeded
+#    * unused      bool: purge unused binlogs
+#    * total_size  scalar: total size of binlogs, purge if exceeded
 # Returns a binlog name for PURGE BINARY LOGS TO or undef if no binlogs can
-# be purged.  Dies on error.
+# be purged.
 sub get_purge_to_binlog {
    my ( %args ) = @_;
    my @required_args = qw(master_binlogs slave_binlogs);
@@ -2490,15 +2505,12 @@ sub get_purge_to_binlog {
    
    my $n_binlogs = scalar @$master_binlogs; 
 
-   # There are several purge rules--unused, age, size--and each may
-   # allow purging to a different binlog.  For each rule find the
-   # binlog (by index number in @$master_binlogs) it can purge to then
-   # select the earliest binlog that satifies all purge rules (i.e.
-   # the min index number).
+   # Each purge rule can allow purging to a different binlog.  For each
+   # rule find the binlog (by index number in @$master_binlogs) it can
+   # purge to then select the earliest binlog that satifies all purge
+   # rules (i.e. the min index number).  Each rule should return early
+   # if it does not pass; else, it should push a value to @purge_to.
    my @purge_to;
-
-   # Each rule should return early if it does not pass.  If it passes,
-   # it should push a value to @push_to.
 
    if ( $args{unused} ) {
       my %used_binlog = map { $_->{name} => $_ } @$slave_binlogs;
@@ -2507,15 +2519,20 @@ sub get_purge_to_binlog {
          my $binlog = $master_binlogs->[$i]->{name};
          if ( $used_binlog{ $binlog } ) {
             if ( $i == 0 ) {
+               # If the master's first binlog is being used then there's
+               # nothing to purge.
                _log("First binlog is used");
             }
             else {
+               # The master's Nth ($i) binlog is the first one being
+               # used by any slave, where N is > 0, so we can purge
+               # to its Nth binlog.
                $passes = 1;
                push @purge_to, $i;
                _log("Purge to for unused: "
                   . $master_binlogs->[$purge_to[-1]]->{name});
             }
-            last;
+            last;  # stop searching after find the first used binlog
          }
       }
       if ( !$passes ) {
@@ -2524,37 +2541,39 @@ sub get_purge_to_binlog {
       }
    }
    
-   if ( my $max_size = $args{max_size} ) {
-      _log("Max allowed total binlog size: $max_size");
-      my $total_size = 0;
+   if ( my $total_size = $args{total_size} ) {
+      _log("Max allowed total binlog size: $total_size");
+      my $size_binlogs = 0;
       foreach my $binlog ( @$master_binlogs ) {
-         $total_size += $binlog->{size} || 0;
+         $size_binlogs += $binlog->{size} || 0;
       }
-      _log("Current total binlog size: $total_size");
-      return if $total_size <= $max_size;
+      _log("Current total binlog size: $size_binlogs");
+      return if $size_binlogs <= $total_size;
 
       for my $i ( 0..$n_binlogs ) {
-         $total_size -= $master_binlogs->[$i]->{size} || 0;
+         $size_binlogs -= $master_binlogs->[$i]->{size} || 0;
          _log("Purging $master_binlogs->[$i]->{name} removes "
             . ($master_binlogs->[$i]->{size} || 0) . " bytes; new total size: "
-            . $total_size);
-         if ( $total_size <= $max_size ) {
+            . $size_binlogs);
+         if ( $size_binlogs <= $total_size ) {
             # In normal cases, $i points to the last binlog that needs to be
-            # purged to satisfy $max_size, so we purge *to* the next binlog
+            # purged to satisfy $total_size, so we purge *to* the next binlog
             # ($i + 1).  But in the extreme case where we have to purge all
-            # binlogs to satisfy $max_size, $i will point to the last binlog
+            # binlogs to satisfy $total_size, $i will point to the last binlog
             # so we purge to it which doesn't require + 1.
             push @purge_to, ($i + 1 < $n_binlogs ? $i + 1 : $i);
             last;
          }
       }
-      _log("Purge to for max size: "
+      _log("Purge to for total size: "
          . $master_binlogs->[$purge_to[-1]]->{name});
    }
 
    # No binary logs can be purged.
    return unless @purge_to;
 
+   # There's at least one binlog we can purge to.  Select the earliest
+   # (i.e. min()) one and return its name.
    my $purge_to_file = $master_binlogs->[ min(@purge_to) ]->{name};
    return $purge_to_file;
 }
@@ -2562,11 +2581,12 @@ sub get_purge_to_binlog {
 # Arguments:
 #   * dbh             dbh
 #   * purge_to        scalar: binlog name to PURGE BINARY LOGS TO
-#   * master_binlogs  arrayref
+#   * master_binlogs  arrayref: hashrefs with master's binglogs
 # Optional arguments:
-#   * purge    bool: delete the binlogs
+#   * purge    bool: PURGE BINARY LOGS TO purge_to
 #   * print    bool: print the binlog names to STDOUT
-# Returns the number of binlogs purged and their total size or 0, 0 if
+#   * dry_run  bool: print the PURGE TO SQL instead of executing it
+# Returns the number of binlogs purged and their total size or zeros if
 # purge isn't specified.
 sub purge_binlogs {
    my ( %args ) = @_;
@@ -2576,6 +2596,9 @@ sub purge_binlogs {
    }
    my ($dbh, $purge_to, $master_binlogs) = @args{@required_args};
 
+   # Count the number and total size of the binlogs before the purge_to binlog.
+   # Print these binlogs if print was specified since this is the only time
+   # we loop through the list of master binlogs.
    my $n_purged    = 0;
    my $size_purged = 0;
    foreach my $binlog ( @$master_binlogs ) {
@@ -2587,10 +2610,15 @@ sub purge_binlogs {
       print "$binlog->{name} $binlog->{size}\n" if $args{print};
    }
 
-   if ( $args{purge} ) {
+   my $sql = "PURGE BINARY LOGS TO ?";
+   MKDEBUG && _d($dbh, $sql);
+   if ( $args{dry_run} ) {
+      print "This is a dry-run.  The following SQL statement would be "
+         . "executed by specifying --purge without --dry-run:\n";
+      print "$sql $purge_to\n";
+   }
+   elsif ( $args{purge} ) {
       eval {
-         my $sql = "PURGE BINARY LOGS TO ?";
-         MKDEBUG && _d($dbh, $sql);
          my $sth = $dbh->prepare($sql);
          $sth->execute($purge_to);
       };
@@ -2655,7 +2683,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-purge-logs - Purge binary logs.
+mk-purge-logs - Purge binary logs on a master based on purge rules.
 
 =head1 SYNOPSIS
 
@@ -2666,7 +2694,13 @@ Print and purge all unused binary logs on master:
 Silently purge oldest binary logs on master until their total size is less
 than 1M:
 
-  mk-purge --purge-rules max_size --max-size 1M h=master
+  mk-purge-logs --purge-rules total_size --total-size 1M h=master
+
+Purge oldest, unused binary logs on master until their total size is less
+than 500k, print information about work done:
+
+  mk-purge-logs --purge-rules unused,total_size --total-size 500k \
+    --verbose h=master 
 
 =head1 RISKS
 
@@ -2675,7 +2709,12 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-purge-logs deletes binary logs.
+mk-purge-logs purges (deletes) binary logs on a master based on
+L<"--purge-rules"> when L<"--purge"> is specified.  Specifying the wrong
+L<"--purge-rules"> could delete binary logs that are still needed.  :w
+
+binary logs that are still need by specifying bad L<"--purge-rules">.  Specify
+just L<"--print"> first to see which binary logs would be purged.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.
@@ -2689,7 +2728,7 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-purge-logs
+mk-purge-logs purges binary logs on a master based on L<"--purge-rules">.
 
 =head1 OPTIONS
 
@@ -2717,17 +2756,27 @@ short form: -F; type: string; group: Connection
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
+=item --dry-run
+
+Print but do not execute the L<"--purge"> statement (disables L<"--purge">).
+
+Specifying this option allows you to test what mk-purge-logs would do if
+L<"--purge"> were specified without L<"--dry-run">.  The SQL statement for
+L<"--purge"> is printed to STDOUT, like:
+
+  This is a dry-run.  The following SQL statement would be executed
+  by specifying --purge without --dry-run:
+  PURGE BINARY LOGS TO ? mysql-bin.000003
+
+The first line lets you know that L<"--dry-run"> is in effect and the line after
+it is the SQL statement that would be executed on the server with the C<?>
+replaced by the binary log file name that follows it.
+
+See also L<"--print">.
+
 =item --help
 
 Show help and exit.
-
-=item --max-size
-
-type: size
-
-Purge oldest binary logs until their total size is less than this amount.
-
-This option specifies the value for the L<"--purge-rules"> C<max_size> value.
 
 =item --password
 
@@ -2754,6 +2803,19 @@ short form: -P; type: int; group: Connection
 
 Port number to use for connection.
 
+=item --print
+
+Print which binary logs L<"--purge"> will purge.
+
+This option prints each binary log file name and its size to STDOUT that
+would be purged if all the L<"--purge-rules"> pass and L<"--purge"> is
+specified.  Purging uses the MySQL C<PURGE BINARY LOGS TO> command which
+only specifies the binary log file name to purge to, not the binary logs
+before it.  This option will print the binary logs before the purge to binary
+log.
+
+See also L<"--dry-run">.
+
 =item --purge
 
 Purge (delete) binary logs that match all L<"--purge-rules">.  The server's
@@ -2764,6 +2826,8 @@ purged.
 Specify L<"--print"> to see which binary logs are purged and their sizes, else
 all binary logs are purged silently unless there is an error.
 
+See also L<"--dry-run">.
+
 =item --purge-rules
 
 type: Hash; default: unused
@@ -2771,18 +2835,18 @@ type: Hash; default: unused
 Match binary logs that pass all of the specified rules.  The rules are
 mutually inclusive, so only binary logs that pass all rules are purged.
 
-Some rules, like C<max_size>, require an extra option to specify their
+Some rules, like C<total_size>, require an extra option to specify their
 value.
 
 =over
 
-=item * max_size
+=item * total_size
 
 Purge oldest binary logs until the total size of all binary logs is less
-than L<"--max-size">.  C<SHOW BINARY LOGS> lists the size of each binary log.
-If the total of these sizes is greater than L<"--max-size">, then the oldest
+than L<"--total-size">.  C<SHOW BINARY LOGS> lists the size of each binary log.
+If the total of these sizes is greater than L<"--total-size">, then the oldest
 binary logs are purged until the total size is less than or equal to
-L<"--max-size">.
+L<"--total-size">.
 
 =item * unused
 
@@ -2793,10 +2857,6 @@ find which master binary logs they are reading.  Master binary logs not being
 read by any slaves are unused and will be purged.
 
 =back
-
-=item --print
-
-Print which binlogs L<"--purge"> will purge.
 
 =item --recursion-method
 
@@ -2829,6 +2889,14 @@ string will be appended to SET and executed.
 short form: -S; type: string; group: Connection
 
 Socket file to use for connection.
+
+=item --total-size
+
+type: size
+
+Purge oldest binary logs until their total size is less than this amount.
+
+This option specifies the value for the L<"--purge-rules"> C<total_size> value.
 
 =item --user
 

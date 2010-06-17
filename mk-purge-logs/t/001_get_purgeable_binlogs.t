@@ -89,7 +89,7 @@ is(
 
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   max_size => 20_000,
+   total_size => 20_000,
 );
 is(
    $purge_to_binlog,
@@ -101,7 +101,7 @@ is(
 # satisfying the 10k max size (remaining 2 binlogs would = 6_831 in size).
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   max_size => 10_000,
+   total_size => 10_000,
 );
 is(
    $purge_to_binlog,
@@ -111,7 +111,7 @@ is(
 
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   max_size => 19_176,
+   total_size => 19_176,
 );
 is(
    $purge_to_binlog,
@@ -123,7 +123,7 @@ is(
 # binlogs cannot be purged, purging to the last binlog should be suggested.
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   max_size => 1,
+   total_size => 1,
 );
 is(
    $purge_to_binlog,
@@ -143,8 +143,8 @@ is(
 # unused and purging it will satisfy size.
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   unused   => 1,
-   max_size => 10_000,
+   unused     => 1,
+   total_size => 10_000,
 );
 is(
    $purge_to_binlog,
@@ -158,8 +158,8 @@ is(
 $slave_binlogs->[0]->{name} = "mysql-bin.000001";
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   unused   => 1,
-   max_size => 10_000,
+   unused     => 1,
+   total_size => 10_000,
 );
 is(
    $purge_to_binlog,
@@ -172,8 +172,8 @@ is(
 $slave_binlogs->[0]->{name} = "mysql-bin.000003";
 $purge_to_binlog = mk_purge_logs::get_purge_to_binlog(
    %args,
-   unused   => 1,
-   max_size => 100_000,
+   unused     => 1,
+   total_size => 100_000,
 );
 is(
    $purge_to_binlog,

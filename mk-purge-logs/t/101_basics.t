@@ -41,11 +41,35 @@ my $ss = $slave_dbh->selectrow_hashref('show slave status');
 plan skip_all => "Slave did not reset to second master binary log "
    unless $ss->{Master_Log_File} eq $mbinlogs->[1]->[0];
 
-plan tests => 4;
+plan tests => 6;
 
 my @args   = ('h=127.1,P=12345,u=msandbox,p=msandbox');
 my $output = '';
 
+
+# #############################################################################
+# Test --dry-run.
+# #############################################################################
+$output = output(
+   sub { mk_purge_logs::main(@args, qw(--purge --dry-run)) },
+);
+like(
+   $output,
+   qr/dry-run.+?PURGE BINARY LOGS TO \? mysql-bin\.000002/ms,
+   "--dry-run prints PURGE statement"
+);
+
+my $mbinlogs2 = $master_dbh->selectall_arrayref('show binary logs');
+is_deeply(
+   $mbinlogs2,
+   $mbinlogs,
+   "No purge with --dry-run"
+);
+
+
+# #############################################################################
+# Test a real --purge.
+# #############################################################################
 $output = output(
    sub { mk_purge_logs::main(@args, qw(--purge)) },
 );
@@ -55,7 +79,7 @@ is(
    "No output by default"
 );
 
-my $mbinlogs2 = $master_dbh->selectall_arrayref('show binary logs');
+$mbinlogs2 = $master_dbh->selectall_arrayref('show binary logs');
 is_deeply(
    $mbinlogs2,
    [
@@ -64,6 +88,9 @@ is_deeply(
    "Purged unused binary log"
 );
 
+# #############################################################################
+# Test that used binlogs are *not* purged.
+# #############################################################################
 $output = output(
    sub { mk_purge_logs::main(@args, qw(--purge -v)) },
 );
