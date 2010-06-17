@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 61;
+   plan tests => 66;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -823,6 +823,55 @@ foreach my $t ( @valid_t ) {
       "$t is valid"
    );
 }
+
+# #############################################################################
+# Test get_first_chunkable_column().
+# #############################################################################
+$t = $p->parse( load_file('common/t/samples/sakila.film.sql') );
+
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t) ],
+   [ 'film_id', 'PRIMARY' ],
+   "get_first_chunkable_column(), default column and index"
+);
+
+is_deeply(
+   [ $c->get_first_chunkable_column(
+      tbl_struct   => $t,
+      chunk_column => 'language_id',
+   ) ],
+   [ 'language_id', 'idx_fk_language_id' ],
+   "get_first_chunkable_column(), preferred column"
+);
+
+is_deeply(
+   [ $c->get_first_chunkable_column(
+      tbl_struct  => $t,
+      chunk_index => 'idx_fk_original_language_id',
+   ) ],
+   [ 'original_language_id', 'idx_fk_original_language_id' ],
+   "get_first_chunkable_column(), preferred index"
+);
+
+is_deeply(
+   [ $c->get_first_chunkable_column(
+      tbl_struct   => $t,
+      chunk_column => 'language_id',
+      chunk_index  => 'idx_fk_language_id',
+   ) ],
+   [ 'language_id', 'idx_fk_language_id' ],
+   "get_first_chunkable_column(), preferred column and index"
+);
+
+is_deeply(
+   [ $c->get_first_chunkable_column(
+      tbl_struct   => $t,
+      chunk_column => 'film_id',
+      chunk_index  => 'idx_fk_language_id',
+   ) ],
+   [ 'film_id', 'PRIMARY' ],
+   "get_first_chunkable_column(), bad preferred column and index"
+);
 
 # #############################################################################
 # Done.

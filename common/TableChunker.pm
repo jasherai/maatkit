@@ -375,7 +375,7 @@ sub get_first_chunkable_column {
          }
       }
    }
-   else {
+   elsif ( $wanted_idx ) {
       # Preferred index, no column: check if index's left-most column is
       # chunkable, if yes then use its column, else fall back to auto-detected
       # col/index.
