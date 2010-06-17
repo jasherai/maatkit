@@ -336,7 +336,6 @@ sub get_first_chunkable_column {
    foreach my $arg ( qw(tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($tbl_struct) = @args{qw(tbl_struct)};
 
    # First auto-detected chunk col/index.  If any combination of preferred 
    # chunk col or index are specified and are sane, they will overwrite
@@ -352,25 +351,14 @@ sub get_first_chunkable_column {
    MKDEBUG && _d("Preferred chunk col/idx:", $wanted_col, $wanted_idx);
 
    if ( $wanted_col && $wanted_idx ) {
-      # Preferred column and index: check that a sane pair exists.
-      # There can be a case like:
-      #   COLUMN   INDEX
-      #   x        (z, y, x)
-      #   x        (y, x)
-      #   x        (x, y)
-      # If we're not called with exact then find_chunk_columns() will
-      # return all three of those col/indexes.  If the caller wants
-      # col x and index y, then only the last pair is sane.
+      # Preferred column and index: check that the pair is sane.
       foreach my $chunkable_col ( @cols ) {
-         if ( $wanted_col eq $chunkable_col->{column} ) {
-            if ( $tbl_struct->{keys}->{$chunkable_col->{index}}->{cols}->[0]
-                  eq $wanted_col ) {
-               # The wanted column is chunkable and there's an index in which
-               # it's a left-most prefix.
-               $col = $wanted_col;
-               $idx = $wanted_idx;
-               last;
-            }
+         if (    $wanted_col eq $chunkable_col->{column}
+              && $wanted_idx eq $chunkable_col->{index} ) {
+            # The wanted column is chunkable with the wanted index.
+            $col = $wanted_col;
+            $idx = $wanted_idx;
+            last;
          }
       }
    }
@@ -388,8 +376,9 @@ sub get_first_chunkable_column {
       }
    }
    else {
-      # Preferred index, no column: check index's left-most column is chunkable,
-      # if yes then use its column, else fall back to auto-detected col/index.
+      # Preferred index, no column: check if index's left-most column is
+      # chunkable, if yes then use its column, else fall back to auto-detected
+      # col/index.
       foreach my $chunkable_col ( @cols ) {
          if ( $wanted_idx eq $chunkable_col->{index} ) {
             # The wanted index has a chunkable column, so use it and overwrite
