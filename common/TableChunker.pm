@@ -319,13 +319,90 @@ sub calculate_chunks {
    return @chunks;
 }
 
+# Arguments:
+#   * tbl_struct  hashref: return val from TableParser::parse()
+# Optional arguments:
+#   * chunk_column  scalar: preferred chunkable column name
+#   * chunk_index   scalar: preferred chunkable column index name
+#   * exact         bool: passed to find_chunk_columns()
+# Returns the first sane chunkable column and index.  "Sane" means that
+# the first auto-detected chunk col/index are used if any combination of
+# preferred chunk col or index would be really bad, like chunk col=x
+# and chunk index=some index over (y, z).  That's bad because the index
+# doesn't include the column; it would also be bad if the column wasn't
+# a left-most prefix of the index.
 sub get_first_chunkable_column {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my ($tbl_struct) = @args{qw(tbl_struct)};
+
+   # First auto-detected chunk col/index.  If any combination of preferred 
+   # chunk col or index are specified and are sane, they will overwrite
+   # these defaults.  Else, these defaults will be returned.
    my ($exact, @cols) = $self->find_chunk_columns(%args);
-   return ( $cols[0]->{column}, $cols[0]->{index} );
+   my $col = $cols[0]->{column};
+   my $idx = $cols[0]->{index};
+
+   # Wanted/preferred chunk column and index.  Caller only gets what
+   # they want, though, if it results in a sane col/index pair.
+   my $wanted_col = $args{chunk_column};
+   my $wanted_idx = $args{chunk_index};
+   MKDEBUG && _d("Preferred chunk col/idx:", $wanted_col, $wanted_idx);
+
+   if ( $wanted_col && $wanted_idx ) {
+      # Preferred column and index: check that a sane pair exists.
+      # There can be a case like:
+      #   COLUMN   INDEX
+      #   x        (z, y, x)
+      #   x        (y, x)
+      #   x        (x, y)
+      # If we're not called with exact then find_chunk_columns() will
+      # return all three of those col/indexes.  If the caller wants
+      # col x and index y, then only the last pair is sane.
+      foreach my $chunkable_col ( @cols ) {
+         if ( $wanted_col eq $chunkable_col->{column} ) {
+            if ( $tbl_struct->{keys}->{$chunkable_col->{index}}->{cols}->[0]
+                  eq $wanted_col ) {
+               # The wanted column is chunkable and there's an index in which
+               # it's a left-most prefix.
+               $col = $wanted_col;
+               $idx = $wanted_idx;
+               last;
+            }
+         }
+      }
+   }
+   elsif ( $wanted_col ) {
+      # Preferred column, no index: check if column is chunkable, if yes
+      # then use its index, else fall back to default col/index.
+      foreach my $chunkable_col ( @cols ) {
+         if ( $wanted_col eq $chunkable_col->{column} ) {
+            # The wanted column is chunkable, so use its index and overwrite
+            # the defaults.
+            $col = $wanted_col;
+            $idx = $chunkable_col->{index};
+            last;
+         }
+      }
+   }
+   else {
+      # Preferred index, no column: check index's left-most column is chunkable,
+      # if yes then use its column, else fall back to auto-detected col/index.
+      foreach my $chunkable_col ( @cols ) {
+         if ( $wanted_idx eq $chunkable_col->{index} ) {
+            # The wanted index has a chunkable column, so use it and overwrite
+            # the defaults.
+            $col = $chunkable_col->{column};
+            $idx = $wanted_idx;
+            last;
+         }
+      }
+   }
+
+   MKDEBUG && _d('First chunkable col/index:', $col, $idx);
+   return $col, $idx;
 }
 
 # Convert a size in rows or bytes to a number of rows in the table, using SHOW
