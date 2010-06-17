@@ -23,6 +23,7 @@ my $slave_dbh  = $sb->get_dbh_for('slave1');
 # Create slave2 as slave of slave1.
 diag(`/tmp/12347/stop >/dev/null 2>&1`);
 diag(`rm -rf /tmp/12347 >/dev/null 2>&1`);
+diag(`$trunk/sandbox/mk-test-env reset`);
 diag(`$trunk/sandbox/start-sandbox slave 12347 12346 >/dev/null`);
 my $slave_2_dbh = $sb->get_dbh_for('slave2');
 
@@ -52,7 +53,7 @@ is(
    'slave2 is slave of slave1'
 );
 
-$output = `$trunk/mk-slave-find/mk-slave-find -h 127.0.0.1 -P 12345 -u msandbox -p msandbox`;
+$output = `$trunk/mk-slave-find/mk-slave-find -h 127.0.0.1 -P 12345 -u msandbox -p msandbox --report-format hostname`;
 my $expected = <<EOF;
 127.0.0.1:12345
 +- 127.0.0.1:12346
@@ -94,7 +95,7 @@ my $outfile = "/tmp/mk-slave-find-output.txt";
 diag(`rm -rf $outfile >/dev/null`);
 
 $output = output(
-   sub { mk_slave_find::main(@args, qw(--report-format summary)) },
+   sub { mk_slave_find::main(@args) },
    $outfile,
 );
 diag(`sed -i -e 's/Version.*/Version/g' $outfile`);

@@ -2800,7 +2800,7 @@ sub print_node_summary {
       $slave_status = sprintf("%s seconds behind, %s, %s",
          defined $ss->{seconds_behind_master} ? $ss->{seconds_behind_master} : '',
          $ss->{slave_io_running}  eq 'Yes' && $ss->{slave_sql_running} eq 'Yes' ? 'running' : 'not running',
-          $ss->{last_errno} ? "error $ss->{last_errorno}" : "no errors",
+          $ss->{last_errno} ? "error $ss->{last_errno}" : "no errors",
       );
    }
    push @lines, ['Slave status', $slave_status];
@@ -2999,7 +2999,7 @@ If it doesn't find any slaves, the other methods will be tried.
 
 =item --report-format
 
-type: string; default: hostname
+type: string; default: summary
 
 Set what information about the slaves is printed.  The report format can be
 one of the following:
@@ -3008,8 +3008,7 @@ one of the following:
 
 =item * hostname
 
-Print just the hostname name of the slaves.  This is the default format.  It
-looks like:
+Print just the hostname name of the slaves.  It looks like:
 
   127.0.0.1:12345
   +- 127.0.0.1:12346
