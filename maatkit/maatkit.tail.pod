@@ -101,7 +101,11 @@ There is a special --config option, which lets you specify which configuration
 files Maatkit should read.  You specify a comma-separated list of files.
 However, its behavior is not like other command-line options.  It must be given
 B<first> on the command line, before any other options.  If you try to specify
-it anywhere else, it will cause an error.
+it anywhere else, it will cause an error.  Also, you cannot specify
+--config=/path/to/file; you must specify the option and the path to the file(s)
+separated by whitespace, without an equals-sign between them, e.g.
+
+  --config /path/to/file
 
 If you don't want any configuration files at all, specify C<--config ''> to
 provide an empty list of files.
