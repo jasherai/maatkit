@@ -4695,7 +4695,7 @@ sub main {
    # ########################################################################
    # Check for replication filters.
    # ########################################################################
-   if ( $o->get('check-replication-filters') ) {
+   if ( $o->get('replicate') && $o->get('check-replication-filters') ) {
       my @all_repl_filters;
       $ms->recurse_to_slaves(
          {  dbh        => $main_dbh,
@@ -6631,7 +6631,7 @@ checksumming chunk 2 of 5 in table test.test_tbl.
 
 =head1 OPTIONS
 
-L<"--schema"> is restricted to option groups Connection, Filter, Output, Help, Config.
+L<"--schema"> is restricted to option groups Connection, Filter, Output, Help, Config, Safety.
 
 =over
 
@@ -6736,7 +6736,7 @@ How often to check for slave lag if L<"--check-slave-lag"> is given.
 
 =item --[no]check-replication-filters
 
-default: yes
+default: yes; group: Safety
 
 Do not L<"--replicate"> if any replication filters are set.  When
 --replicate is specified, mk-table-checksum tries to detect slaves and look

@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -56,13 +56,26 @@ like(
    "Warns about replication fitlers"
 );
 
-# Remove the replication filter from the slave.
-diag(`/tmp/12346/stop >/dev/null`);
-diag(`mv /tmp/12346/orig.cnf /tmp/12346/my.sandbox.cnf`);
-diag(`/tmp/12346/start >/dev/null`);
+# #############################################################################
+# Issue 1060: mk-table-checksum tries to check replicate sanity options
+# when no --replicate
+# #############################################################################
+$output = output(
+   sub { mk_table_checksum::main('h=127.1,P=12346,u=msandbox,p=msandbox',
+      qw(-d sakila -t film --schema --no-check-replication-filters)) },
+);
+like(
+   $output,
+   qr/sakila.+?film/,
+   "--schema with replication filters (issue 1060)"
+);
 
 # #############################################################################
 # Done.
 # #############################################################################
+# Remove the replication filter from the slave.
+diag(`/tmp/12346/stop >/dev/null`);
+diag(`mv /tmp/12346/orig.cnf /tmp/12346/my.sandbox.cnf`);
+diag(`/tmp/12346/start >/dev/null`);
 $sb->wipe_clean($dbh);
 exit;

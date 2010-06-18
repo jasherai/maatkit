@@ -1,6 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
    * Changed --no-use-index to --[no]use-index.
+   * --schema did not allow --[no]check-replication-filters (issue 1060).
 
 2010-06-08: version 1.2.15
 
