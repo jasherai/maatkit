@@ -8,6 +8,18 @@ create table i (
 );
 insert into i values (0),(100),(101),(102),(103),(104),(105),(106),(107);
 
+create table i_neg (
+   i_neg int not null,
+   unique key (i_neg)
+);
+insert into i_neg values (-10),(-9),(-8),(-7),(-6),(-5),(-4),(-2);
+
+create table i_neg_pos (
+   i_neg_pos int not null,
+   unique key (i_neg_pos)
+);
+insert into i_neg_pos values (-10),(-9),(-8),(-7),(-6),(-5),(-4),(-2),(-1),(0),(1),(2),(3),(4);
+
 create table i_null (
    i_null int,
    unique key (i_null)

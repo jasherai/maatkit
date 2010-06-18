@@ -36,8 +36,8 @@ package TableChunker;
 # usually close to the requested chunk_size but unless the optional exact arg is
 # passed the real chunk sizes are approximate.  Sometimes the distribution of
 # values on the chunk colun can skew chunking.  If, for example, col has values
-# 0, 100, 101, ... then the zero value skews chunking.  The zero_row arg handles
-# this.
+# 0, 100, 101, ... then the zero value skews chunking.  The zero_chunk arg
+# handles this.
 
 use strict;
 use warnings FATAL => 'all';
@@ -152,72 +152,47 @@ sub find_chunk_columns {
 # (NULL is valid).
 # Arguments:
 #   * dbh            dbh
+#   * db             scalar: database name
+#   * tbl            scalar: table name
 #   * tbl_struct     hashref: retval of TableParser::parse()
 #   * chunk_col      scalar: column name to chunk on
 #   * min            scalar: min col value
 #   * max            scalar: max col value
 #   * rows_in_range  scalar: number of rows to chunk
 #   * chunk_size     scalar: requested size of each chunk
+# Optional arguments:
 #   * exact          bool: use exact chunk_size if true else use approximates
+#   * tries
 # Returns a list of WHERE predicates like "`col` >= '10' AND `col` < '20'",
 # one for each chunk.  All values are single-quoted due to
 # http://code.google.com/p/maatkit/issues/detail?id=1002
 sub calculate_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh tbl_struct chunk_col min max rows_in_range
-                        chunk_size dbh) ) {
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col min max rows_in_range
+                          chunk_size);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
-   my $dbh = $args{dbh};
-   my $q   = $self->{Quoter};
-
-   my @chunks;
-   my ($range_func, $start_point, $end_point);
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q        = $self->{Quoter};
+   my $db_tbl   = $q->quote($db, $tbl);
    my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
    MKDEBUG && _d('chunk col type:', $col_type);
 
-   # MySQL functions to convert a non-numeric value to a number
-   # so we can do basic math on it in Perl.  Right now we just
-   # convert temporal values but later we'll need to convert char
-   # and hex values.
-   my %mysql_conv_func_for = (
-      timestamp => 'UNIX_TIMESTAMP',
-      date      => 'TO_DAYS',
-      time      => 'TIME_TO_SEC',
-      datetime  => 'TO_DAYS',
-   );
-
-   # Convert min/max values to start/end point numbers, i.e. numbers
-   # we can do arithmetic with.
+   my $range_func = $self->range_func_for($col_type);
+   my ($start_point, $end_point);
    eval {
-      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-         # These types are already numbers.
-         $start_point = $args{min};
-         $end_point   = $args{max};
-         $range_func  = 'range_num';
-      }
-      elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
-         # These are temporal values.  Convert them using a MySQL func.
-         my $func = $mysql_conv_func_for{$col_type};
-         my $sql = "SELECT $func(?), $func(?)";
-         MKDEBUG && _d($dbh, $sql, $args{min}, $args{max});
-         my $sth = $dbh->prepare($sql);
-         $sth->execute($args{min}, $args{max});
-         ($start_point, $end_point) = $sth->fetchrow_array();
-         $range_func  = "range_$col_type";
-      }
-      elsif ( $col_type eq 'datetime' ) {
-         # This type is temporal, too, but needs special handling.
-         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
-         # to maintain just one kind of code, so I do it all with DATE_ADD().
-         $start_point = $self->timestampdiff($dbh, $args{min});
-         $end_point   = $self->timestampdiff($dbh, $args{max});
-         $range_func  = 'range_datetime';
-      }
-      else {
-         die "I don't know how to chunk $col_type\n";
-      }
+      $start_point = $self->value_to_number(
+         value       => $args{min},
+         column_type => $col_type,
+         dbh         => $dbh,
+      );
+      $end_point  = $self->value_to_number(
+         value       => $args{max},
+         column_type => $col_type,
+         dbh         => $dbh,
+      );
    };
    if ( $EVAL_ERROR ) {
       if ( $EVAL_ERROR =~ m/don't know how to chunk/ ) {
@@ -252,7 +227,36 @@ sub calculate_chunks {
       MKDEBUG && _d('End point is undefined or before start point');
       $end_point = 0;
    }
-   MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
+   MKDEBUG && _d("Actual chunk range:", $start_point, "to", $end_point);
+
+   # Determine if we can include a zero chunk (col = 0).  If yes, then
+   # make sure the start point is non-zero.
+   my $have_zero_chunk = 0;
+   if ( $args{zero_chunk} ) {
+      if ( $start_point != $end_point && $start_point >= 0 ) {
+         MKDEBUG && _d('Zero chunking');
+         my $nonzero_val = $self->get_nonzero_value(
+            %args,
+            db_tbl   => $db_tbl,
+            col      => $args{chunk_col},
+            col_type => $col_type,
+            val      => $args{min}
+         );
+         # Since we called value_to_number() before with this column type
+         # we shouldn't have to worry about it dying here--it would have
+         # died earlier if we can't chunk the column type.
+         $start_point = $self->value_to_number(
+            value       => $nonzero_val,
+            column_type => $col_type,
+            dbh         => $dbh,
+         );
+         $have_zero_chunk = 1;
+      }
+      else {
+         MKDEBUG && _d("Cannot zero chunk");
+      }
+   }
+   MKDEBUG && _d("Using chunk range:", $start_point, "to", $end_point);
 
    # Calculate the chunk size in terms of "distance between endpoints"
    # that will give approximately the right number of rows between the
@@ -278,8 +282,20 @@ sub calculate_chunks {
    # >= 30 AND < 60
    # >= 60 AND < 90
    # >= 90
+   # If zero_chunk was specified and zero chunking was possible, the first
+   # chunk will be = 0 to catch any zero or zero-equivalent (e.g. 00:00:00)
+   # rows.
+   my @chunks;
    my $col = $q->quote($args{chunk_col});
    if ( $start_point < $end_point ) {
+
+      # The zero chunk, if there is one.  It doesn't have to be the first
+      # chunk.  The 0 cannot be quoted because if d='0000-00-00' then
+      # d=0 will work but d='0' will cause warning 1292: Incorrect date
+      # value: '0' for column 'd'.  This might have to column-specific in
+      # future when we chunk on more exotic column types.
+      push @chunks, "$col = 0" if $have_zero_chunk;
+
       my ( $beg, $end );
       my $iter = 0;
       for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
@@ -287,7 +303,9 @@ sub calculate_chunks {
 
          # The first chunk.
          if ( $iter++ == 0 ) {
-            push @chunks, "$col < " . $q->quote_val($end);
+            push @chunks,
+               ($have_zero_chunk ? "$col > 0 AND " : "")
+               ."$col < " . $q->quote_val($end);
          }
          else {
             # The normal case is a chunk in the middle of the range somewhere.
@@ -447,7 +465,6 @@ sub size_to_rows {
 #   * where      scalar: WHERE clause without "WHERE" to restrict range
 #   * index_hint scalar: "FORCE INDEX (...)" clause
 #   * tries      scalar: number of tries to get next real value
-#   * zero_row   bool: allow zero row value as min
 # Returns an array:
 #   * min row value
 #   * max row values
@@ -545,6 +562,81 @@ sub inject_chunks {
    $query =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
 
    return $query;
+}
+
+# #############################################################################
+# MySQL value to Perl number conversion.
+# #############################################################################
+
+# Convert a MySQL column value to a Perl integer.
+# Arguments:
+#   * value       scalar: MySQL value to convert
+#   * column_type scalar: MySQL column type of the value
+#   * dbh         dbh
+# Returns an integer or undef if the value isn't convertible
+# (e.g. date 0000-00-00 is not convertible).
+sub value_to_number {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(value column_type dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($val, $col_type, $dbh) = @args{@required_args};
+   MKDEBUG && _d('Converting MySQL', $col_type, $val);
+
+   # MySQL functions to convert a non-numeric value to a number
+   # so we can do basic math on it in Perl.  Right now we just
+   # convert temporal values but later we'll need to convert char
+   # and hex values.
+   my %mysql_conv_func_for = (
+      timestamp => 'UNIX_TIMESTAMP',
+      date      => 'TO_DAYS',
+      time      => 'TIME_TO_SEC',
+      datetime  => 'TO_DAYS',
+   );
+
+   # Convert the value to a number that Perl can do arithmetic with.
+   my $num;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      # These types are already numbers.
+      $num = $val;
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      # These are temporal values.  Convert them using a MySQL func.
+      my $func = $mysql_conv_func_for{$col_type};
+      my $sql = "SELECT $func(?)";
+      MKDEBUG && _d($dbh, $sql, $val);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($val);
+      ($num) = $sth->fetchrow_array();
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      # This type is temporal, too, but needs special handling.
+      # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
+      # to maintain just one kind of code, so I do it all with DATE_ADD().
+      $num = $self->timestampdiff($dbh, $val);
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+   MKDEBUG && _d('Converts to', $num);
+   return $num;
+}
+
+sub range_func_for {
+   my ( $self, $col_type ) = @_;
+   return unless $col_type;
+   my $range_func;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      $range_func  = "range_$col_type";
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $range_func  = 'range_datetime';
+   }
+   return $range_func;
 }
 
 # ###########################################################################
@@ -649,7 +741,7 @@ sub timestampdiff {
 #   * index_hint scalar: "FORCE INDEX (...)" hint
 #   * where      scalar: WHERE clause without "WHERE"
 #   * tries      scalar: only try this many times/rows to find a real value
-#   * zero_min   bool: allow zero or zero-equivalent min
+#   * zero_chunk bool: do a separate chunk for zero values
 # Some column types can store invalid values, like most of the temporal
 # types.  When evaluated, invalid values return NULL.  If the value is
 # NULL to begin with, then it is not invalid because NULL is valid.
@@ -682,17 +774,6 @@ sub get_valid_end_points {
          val      => $real_min,
          endpoint => 'min',
       );
-      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
-         unless defined $valid_min;
-
-      # Just for the min end point, get the first non-zero row if a
-      # zero (or zero-equivalent) min is not allowed.
-      if ( !$args{zero_min} ) {
-         $valid_min = $self->get_nonzero_value(
-            %args,
-            val => $valid_min
-         );
-      }
       die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
          unless defined $valid_min;
    }
@@ -820,7 +901,7 @@ sub get_first_valid_value {
 }
 
 # Evalutes any temporal value, returns NULL if it's invalid, else returns
-# a value (possible zero). It's magical but tested.  See also,
+# a value (possibly zero). It's magical but tested.  See also,
 # http://hackmysql.com/blog/2010/05/26/detecting-invalid-and-zero-temporal-values/
 sub _validate_temporal_value {
    my ( $dbh, $val ) = @_;

@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 66;
+   plan tests => 70;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -142,6 +142,8 @@ SKIP: {
       rows_in_range => 100,
       chunk_size    => 30,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'film_id',
    );
    is_deeply(
       \@chunks,
@@ -162,6 +164,8 @@ SKIP: {
       rows_in_range => 100,
       chunk_size    => 300,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'film',
    );
    is_deeply(
       \@chunks,
@@ -179,6 +183,8 @@ SKIP: {
       rows_in_range => 100,
       chunk_size    => 300,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'film',
    );
    is_deeply(
       \@chunks,
@@ -196,6 +202,8 @@ SKIP: {
       rows_in_range => 100,
       chunk_size    => 50,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'film',
    );
    is_deeply(
       \@chunks,
@@ -217,6 +225,8 @@ SKIP: {
       rows_in_range => 365,
       chunk_size    => 90,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -239,6 +249,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -258,6 +270,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -278,6 +292,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -297,6 +313,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -317,6 +335,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_7',
    );
    is_deeply(
       \@chunks,
@@ -337,6 +357,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_8',
    );
    is_deeply(
       \@chunks,
@@ -356,6 +378,8 @@ SKIP: {
       rows_in_range => 5,
       chunk_size    => 3,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -375,6 +399,8 @@ SKIP: {
          rows_in_range => 50000000,
          chunk_size    => 3,
          dbh           => $dbh,
+         db            => 'sakila',
+         tbl           => 'checksum_test_5',
       );
    };
    is(
@@ -392,6 +418,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -412,6 +440,8 @@ SKIP: {
       rows_in_range => 3,
       chunk_size    => 1,
       dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'checksum_test_5',
    );
    is_deeply(
       \@chunks,
@@ -581,7 +611,8 @@ $Data::Dumper::Quotekeys = 0;
 $sb->load_file('master', 'common/t/samples/issue_941.sql');
 
 sub test_zero_row {
-   my ( $tbl, $range, $chunks ) = @_;
+   my ( $tbl, $range, $chunks, $zero_chunk ) = @_;
+   $zero_chunk = 1 unless defined $zero_chunk;
    $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_941', $tbl) );
    %params = $c->get_range_statistics(
       dbh        => $dbh,
@@ -589,7 +620,7 @@ sub test_zero_row {
       tbl        => $tbl,
       chunk_col  => $tbl,
       tbl_struct => $t,
-      zero_row   => 0,
+      zero_chunk => $zero_chunk,
    );
    is_deeply(
       \%params,
@@ -599,9 +630,12 @@ sub test_zero_row {
 
    @chunks = $c->calculate_chunks(
       dbh        => $dbh,
+      db         => 'issue_941',
+      tbl        => $tbl,
       tbl_struct => $t,
       chunk_col  => $tbl,
       chunk_size => '2',
+      zero_chunk => $zero_chunk,
       %params,
    );
    is_deeply(
@@ -613,22 +647,55 @@ sub test_zero_row {
    return;
 }
 
+# This can zero chunk because the min, 0, is >= 0.
+# The effective min becomes 100.
 test_zero_row(
    'i',
-   { min=>100, max=>107, rows_in_range=>9 },
+   { min=>0, max=>107, rows_in_range=>9 },
    [
-      "`i` < '102'",
+      "`i` = 0",
+      "`i` > 0 AND `i` < '102'",
       "`i` >= '102' AND `i` < '104'",
       "`i` >= '104' AND `i` < '106'",
       "`i` >= '106'",
    ],
 );
 
+# This cannot zero chunk because the min is < 0.
+test_zero_row(
+   'i_neg',
+   { min=>-10, max=>-2, rows_in_range=>8 },
+   [
+      "`i_neg` < '-8'",
+      "`i_neg` >= '-8' AND `i_neg` < '-6'",
+      "`i_neg` >= '-6' AND `i_neg` < '-4'",
+      "`i_neg` >= '-4'"
+   ],
+);
+
+# This cannot zero chunk because the min is < 0.
+test_zero_row(
+   'i_neg_pos',
+   { min=>-10, max=>4, rows_in_range=>14 },
+   [
+      "`i_neg_pos` < '-8'",
+      "`i_neg_pos` >= '-8' AND `i_neg_pos` < '-6'",
+      "`i_neg_pos` >= '-6' AND `i_neg_pos` < '-4'",
+      "`i_neg_pos` >= '-4' AND `i_neg_pos` < '-2'",
+      "`i_neg_pos` >= '-2' AND `i_neg_pos` < '0'",
+      "`i_neg_pos` >= '0' AND `i_neg_pos` < '2'",
+      "`i_neg_pos` >= '2'",
+   ],
+);
+
+# There's no zero values in this table, but it can still
+# zero chunk because the min is >= 0.
 test_zero_row(
    'i_null',
    { min=>100, max=>107, rows_in_range=>9 },
    [
-      "`i_null` < '102'",
+      "`i_null` = 0",
+      "`i_null` > 0 AND `i_null` < '102'",
       "`i_null` >= '102' AND `i_null` < '104'",
       "`i_null` >= '104' AND `i_null` < '106'",
       "`i_null` >= '106'",
@@ -636,6 +703,8 @@ test_zero_row(
    ],
 );
 
+# Table d has a zero row, 0000-00-00, which is not a valid value
+# for min but can be selected by the zero chunk.
 test_zero_row(
    'd',
    {
@@ -644,11 +713,13 @@ test_zero_row(
       rows_in_range => '6'
    },
    [
-      "`d` < '2010-03-03'",
+      "`d` = 0",
+      "`d` > 0 AND `d` < '2010-03-03'",
       "`d` >= '2010-03-03'",
    ],
 );
 
+# Same as above: one zero row which we can select with the zero chunk.
 test_zero_row(
    'dt',
    {
@@ -657,7 +728,8 @@ test_zero_row(
       rows_in_range => '6',
    },
    [
-      "`dt` < '2010-03-02 09:30:40'",
+      "`dt` = 0",
+      "`dt` > 0 AND `dt` < '2010-03-02 09:30:40'",
       "`dt` >= '2010-03-02 09:30:40' AND `dt` < '2010-03-03 17:00:20'",
       "`dt` >= '2010-03-03 17:00:20'",
    ],
@@ -693,6 +765,8 @@ throws_ok(
    sub {
       @chunks = $c->calculate_chunks(
          dbh        => $dbh,
+         db         => 'issue_602',
+         tbl        => 't',
          tbl_struct => $t,
          chunk_col  => 'b',
          chunk_size => '5',
@@ -768,7 +842,6 @@ $dbh->do("insert into issue_602.t values ('12', '0000-00-00 00:00:00')");
       type_for   => { b => 'datetime' },
       is_numeric => { b => 0          },
    },
-   zero_row   => 0,
 );
 
 is_deeply(
@@ -780,7 +853,6 @@ is_deeply(
    },
    "Gets valid min after zero row"
 );
-
 
 # #############################################################################
 # Test _validate_temporal_value() because it's magical.
