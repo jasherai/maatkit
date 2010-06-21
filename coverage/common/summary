@@ -57,7 +57,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...it/common/TableNibbler.pm   95.3   76.1  100.0   90.0    n/a  100.0   91.3
 ...kit/common/TableParser.pm   91.8   74.0   56.7   93.3    n/a  100.0   84.5
 .../common/TableSyncChunk.pm   89.0   80.0   54.5   81.8    n/a  100.0   84.5
-...kit/common/TableSyncer.pm   82.3   56.7   67.5   92.9    n/a  100.0   74.9
+...kit/common/TableSyncer.pm   89.5   68.8   75.0  100.0    0.0    1.5   81.6
 ...ommon/TableSyncGroupBy.pm   80.8   66.7   50.0   65.0    n/a  100.0   75.9
 ...common/TableSyncNibble.pm   82.1   66.1   47.4   76.0    n/a  100.0   76.0
 ...common/TableSyncStream.pm   74.5   62.5   50.0   65.0    n/a  100.0   70.6
