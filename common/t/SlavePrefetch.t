@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 67;
+use Test::More tests => 70;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -918,7 +918,7 @@ sub use_db {
 # Rewrite INSERT without columns list.
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox slave', 6 unless $slave_dbh;
+   skip 'Cannot connect to sandbox slave', 2 unless $slave_dbh;
 
    my $q  = new Quoter();
    my $tp = new TableParser(Quoter => $q);
@@ -969,6 +969,116 @@ SKIP: {
 
    $sb->wipe_clean($slave_dbh);
 }
+
+
+# #############################################################################
+# Issue 1075: Check if relay log has changed at interval
+# #############################################################################
+$oktorun = 1;
+@queries = ();
+@events  = (
+   {
+      arg         => 'update db.tbl set col=1 where id=1',
+      offset      => 550,
+      end_log_pos => 600,
+   },
+   {
+      arg         => 'update db.tbl set col=1 where id=2',
+      offset      => 600,
+      end_log_pos => 700,
+   },
+   {
+      arg         => 'update db.tbl set col=1 where id=3',
+      offset      => 390,
+      end_log_pos => 505,
+   },
+);
+
+$spf = new SlavePrefetch(
+   dbh             => $dbh,
+   oktorun         => \&oktorun,
+   chk_int         => 2,
+   chk_min         => 1,
+   chk_max         => 3,
+   'io-lag'        => 0,
+   QueryRewriter   => $qr,
+   have_subqueries => 1,
+   stats           => { events => 0 },
+);
+$spf->set_callbacks( wait_for_master => \&wait_for_master );
+$spf->set_callbacks( show_slave_status => \&show_slave_status );
+
+$spf->set_window(50, 500);
+$spf->set_pipeline_pos(500, 600);
+
+# Executing near end of bin01.
+$slave_status = {
+   master_log_file       => 'mysql-bin.000001',
+   read_master_log_pos   => 1_000,
+   exec_master_log_pos   => 1_000,
+   relay_master_log_file => 'mysql-bin.000001',
+   relay_log_file        => 'mysql-relay-bin.000001',
+   relay_log_pos         => 400,
+   slave_io_running      => 'Yes',
+   slave_sql_running     => 'Yes',
+};
+$spf->_get_slave_status();
+@queries = ();
+$event   = shift @events;
+ple();
+is_deeply(
+   \@queries,
+   [[
+      'select isnull(coalesce(  col=1 )) from db.tbl where  id=1',
+      'select col=? from db.tbl where id=?',
+   ]],
+   "Exec near end of relay log 1 (issue 1075)"
+);
+
+# Relay log changes to bin02.  Interval check will check slave status
+# and see that relay log file has changed, resetting the pipeline pos
+# to zero which will be behind so it will skip events until it's caught up.
+$slave_status = {
+   master_log_file       => 'mysql-bin.000002',
+   read_master_log_pos   => 300,
+   exec_master_log_pos   => 300,
+   relay_master_log_file => 'mysql-bin.000002',
+   relay_log_file        => 'mysql-relay-bin.000002',
+   relay_log_pos         => 200,
+   slave_io_running      => 'Yes',
+   slave_sql_running     => 'Yes',
+};
+@queries = ();
+$event   = shift @events;
+ple();
+is_deeply(
+   \@queries,
+   [],
+   "Drop query from old relay log, switch to new relay log (issue 1075)"
+);
+
+# Should have switch to bin02 by now.
+$slave_status = {
+   master_log_file       => 'mysql-bin.000002',
+   read_master_log_pos   => 400,
+   exec_master_log_pos   => 303,
+   relay_master_log_file => 'mysql-bin.000002',
+   relay_log_file        => 'mysql-relay-bin.000002',
+   relay_log_pos         => 301,
+   slave_io_running      => 'Yes',
+   slave_sql_running     => 'Yes',
+};
+@queries = ();
+$event   = shift @events;
+ple();
+is_deeply(
+   \@queries,
+   [[
+      'select isnull(coalesce(  col=1 )) from db.tbl where  id=3',
+      'select col=? from db.tbl where id=?',
+   ]],
+   "Excuting from new relay log (issue 1075)"
+);
 
 # #############################################################################
 # Done.

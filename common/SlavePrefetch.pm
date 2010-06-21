@@ -284,6 +284,12 @@ sub _get_slave_status {
       mpos  => $status->{exec_master_log_pos},
    );
 
+   if ( $self->{slave}->{file} && $self->{slave}->{file} ne $status{file} ) {
+      MKDEBUG && _d('Relay log file has changed from', $self->{slave}->{file},
+         'to', $status{file});
+      $self->reset_pipeline_pos();
+   }
+
    $self->{slave}    = \%status;
    $self->{last_chk} = $self->{stats}->{events};
    MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
