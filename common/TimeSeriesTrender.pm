@@ -1,4 +1,3 @@
-#!/usr/bin/perl
 # This program is copyright 2010-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -16,7 +15,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# FileIterator package $Revision$
+# TimeSeriesTrender package $Revision$
 # ###########################################################################
 package TimeSeriesTrender;
 
