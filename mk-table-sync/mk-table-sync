@@ -8423,11 +8423,19 @@ default: yes
 
 Fetch rows one-by-one from MySQL while comparing.
 
-This is disabled by default.  If enabled, all rows will be fetched into memory
-for comparing.  This may result in the results "cursor" being held open for a
-shorter time on the server, but if the tables are large, it could take a long
-time anyway, and eat all your memory.  For most non-trivial data sizes, you
-want to leave this disabled.
+This option enables C<mysql_use_result> which causes MySQL to hold the selected
+rows on the server until the tool fetches them.  This allows the tool to use
+less memory but may keep the rows locked on the server longer.
+
+If this option is disabled by specifying C<--no-buffer-to-client> then
+C<mysql_store_result> is used which causes MySQL to send all selected rows to
+the tool at once.  This may result in the results "cursor" being held open for
+a shorter time on the server, but if the tables are large, it could take a long
+time anyway, and use all your memory.
+
+For most non-trivial data sizes, you want to leave this option enabled.
+
+This option is disabled when L<"--bidirectional"> is used.
 
 =item --charset
 
