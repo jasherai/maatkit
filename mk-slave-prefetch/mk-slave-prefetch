@@ -3318,7 +3318,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 6498
+# SlavePrefetch package 6500
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3540,12 +3540,6 @@ sub _get_slave_status {
       mpos  => $status->{exec_master_log_pos},
    );
 
-   if ( $self->{slave}->{file} && $self->{slave}->{file} ne $status{file} ) {
-      MKDEBUG && _d('Relay log file has changed from', $self->{slave}->{file},
-         'to', $status{file});
-      $self->reset_pipeline_pos();
-   }
-
    $self->{slave}    = \%status;
    $self->{last_chk} = $self->{stats}->{events};
    MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
@@ -3595,7 +3589,8 @@ sub reset_pipeline_pos {
 }
 
 sub in_window {
-   my ( $self, $event ) = @_;
+   my ( $self, %args ) = @_;
+   my ($event, $oktorun) = @args{qw(event oktorun)};
 
 
    if ( !$event->{offset} ) {
@@ -3617,7 +3612,16 @@ sub in_window {
    if ( $self->_check_slave_status() ) { 
       MKDEBUG && _d('Checking slave status at interval',
          $self->{stats}->{events});
+      my $current_relay_log = $self->{slave}->{file};
       $self->_get_slave_status();
+      if (    $current_relay_log
+           && $current_relay_log ne $self->{slave}->{file} ) {
+         MKDEBUG && _d('Relay log file has changed from',
+            $current_relay_log, 'to', $self->{slave}->{file});
+         $self->reset_pipeline_pos();
+         $args{oktorun}->(0) if $args{oktorun};
+         return;
+      }
       $self->{chk_int} = $self->_get_next_chk_int();
       MKDEBUG && _d('Next check interval:', $self->{chk_int});
    }
@@ -4298,7 +4302,7 @@ sub main {
    if ( !$o->get('dry-run') ) {
       push @pipeline, sub {
          my ( %args ) = @_;
-         return $spf->in_window($args{event});
+         return $spf->in_window(%args);
       }
    }
 
