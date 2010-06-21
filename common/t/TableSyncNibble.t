@@ -138,13 +138,19 @@ is(
       database => 'test',
       table    => 'test1',
    ),
+   ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
    . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))} :
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))}
+   ),
    'First nibble SQL',
 );
 
@@ -153,13 +159,19 @@ is(
       database => 'test',
       table    => 'test1',
    ),
+   ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
    . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))} :
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))}
+   ),
    'First nibble SQL, again',
 );
 
@@ -171,6 +183,7 @@ is(
       database => 'test',
       table    => 'test1',
    ),
+   ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
    . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
@@ -178,7 +191,13 @@ is(
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
-   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))},
+   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))} :
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
+   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))}
+   ),
    'Second nibble SQL',
 );
 
@@ -204,6 +223,7 @@ is(
       database => 'test',
       table    => 'test1',
    ),
+   ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
    . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
@@ -211,7 +231,13 @@ is(
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
-   . q{1=1))},
+   . q{1=1))} :
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
+   . q{1=1))}
+   ),
    'End-of-table nibble SQL',
 );
 
@@ -409,6 +435,11 @@ is(
    "Skips index check when small table (issue 634)"
 );
 
+my ($can_sync, %plugin_args);
+SKIP: {
+   skip "Not tested on MySQL $sandbox_version", 5
+      unless $sandbox_version gt '4.0';
+
 # #############################################################################
 # Issue 560: mk-table-sync generates impossible WHERE
 # Issue 996: might not chunk inside of mk-table-checksum's boundaries
@@ -423,7 +454,7 @@ my $where = '`player_id` >= 201 AND `player_id` < 301';
 
 $sb->load_file('master', 'mk-table-sync/t/samples/issue_560.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_560', 'buddy_list'));
-my (undef, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
+(undef, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
 $t->prepare_to_sync(
    ChangeHandler  => $ch,
    cols           => $tbl_struct->{cols},
@@ -527,13 +558,13 @@ is(
    "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '250') OR (`player_id` = '250' AND `buddy_id` > '809')) AND ((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085')))) AND ((`player_id` >= 201 AND `player_id` < 301))",
    "Sub-nibble 2"
 );
+}
 
 # #############################################################################
 # Issue 804: mk-table-sync: can't nibble because index name isn't lower case?
 # #############################################################################
 $sb->load_file('master', 'common/t/samples/issue_804.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_804', 't'));
-my $can_sync;
 ($can_sync, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
 is(
    $can_sync,
@@ -580,7 +611,10 @@ $t->set_checksum_queries(
 $sql = $t->get_sql(database=>'issue_804', table=>'t');
 is(
    $sql,
-   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))",
+   ($sandbox_version gt '4.0' ?
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))" :
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), MD5(CONCAT(\@crc, MD5(CONCAT_WS('#', `accountid`, `purchaseid`)))))), 32) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))"
+   ),
    'SQL nibble for issue_804 table'
 );
 
