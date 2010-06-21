@@ -7724,11 +7724,20 @@ sub get_cxn {
    MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
    
-   # Insure statement-based replication.
+   # Ensure statement-based replication.
    # http://code.google.com/p/maatkit/issues/detail?id=95
    $sql = '/*!50105 SET @@binlog_format="STATEMENT"*/';
    MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
+
+   if ( $o->get('transaction') ) {
+      my $sql = "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ";
+      eval {
+         MKDEBUG && _d($dbh, $sql);
+         $dbh->do($sql);
+      };
+      die "Failed to $sql: $EVAL_ERROR" if $EVAL_ERROR;
+   }
 
    $dsn_for{$dbh} = $dsn;
 
@@ -8956,6 +8965,10 @@ uses transactions on InnoDB tables, and table locks on all others.
 If C<--no-transaction> is specified, then C<mk-table-sync> will not use
 transactions at all (not even for InnoDB tables) and locking is controlled
 by L<"--lock">.
+
+When enabled, either explicitly or implicitly, the transaction isolation level
+is set C<REPEATABLE READ> and transactions are started C<WITH CONSISTENT
+SNAPSHOT>.
 
 =item --trim
 
