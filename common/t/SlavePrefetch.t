@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 70;
+use Test::More tests => 71;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -26,13 +26,17 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my $qp      = new QueryParser();
-my $qr      = new QueryRewriter(QueryParser=>$qp);
-my $dbh     = 1;  # we don't need to connect yet
-my $oktorun = 1;
+my $qp          = new QueryParser();
+my $qr          = new QueryRewriter(QueryParser=>$qp);
+my $dbh         = 1;  # we don't need to connect yet
+my $oktorun     = 1;
+my $more_events = 1;
 
 sub oktorun {
    return $oktorun;
+}
+sub more_events { 
+   $more_events = $_[0];
 }
 
 my $spf = new SlavePrefetch(
@@ -686,7 +690,7 @@ sub parse_binlog {
 my $event;
 sub ple {
    $spf->{stats}->{events}++;
-   my $e = $spf->in_window($event);
+   my $e = $spf->in_window(event=>$event, oktorun=>\&more_events);
    return unless $e;
    $e = $spf->rewrite_query($e);
    if ( $e ) {
@@ -974,7 +978,8 @@ SKIP: {
 # #############################################################################
 # Issue 1075: Check if relay log has changed at interval
 # #############################################################################
-$oktorun = 1;
+$oktorun     = 1;
+$more_events = 1;
 @queries = ();
 @events  = (
    {
@@ -1055,6 +1060,12 @@ is_deeply(
    \@queries,
    [],
    "Drop query from old relay log, switch to new relay log (issue 1075)"
+);
+
+is(
+   $more_events,
+   0,
+   "No more events when relay log changes"
 );
 
 # Should have switch to bin02 by now.

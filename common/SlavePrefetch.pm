@@ -284,12 +284,6 @@ sub _get_slave_status {
       mpos  => $status->{exec_master_log_pos},
    );
 
-   if ( $self->{slave}->{file} && $self->{slave}->{file} ne $status{file} ) {
-      MKDEBUG && _d('Relay log file has changed from', $self->{slave}->{file},
-         'to', $status{file});
-      $self->reset_pipeline_pos();
-   }
-
    $self->{slave}    = \%status;
    $self->{last_chk} = $self->{stats}->{events};
    MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
@@ -343,7 +337,8 @@ sub reset_pipeline_pos {
 # returns nothing.  This is the public interface; _in_window() should
 # not be called directly.
 sub in_window {
-   my ( $self, $event ) = @_;
+   my ( $self, %args ) = @_;
+   my ($event, $oktorun) = @args{qw(event oktorun)};
 
    # The caller must incr stats->events!  We use this to determine
    # if it's time to check the slave's status again.
@@ -373,7 +368,16 @@ sub in_window {
    if ( $self->_check_slave_status() ) { 
       MKDEBUG && _d('Checking slave status at interval',
          $self->{stats}->{events});
+      my $current_relay_log = $self->{slave}->{file};
       $self->_get_slave_status();
+      if (    $current_relay_log
+           && $current_relay_log ne $self->{slave}->{file} ) {
+         MKDEBUG && _d('Relay log file has changed from',
+            $current_relay_log, 'to', $self->{slave}->{file});
+         $self->reset_pipeline_pos();
+         $args{oktorun}->(0) if $args{oktorun};
+         return;
+      }
       $self->{chk_int} = $self->_get_next_chk_int();
       MKDEBUG && _d('Next check interval:', $self->{chk_int});
    }
