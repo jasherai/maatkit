@@ -50,7 +50,7 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 50;
+   plan tests => 52;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -850,9 +850,70 @@ SKIP: {
    diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null &`);
 }
 
+
+
+# #############################################################################
+# Test with transactions.
+# #############################################################################
+
+# Sandbox::get_dbh_for() defaults to AutoCommit=1.  Autocommit must
+# be off else commit() will cause an error.
+$dbh      = $sb->get_dbh_for('master', {AutoCommit=>0});
+$src_dbh  = $sb->get_dbh_for('master', {AutoCommit=>0});
+$dst_dbh  = $sb->get_dbh_for('slave1', {AutoCommit=>0});
+
+make_plugins();
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
+$src = {
+   dbh      => $src_dbh,
+   misc_dbh => $dbh,
+   db       => 'test',
+   tbl      => 'test1',
+};
+$dst = {
+   dbh => $dst_dbh,
+   db  => 'test',
+   tbl => 'test2',
+};
+%args = (
+   plugins       => $plugins,
+   src           => $src,
+   dst           => $dst,
+   tbl_struct    => $tbl_struct,
+   cols          => $tbl_struct->{cols},
+   chunk_size    => 5,
+   RowDiff       => $rd,
+   ChangeHandler => undef,  # call new_ch()
+   function      => 'SHA1',
+   transaction   => 1,
+   lock          => 1,
+);
+$args{ChangeHandler} = new_ch();
+@rows = ();
+
+# There are no diffs.  This just tests that the code doesn't crash
+# when transaction is true.
+$syncer->sync_table(%args);
+is_deeply(
+   \@rows,
+   [],
+   "Sync with transaction"
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $syncer->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 $sb->wipe_clean($src_dbh);
 $sb->wipe_clean($dst_dbh);
 exit;
