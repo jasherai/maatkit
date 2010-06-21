@@ -3318,7 +3318,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 6236
+# SlavePrefetch package 6498
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3539,6 +3539,12 @@ sub _get_slave_status {
       mfile => $status->{relay_master_log_file},
       mpos  => $status->{exec_master_log_pos},
    );
+
+   if ( $self->{slave}->{file} && $self->{slave}->{file} ne $status{file} ) {
+      MKDEBUG && _d('Relay log file has changed from', $self->{slave}->{file},
+         'to', $status{file});
+      $self->reset_pipeline_pos();
+   }
 
    $self->{slave}    = \%status;
    $self->{last_chk} = $self->{stats}->{events};
