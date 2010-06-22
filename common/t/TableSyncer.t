@@ -50,17 +50,15 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 52;
+   plan tests => 58;
 }
 
 $sb->create_dbs($dbh, ['test']);
-my $mysql = $sb->_use_for('master');
 $sb->load_file('master', 'common/t/samples/before-TableSyncChunk.sql');
 
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter=>$q);
 my $du = new MySQLDump( cache => 0 );
-my ($rows, $cnt);
 
 # ###########################################################################
 # Make a TableSyncer object.
@@ -101,17 +99,19 @@ my $syncer = new TableSyncer(
 );
 isa_ok($syncer, 'TableSyncer');
 
-# ###########################################################################
-# Make TableSync* objects.
-# ###########################################################################
 my $chunker = new TableChunker( Quoter => $q, MySQLDump => $du );
 my $nibbler = new TableNibbler( TableParser => $tp, Quoter => $q );
 
+# Global vars used/set by the subs below and accessed throughout the tests.
+my $src;
+my $dst;
+my $tbl_struct;
+my %actions;
+my @rows;
 my ($sync_chunk, $sync_nibble, $sync_groupby, $sync_stream);
 my $plugins = [];
 
 # Call this func to re-make/reset the plugins.
-
 sub make_plugins {
    $sync_chunk = new TableSyncChunk(
       TableChunker => $chunker,
@@ -131,12 +131,90 @@ sub make_plugins {
    return;
 }
 
-make_plugins();
+sub new_ch {
+   my ( $dbh, $queue ) = @_;
+   return new ChangeHandler(
+      Quoter    => $q,
+      left_db   => $src->{db},
+      left_tbl  => $src->{tbl},
+      right_db  => $dst->{db},
+      right_tbl => $dst->{tbl},
+      actions => [
+         sub {
+            my ( $sql, $change_dbh ) = @_;
+            push @rows, $sql;
+            if ( $change_dbh ) {
+               # dbh passed through change() or process_rows()
+               $change_dbh->do($sql);
+            }
+            elsif ( $dbh ) {
+               # dbh passed to this sub
+               $dbh->do($sql);
+            }
+            else {
+               # default dst dbh for this test script
+               $dst_dbh->do($sql);
+            }
+         }
+      ],
+      replace => 0,
+      queue   => defined $queue ? $queue : 1,
+   );
+}
+
+# Shortens/automates a lot of the setup needed for calling
+# TableSyncer::sync_table.  At minimum, you can pass just
+# the src and dst args which are db.tbl args to sync. Various
+# global vars are set: @rows, %actions, etc.
+sub sync_table {
+   my ( %args ) = @_;
+   my ($src_db_tbl, $dst_db_tbl) = @args{qw(src dst)};
+   my ($src_db, $src_tbl) = $q->split_unquote($src_db_tbl);
+   my ($dst_db, $dst_tbl) = $q->split_unquote($dst_db_tbl);
+   if ( $args{plugins} ) {
+      $plugins = $args{plugins};
+   }
+   else {
+      make_plugins();
+   }
+   $tbl_struct = $tp->parse(
+      $du->get_create_table($src_dbh, $q, $src_db, $src_tbl));
+   $src = {
+      dbh      => $src_dbh,
+      misc_dbh => $dbh,
+      db       => $src_db,
+      tbl      => $src_tbl,
+   };
+   $dst = {
+      dbh => $dst_dbh,
+      db  => $dst_db,
+      tbl => $dst_tbl,
+   };
+   @rows = ();
+   %actions = $syncer->sync_table(
+      plugins       => $plugins,
+      src           => $src,
+      dst           => $dst,
+      tbl_struct    => $tbl_struct,
+      cols          => $tbl_struct->{cols},
+      chunk_size    => $args{chunk_size} || 5,
+      dry_run       => $args{dry_run},
+      function      => $args{function} || 'SHA1',
+      lock          => $args{lock},
+      transaction   => $args{transaction},
+      callback      => $args{callback},
+      RowDiff       => $rd,
+      ChangeHandler => new_ch(),
+   );
+
+   return;
+}
 
 # ###########################################################################
 # Test get_best_plugin() (formerly best_algorithm()).
 # ###########################################################################
-my $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test5'));
+make_plugins();
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q, 'test', 'test5'));
 is_deeply(
    [
       $syncer->get_best_plugin(
@@ -174,11 +252,6 @@ is_deeply(
 # Test sync_table() for each plugin with a basic, 4 row data set.
 # ###########################################################################
 
-# REMEMBER: call new_ch() before each sync to reset the number of actions.
-
-# Redo this in case any tests above change $tbl_struct.
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
-
 # test1 has 4 rows and test2, which is the same struct, is empty.
 # So after sync, test2 should have the same 4 rows as test1.
 my $test1_rows = [
@@ -193,68 +266,17 @@ my $inserts = [
    "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('3', 'ab')",
    "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('4', 'bz')",
 ];
-my $src = {
-   dbh      => $src_dbh,
-   misc_dbh => $dbh,
-   db       => 'test',
-   tbl      => 'test1',
-};
-my $dst = {
-   dbh => $dst_dbh,
-   db  => 'test',
-   tbl => 'test2',
-};
-my %args = (
-   plugins        => $plugins,
-   src            => $src,
-   dst            => $dst,
-   tbl_struct     => $tbl_struct,
-   cols           => $tbl_struct->{cols},
-   chunk_size     => 2,
-   RowDiff        => $rd,
-   ChangeHandler  => undef,  # call new_ch()
-   function       => 'SHA1',
-);
-
-my @rows;
-sub new_ch {
-   my ( $dbh, $queue ) = @_;
-   return new ChangeHandler(
-      Quoter    => $q,
-      left_db   => $src->{db},
-      left_tbl  => $src->{tbl},
-      right_db  => $dst->{db},
-      right_tbl => $dst->{tbl},
-      actions => [
-         sub {
-            my ( $sql, $change_dbh ) = @_;
-            push @rows, $sql;
-            if ( $change_dbh ) {
-               # dbh passed through change() or process_rows()
-               $change_dbh->do($sql);
-            }
-            elsif ( $dbh ) {
-               # dbh passed to this sub
-               $dbh->do($sql);
-            }
-            else {
-               # default dst dbh for this test script
-               $dst_dbh->do($sql);
-            }
-         }
-      ],
-      replace => 0,
-      queue   => defined $queue ? $queue : 1,
-   );
-}
 
 # First, do a dry run sync, so nothing should happen.
 $dst_dbh->do('TRUNCATE TABLE test.test2');
-@rows = ();
-$args{ChangeHandler} = new_ch();
 
+sync_table(
+   src     => "test.test1",
+   dst     => "test.test2",
+   dry_run => 1,
+);
 is_deeply(
-   { $syncer->sync_table(%args, dry_run => 1) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 0,
@@ -280,8 +302,12 @@ is_deeply(
 # Now do the real syncs that should insert 4 rows into test2.
 
 # Sync with Chunk.
+sync_table(
+   src => "test.test1",
+   dst => "test.test2",
+);
 is_deeply(
-   { $syncer->sync_table(%args) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 4,
@@ -306,11 +332,14 @@ is_deeply(
 
 # Sync with Chunk again, but use chunk_size = 1k which should be converted.
 $dst_dbh->do('TRUNCATE TABLE test.test2');
-@rows = ();
-$args{ChangeHandler} = new_ch();
+sync_table(
+   src        => "test.test1",
+   dst        => "test.test2",
+   chunk_size => '1k',
+);
 
 is_deeply(
-   { $syncer->sync_table(%args) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 4,
@@ -335,11 +364,14 @@ is_deeply(
 
 # Sync with Nibble.
 $dst_dbh->do('TRUNCATE TABLE test.test2');
-@rows = ();
-$args{ChangeHandler} = new_ch();
+sync_table(
+   src     => "test.test1",
+   dst     => "test.test2",
+   plugins => [ $sync_nibble ],
+);
 
 is_deeply(
-   { $syncer->sync_table(%args, plugins => [$sync_nibble]) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 4,
@@ -364,11 +396,14 @@ is_deeply(
 
 # Sync with GroupBy.
 $dst_dbh->do('TRUNCATE TABLE test.test2');
-@rows = ();
-$args{ChangeHandler} = new_ch();
+sync_table(
+   src     => "test.test1",
+   dst     => "test.test2",
+   plugins => [ $sync_groupby ],
+);
 
 is_deeply(
-   { $syncer->sync_table(%args, plugins => [$sync_groupby]) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 4,
@@ -393,11 +428,14 @@ is_deeply(
 
 # Sync with Stream.
 $dst_dbh->do('TRUNCATE TABLE test.test2');
-@rows = ();
-$args{ChangeHandler} = new_ch();
+sync_table(
+   src     => "test.test1",
+   dst     => "test.test2",
+   plugins => [ $sync_stream ],
+);
 
 is_deeply(
-   { $syncer->sync_table(%args, plugins => [$sync_stream]) },
+   \%actions,
    {
       DELETE    => 0,
       INSERT    => 4,
@@ -423,20 +461,13 @@ is_deeply(
 # #############################################################################
 # Check that the plugins can resolve unique key violations.
 # #############################################################################
-
 make_plugins();
 
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
-
-$args{tbl_struct} = $tbl_struct;
-$args{cols}       = $tbl_struct->{cols};
-$src->{tbl} = 'test3';
-$dst->{tbl} = 'test4';
-
-@rows = ();
-$args{ChangeHandler} = new_ch();
-
-$syncer->sync_table(%args, plugins => [$sync_stream]);
+sync_table(
+   src     => "test.test3",
+   dst     => "test.test4",
+   plugins => [ $sync_stream ],
+);
 
 is_deeply(
    $dst_dbh->selectall_arrayref('select * from test.test4 order by a', { Slice => {}} ),
@@ -444,34 +475,46 @@ is_deeply(
    'Resolves unique key violations with Stream'
 );
 
-
-@rows = ();
-$args{ChangeHandler} = new_ch();
-
-$syncer->sync_table(%args, plugins => [$sync_chunk]);
+sync_table(
+   src     => "test.test3",
+   dst     => "test.test4",
+   plugins => [ $sync_chunk ],
+);
 
 is_deeply(
    $dst_dbh->selectall_arrayref('select * from test.test4 order by a', { Slice => {}} ),
    [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
-   'Resolves unique key violations with Chunk' );
+   'Resolves unique key violations with Chunk'
+);
 
 # ###########################################################################
 # Test locking.
 # ###########################################################################
-
 make_plugins();
 
-$syncer->sync_table(%args, lock => 1);
+sync_table(
+   src  => "test.test1",
+   dst  => "test.test2",
+   lock => 1,
+);
 
 # The locks should be released.
 ok($src_dbh->do('select * from test.test4'), 'Cycle locks released');
 
-$syncer->sync_table(%args, lock => 2);
+sync_table(
+   src  => "test.test1",
+   dst  => "test.test2",
+   lock => 2,
+);
 
 # The locks should be released.
 ok($src_dbh->do('select * from test.test4'), 'Table locks released');
 
-$syncer->sync_table(%args, lock => 3);
+sync_table(
+   src  => "test.test1",
+   dst  => "test.test2",
+   lock => 3,
+);
 
 ok(
    $dbh->do('replace into test.test3 select * from test.test3 limit 0'),
@@ -480,7 +523,8 @@ ok(
 
 eval {
    $syncer->lock_and_wait(
-      %args,
+      src         => $src,
+      dst         => $dst,
       lock        => 3,
       lock_level  => 3,
       replicate   => 0,
@@ -520,20 +564,15 @@ $dst->{dbh} = $dst_dbh;
 # ###########################################################################
 # Test TableSyncGroupBy.
 # ###########################################################################
-
+make_plugins();
 $sb->load_file('master', 'common/t/samples/before-TableSyncGroupBy.sql');
 sleep 1;
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
 
-$args{tbl_struct} = $tbl_struct;
-$args{cols}       = $tbl_struct->{cols};
-$src->{tbl} = 'test1';
-$dst->{tbl} = 'test2';
-
-@rows = ();
-$args{ChangeHandler} = new_ch();
-
-$syncer->sync_table(%args, plugins => [$sync_groupby]);
+sync_table(
+   src     => "test.test1",
+   dst     => "test.test2",
+   plugins => [ $sync_groupby ],
+);
 
 is_deeply(
    $dst_dbh->selectall_arrayref('select * from test.test2 order by a, b, c', { Slice => {}} ),
@@ -555,19 +594,9 @@ is_deeply(
 # #############################################################################
 # Issue 96: mk-table-sync: Nibbler infinite loop
 # #############################################################################
-
+make_plugins();
 $sb->load_file('master', 'common/t/samples/issue_96.sql');
 sleep 1;
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'issue_96','t'));
-
-$args{tbl_struct} = $tbl_struct;
-$args{cols}       = $tbl_struct->{cols};
-$src->{db} = $dst->{db} = 'issue_96';
-$src->{tbl} = 't';
-$dst->{tbl} = 't2';
-
-@rows = ();
-$args{ChangeHandler} = new_ch();
 
 # Make paranoid-sure that the tables differ.
 my $r1 = $src_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
@@ -578,15 +607,22 @@ is_deeply(
    'Infinite loop table differs (issue 96)'
 );
 
-$syncer->sync_table(%args, chunk_size => 2, plugins => [$sync_nibble]);
+sync_table(
+   src     => "issue_96.t",
+   dst     => "issue_96.t2",
+   plugins => [ $sync_nibble ],
+);
 
 $r1 = $src_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
 $r2 = $dst_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t2 WHERE package_id=4');
+
+# Other tests below rely on this table being synced, so die
+# if it fails to sync.
 is(
    $r1->[0]->[0],
    $r2->[0]->[0],
    'Sync infinite loop table (issue 96)'
-);
+) or die "Failed to sync issue_96.t";
 
 # #############################################################################
 # Test check_permissions().
@@ -642,14 +678,17 @@ diag(`/tmp/12345/use -u root -e "DROP USER 'bob'"`);
 # ###########################################################################
 # Test that the calback gives us the src and dst sql.
 # ###########################################################################
-
+make_plugins;
 # Re-using issue_96.t from above.  The tables are already in sync so there
 # should only be 1 sync cycle.
-@rows = ();
-$args{ChangeHandler} = new_ch();
 my @sqls;
-$syncer->sync_table(%args, chunk_size => 1000, plugins => [$sync_nibble],
-   callback => sub { push @sqls, @_; } );
+sync_table(
+   src        => "issue_96.t",
+   dst        => "issue_96.t2",
+   chunk_size => 1000,
+   plugins    => [ $sync_nibble ],
+   callback   => sub { push @sqls, @_; },
+);
 
 my $queries = ($sandbox_version gt '4.0' ?
    [
@@ -671,7 +710,7 @@ is_deeply(
 # Test that make_checksum_queries() doesn't pass replicate.
 # #############################################################################
 
-# Re-using table from above.
+# Re-using issue_96.* tables from above.
 
 $queries = ($sandbox_version gt '4.0' ?
    [
@@ -684,7 +723,13 @@ $queries = ($sandbox_version gt '4.0' ?
    ],
 );
 
-@sqls = $syncer->make_checksum_queries(%args, replicate => 'bad');
+@sqls = $syncer->make_checksum_queries(
+   replicate  => 'bad',
+   src        => $src,
+   dst        => $dst,
+   tbl_struct => $tbl_struct,
+   function   => 'SHA1',
+);
 is_deeply(
    \@sqls,
    $queries,
@@ -778,15 +823,25 @@ SKIP: {
    make_plugins();
    set_bidi_callbacks();
    $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q, 'bidi','t'));
-   $args{tbl_struct}    = $tbl_struct;
-   $args{cols}          = [qw(ts)],  # Compare only ts col when chunks differ.
+
    $src->{db}           = 'bidi';
    $src->{tbl}          = 't';
    $dst->{db}           = 'bidi';
    $dst->{tbl}          = 't';
    $dst->{dbh}          = $dbh2;            # Must set $dbh2 here and
-   $args{ChangeHandler} = new_ch($dbh2, 0); # here to override $dst_dbh.
-   @rows                = ();
+
+   my %args = (
+      src           => $src,
+      dst           => $dst,
+      tbl_struct    => $tbl_struct,
+      cols          => [qw(ts)],  # Compare only ts col when chunks differ.
+      plugins       => $plugins,
+      function      => 'SHA1',
+      ChangeHandler => new_ch($dbh2, 0), # here to override $dst_dbh.
+      RowDiff       => $rd,
+      chunk_size    => 2,
+   );
+   @rows = ();
 
    $syncer->sync_table(%args, plugins => [$sync_chunk]);
 
@@ -879,50 +934,56 @@ SKIP: {
 # #############################################################################
 # Test with transactions.
 # #############################################################################
-
+make_plugins();
 # Sandbox::get_dbh_for() defaults to AutoCommit=1.  Autocommit must
 # be off else commit() will cause an error.
 $dbh      = $sb->get_dbh_for('master', {AutoCommit=>0});
 $src_dbh  = $sb->get_dbh_for('master', {AutoCommit=>0});
 $dst_dbh  = $sb->get_dbh_for('slave1', {AutoCommit=>0});
 
-make_plugins();
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
-$src = {
-   dbh      => $src_dbh,
-   misc_dbh => $dbh,
-   db       => 'test',
-   tbl      => 'test1',
-};
-$dst = {
-   dbh => $dst_dbh,
-   db  => 'test',
-   tbl => 'test2',
-};
-%args = (
-   plugins       => $plugins,
-   src           => $src,
-   dst           => $dst,
-   tbl_struct    => $tbl_struct,
-   cols          => $tbl_struct->{cols},
-   chunk_size    => 5,
-   RowDiff       => $rd,
-   ChangeHandler => undef,  # call new_ch()
-   function      => 'SHA1',
-   transaction   => 1,
-   lock          => 1,
+sync_table(
+   src         => "test.test1",
+   dst         => "test.test1",
+   transaction => 1,
+   lock        => 1,
 );
-$args{ChangeHandler} = new_ch();
-@rows = ();
 
 # There are no diffs.  This just tests that the code doesn't crash
 # when transaction is true.
-$syncer->sync_table(%args);
 is_deeply(
    \@rows,
    [],
    "Sync with transaction"
 );
+
+# #############################################################################
+# Issue 672: mk-table-sync should COALESCE to avoid undef
+# #############################################################################
+make_plugins();
+$sb->load_file('master', "common/t/samples/empty_tables.sql");
+
+foreach my $sync( $sync_chunk, $sync_nibble, $sync_groupby ) {
+   sync_table(
+      src     => 'et.et1',
+      dst     => 'et.et1',
+      plugins => [ $sync ],
+   );
+   my $sync_name = ref $sync;
+   my $algo = $sync_name;
+   $algo =~ s/TableSync//;
+
+   is_deeply(
+      \@rows,
+      [],
+      "Sync empty tables with " . ref $sync,
+   );
+
+   is(
+      $actions{ALGORITHM},
+      $algo,
+      "$algo algo used to sync empty table"
+   );
+}
 
 # #############################################################################
 # Done.

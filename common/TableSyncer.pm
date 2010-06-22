@@ -423,8 +423,8 @@ sub unlock {
 # Arguments:
 #    lock         scalar: lock level requested by user
 #    local_level  scalar: lock level code is calling from
-#    src          dbh
-#    dst          dbh
+#    src          hashref
+#    dst          hashref
 # Lock levels:
 #   0 => none
 #   1 => per sync cycle
