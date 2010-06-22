@@ -26,14 +26,6 @@ package TableSyncNibble;
 # * Checksum them (state 2)
 # * If a row differs, it must be synced
 # See TableSyncStream for the TableSync interface this conforms to.
-#
-# TODO: a variation on this algorithm and benchmark:
-# * create table __temp(....);
-# * insert into  __temp(....) select pk_cols, row_checksum limit N;
-# * select group_checksum(row_checksum) from __temp;
-# * if they differ, select each row from __temp;
-# * if rows differ, fetch back and sync as usual.
-# * truncate and start over.
 
 use strict;
 use warnings FATAL => 'all';
