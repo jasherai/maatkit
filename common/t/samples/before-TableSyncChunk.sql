@@ -9,11 +9,17 @@ create table test1(
    unique key (a)
 ) ENGINE=INNODB;
 
-create table test2 like test1;
+create table test2(
+   a int not null,
+   b char(2) not null,
+   primary key(a, b),
+   unique key (a)
+) ENGINE=INNODB;
+
 insert into test1 values(1, 'en'), (2, 'ca'), (3, 'ab'), (4, 'bz');
 
 create table test3(a int not null primary key, b int not null, unique(b));
-create table test4 like test3;
+create table test4(a int not null primary key, b int not null, unique(b));
 insert into test3 values(1, 2), (2, 1);
 insert into test4 values(1, 1), (2, 2);
 create table test5(a varchar(5));

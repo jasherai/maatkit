@@ -592,6 +592,10 @@ is(
 # Test check_permissions().
 # #############################################################################
 
+SKIP: {
+   skip "Not tested on MySQL $sandbox_version", 5
+      unless $sandbox_version gt '4.0';
+
 # Re-using issue_96.t from above.
 is(
    $syncer->have_all_privs($src->{dbh}, 'issue_96', 't'),
@@ -633,6 +637,7 @@ is(
 );
 
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'"`);
+}
 
 # ###########################################################################
 # Test that the calback gives us the src and dst sql.
@@ -645,15 +650,22 @@ $args{ChangeHandler} = new_ch();
 my @sqls;
 $syncer->sync_table(%args, chunk_size => 1000, plugins => [$sync_nibble],
    callback => sub { push @sqls, @_; } );
-is_deeply(
-   \@sqls,
+
+my $queries = ($sandbox_version gt '4.0' ?
    [
       'SELECT /*issue_96.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM `issue_96`.`t` FORCE INDEX (`package_id`) WHERE (1=1)',
       'SELECT /*issue_96.t2:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM `issue_96`.`t2` FORCE INDEX (`package_id`) WHERE (1=1)',
+   ] :
+   [
+      "SELECT /*issue_96.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), SHA1(CONCAT(\@crc, SHA1(CONCAT_WS('#', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))))))), 40) AS crc FROM `issue_96`.`t` FORCE INDEX (`package_id`) WHERE (1=1)",
+      "SELECT /*issue_96.t2:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), SHA1(CONCAT(\@crc, SHA1(CONCAT_WS('#', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))))))), 40) AS crc FROM `issue_96`.`t2` FORCE INDEX (`package_id`) WHERE (1=1)",
    ],
+);
+is_deeply(
+   \@sqls,
+   $queries,
    'Callback gives src and dst sql'
 );
-
 
 # #############################################################################
 # Test that make_checksum_queries() doesn't pass replicate.
@@ -661,24 +673,36 @@ is_deeply(
 
 # Re-using table from above.
 
-my @foo = $syncer->make_checksum_queries(%args, replicate => 'bad');
-is_deeply(
-   \@foo,
+$queries = ($sandbox_version gt '4.0' ?
    [
       'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
-      '`package_id`, `location`, `from_city`, SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`))))',
+      "`package_id`, `location`, `from_city`, SHA1(CONCAT_WS('#', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`))))",
+   ] :
+   [
+      "SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), SHA1(CONCAT(\@crc, SHA1(CONCAT_WS('#', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))))))), 40) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/",
+      "`package_id`, `location`, `from_city`, SHA1(CONCAT_WS('#', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`))))",
    ],
+);
+
+@sqls = $syncer->make_checksum_queries(%args, replicate => 'bad');
+is_deeply(
+   \@sqls,
+   $queries,
    'make_checksum_queries() does not pass replicate arg'
 );
 
 # #############################################################################
 # Issue 464: Make mk-table-sync do two-way sync
 # #############################################################################
+SKIP: {
+   skip "Not tested with MySQL $sandbox_version", 7
+      unless $sandbox_version gt '4.0';
+
 diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
 my $dbh2 = $sb->get_dbh_for('slave2');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh;
-   skip 'Cannot connect to second sandbox master', 1 unless $dbh2;
+   skip 'Cannot connect to sandbox master', 7 unless $dbh;
+   skip 'Cannot connect to second sandbox master', 7 unless $dbh2;
 
    sub set_bidi_callbacks {
       $sync_chunk->set_callback('same_row', sub {
@@ -849,7 +873,7 @@ SKIP: {
    $sb->wipe_clean($dbh2);
    diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null &`);
 }
-
+}
 
 
 # #############################################################################

@@ -6,9 +6,13 @@ create table test1(
    a int not null,
    b int not null,
    c int not null
-) ENGINE=INNODB DEFAULT CHARSET=latin1;
+) ENGINE=INNODB;
 
-create table test2 like test1;
+create table test2(
+   a int not null,
+   b int not null,
+   c int not null
+) ENGINE=INNODB;
 
 insert into test1 values
    (1, 2, 3),

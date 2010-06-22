@@ -475,7 +475,7 @@ sub lock_and_wait {
             # UPDATE will lock the rows examined.
             MKDEBUG && _d('Executing statement on source to lock rows');
 
-            my $sql = "START TRANSACTION WITH CONSISTENT SNAPSHOT";
+            my $sql = "START TRANSACTION /*!40108 WITH CONSISTENT SNAPSHOT */";
             MKDEBUG && _d($src->{dbh}, $sql);
             $src->{dbh}->do($sql);
 
