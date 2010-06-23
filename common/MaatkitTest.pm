@@ -66,6 +66,7 @@ our @EXPORT      = qw(
    test_packet_parser
    no_diff
    throws_ok
+   remove_traces
    $trunk
    $dsn_opts
    $sandbox_version
@@ -131,12 +132,17 @@ our $dsn_opts = [
    },
 ];
 
-# Runs code and captures its STDOUT output to either a file (optional)
-# or a var (default).  Dies if code dies, unless $args{dont_die} is
-# true.  Captures STDERR, too, if $args{stderr} is true.
+# Runs code, captures and returns its output.
+# Optional arguments:
+#   * file    scalar: capture output to this file (default none)
+#   * stderr  scalar: capture STDERR (default no)
+#   * die     scalar: die if code dies (default no)
+#   * trf     coderef: pass output to this coderef (default none)
 sub output {
-   my ( $code, $file, %args ) = @_;
+   my ( $code, %args ) = @_;
    die "I need a code argument" unless $code;
+   my ($file, $stderr, $die, $trf) = @args{qw(file stderr die trf)};
+
    my $output = '';
    if ( $file ) { 
       open *output_fh, '>', $file
@@ -147,17 +153,26 @@ sub output {
          or die "Cannot capture output to variable: $OS_ERROR";
    }
    local *STDOUT = *output_fh;
+
+   # If capturing STDERR we must dynamically scope (local) STDERR
+   # in the outer scope of the sub.  If we did,
+   #   if ( $args{stderr} ) { local *STDERR; ... }
+   # then STDERR would revert to its original value outside the if
+   # block.
    local *STDERR     if $args{stderr};  # do in outer scope of this sub
    *STDERR = *STDOUT if $args{stderr};
-   #if ( $args{stderr} ) {
-   #   open  STDERR, ">&STDOUT"
-   #      or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
-   #}
+
    eval { $code->() };
    close *output_fh;
    if ( $EVAL_ERROR ) {
-      $args{dont_die} ? return $EVAL_ERROR : die $EVAL_ERROR;
+      die $EVAL_ERROR if $die;
+      return $EVAL_ERROR;
    }
+
+   # Possible transform output before returning it.  This doesn't work
+   # if output was captured to a file.
+   $output = $trf->($output) if $trf;
+
    return $output;
 }
 
@@ -469,6 +484,20 @@ sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };
    like ( $EVAL_ERROR, $pat, $msg );
+}
+
+# Remove /*maatkit ...*/ trace comments from the given SQL statement(s).
+# Traces are added in ChangeHandler::process_rows().
+sub remove_traces {
+   my ( $sql ) = @_;
+   my $trace_pat = qr/ \/\*maatkit .+?\*\//;
+   if ( ref $sql && ref $sql eq 'ARRAY' ) {
+      map { $_ =~ s/$trace_pat//gm } @$sql;
+   }
+   else {
+      $sql =~ s/$trace_pat//gm;
+   }
+   return $sql;
 }
 
 1;
