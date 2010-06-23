@@ -41,12 +41,13 @@ my $cmd = "$trunk/mk-slave-delay/mk-slave-delay -F $cnf";
 my $pid = fork();
 my $output;
 
-# If this test fails, then it is because reconnect time is too low, try increasing it.
+# If this test fails, then it is because reconnect time is too low.
+# Try increasing it.
 if ($pid) {
    print "Running mk-slave-delay on the background.\n";
-   $output = qx( $cmd --interval 1 --run-time 20 --reconnect 10 2>&1 );
-
-   like( $output, qr/Successfully reconnected/, 'Reconnect to lost slave db.' );
+   $output = qx( $cmd --interval 1 --run-time 20 --reconnect 5 2>&1 );
+   like( $output, qr/Attempting\s.*slave running/s, 
+      'Reconnect to lost slave db.' );
 }
 else {
    sleep 2;
