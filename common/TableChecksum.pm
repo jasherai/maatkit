@@ -413,11 +413,11 @@ sub make_checksum_query {
       # As a special case, integer functions do not need to be sliced.  They
       # can be fed right into BIT_XOR after a cast to UNSIGNED.
       if ( $crc_type =~ m/int$/ ) {
-         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
+         $result = "COALESCE(LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)), 0) AS crc ";
       }
       else {
          my $slices = $self->make_xor_slices( query => $expr, %args );
-         $result = "LOWER(CONCAT($slices)) AS crc ";
+         $result = "COALESCE(LOWER(CONCAT($slices)), 0) AS crc ";
       }
    }
    else {
@@ -433,17 +433,21 @@ sub make_checksum_query {
       # As a special case, int funcs must be converted to base 16 so it's a
       # predictable width (it's also a shorter string, but that's not really
       # important).
+      #
+      # On MySQL 4.0 and older, crc is NULL/undef if no rows are selected.
+      # We COALESCE to avoid having to check that crc is defined; see
+      # http://code.google.com/p/maatkit/issues/detail?id=672
       if ( $crc_type =~ m/int$/ ) {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
       else {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "$func(CONCAT(\@crc, $expr)))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
    }
    if ( $args{replicate} ) {
