@@ -41,6 +41,7 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 # #############################################################################
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = `$trunk/mk-table-sync/mk-table-sync --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
+$output = remove_traces($output);
 # This test changed because the row sql now does ORDER BY key_col (id here)
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`='1' LIMIT 1;
@@ -55,6 +56,7 @@ $output = `$trunk/mk-table-sync/mk-table-sync --ignore-columns name --print h=12
 is($output, "", '--ignore-columns name: found no differences');
 
 $output = `$trunk/mk-table-sync/mk-table-sync --ignore-columns id --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
+$output = remove_traces($output);
 # This test changed for the same reason as above.
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`='1' LIMIT 1;
@@ -63,6 +65,7 @@ EOF
   '--ignore-columns id: found differences');
 
 $output = `$trunk/mk-table-sync/mk-table-sync --columns name --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
+$output = remove_traces($output);
 # This test changed for the same reason as above.
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`='1' LIMIT 1;

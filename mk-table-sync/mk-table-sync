@@ -2472,7 +2472,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 6437
+# ChangeHandler package 6514
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ChangeHandler.pm
@@ -2599,7 +2599,7 @@ sub __queue {
 }
 
 sub process_rows {
-   my ( $self, $queue_level ) = @_;
+   my ( $self, $queue_level, $trace_msg ) = @_;
    my $error_count = 0;
    TRY: {
       if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
@@ -2616,8 +2616,9 @@ sub process_rows {
             $cur_act = $action;
             while ( @$rows ) {
                $row    = shift @$rows;
-               my $dbh = $row->[2] if $row->[2];  # dbh is optional
-               $self->_take_action($self->$func(@$row), $dbh);
+               my $sql = $self->$func(@$row);
+               $sql   .= " /*maatkit $trace_msg*/" if $trace_msg;
+               $self->_take_action($sql, $row->[2]);
             }
          }
          $error_count = 0;
@@ -4715,7 +4716,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 6509
+# TableSyncer package 6517
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncer.pm
@@ -4776,6 +4777,8 @@ sub sync_table {
 
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
+   my $dp = $self->{DSNParser};
+   $args{trace} = 1 unless defined $args{trace};
 
    if ( $args{bidirectional} && $args{ChangeHandler}->{queue} ) {
       die "Queueing does not work with bidirectional syncing";
@@ -4855,8 +4858,18 @@ sub sync_table {
    MKDEBUG && _d('left dbh', $src->{dbh});
    MKDEBUG && _d('right dbh', $dst->{dbh});
 
+   my $trace_msg
+      = $args{trace} ? "pid:$PID src_db:$src->{db} src_tbl:$src->{tbl} "
+         . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
+         . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
+         . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
+         . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
+                     qw(lock transaction changing_src replicate bidirectional))
+      :                "";
+   MKDEBUG && _d("Binlog trace message:", $trace_msg);
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
-   
+
    my $callback = $args{callback};
    my $cycle    = 0;
    while ( !$plugin->done() ) {
@@ -4919,13 +4932,13 @@ sub sync_table {
          syncer     => $plugin,
          tbl_struct => $tbl_struct,
       );
-      $ch->process_rows(1);
+      $ch->process_rows(1, $trace_msg);
 
       MKDEBUG && _d('Finished sync cycle', $cycle);
       $cycle++;
    }
 
-   $ch->process_rows();
+   $ch->process_rows(0, $trace_msg);
 
    $self->unlock(%args, lock_level => 2);
 

@@ -35,7 +35,10 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 # #############################################################################
 diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_631.sql`);
 
-$output = `$trunk/mk-table-sync/mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms GroupBy`;
+$output = output(
+   sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms GroupBy)) },
+   trf => \&remove_traces,
+);
 is(
    $output,
 "# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
@@ -51,7 +54,10 @@ INSERT INTO `d3`.`t`(`x`) VALUES ('2');
    'GroupBy can sync issue 631'
 );
 
-$output = `$trunk/mk-table-sync/mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms Stream`;
+$output = output(
+   sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms Stream)) },
+   trf => \&remove_traces,
+);
 is(
    $output,
 "# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox

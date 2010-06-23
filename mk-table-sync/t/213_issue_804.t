@@ -41,6 +41,7 @@ $sb->load_file('master', 'common/t/samples/issue_804.sql');
 $master_dbh->do('set sql_log_bin=0');
 $master_dbh->do('insert into issue_804.t values (999,999)');
 $output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_804 --print --algorithms Nibble 2>&1`;
+$output = remove_traces($output);
 is(
    $output,
    "REPLACE INTO `issue_804`.`t`(`accountid`, `purchaseid`) VALUES ('999', '999');

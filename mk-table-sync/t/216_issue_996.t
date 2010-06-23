@@ -81,7 +81,7 @@ like(
 my $file = "/tmp/mts-output.txt";
 output(
    sub { mk_table_sync::main(@args, qw(--chunk-size 5 -v -v)) },
-   $file,
+   file => $file,
 );
 
 # The output shows that the 20-row range was chunked into 4 5-row sub-chunks.

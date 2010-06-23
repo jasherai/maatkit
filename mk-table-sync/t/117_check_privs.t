@@ -58,7 +58,6 @@ $slave_dbh->do('insert into issue_907.t values (1)');
 #2) run and get output to see what it's like when it's broken.  
 $output = output(
    sub { mk_table_sync::main(@args) },
-   undef,
    stderr => 1,
 );
 like(
@@ -70,8 +69,8 @@ like(
 #3) run again to see what output is like when it works 
 $output = output(
    sub { mk_table_sync::main(@args, '--no-check-privileges') },
-   undef,
    stderr => 1,
+   trf    => \&remove_traces,
 );
 is(
    $output,

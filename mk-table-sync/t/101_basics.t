@@ -41,7 +41,26 @@ sub query_slave {
 
 sub run {
    my ($src, $dst, $other) = @_;
-   my $output;
+   my $output = output(
+      sub {
+         mk_table_sync::main(qw(--print --execute),
+            "h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=$src",
+            "h=127.1,P=12346,u=msandbox,p=msandbox,D=test,t=$dst",
+            ($other ? split(" ", $other) : ())
+         );
+      },
+      stderr => 1,
+   );
+   if ( $output ) {
+      chomp $output;
+      # Remove trace comments from end of change statements.
+      $output = remove_traces($output);
+   };
+   return $output;
+}
+
+sub run_cmd {
+   my ($src, $dst, $other) = @_;
    my $cmd = "$trunk/mk-table-sync/mk-table-sync --print --execute h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
    chomp($output=`$cmd`);
    return $output;
@@ -108,7 +127,7 @@ my $dbg = $ENV{MKDEBUG};
 
 $sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $ENV{MKDEBUG} = 1;
-$output = run('test1', 'test2', '--algorithms Nibble --no-bin-log --chunk-size 1 --transaction --lock 1');
+$output = run_cmd('test1', 'test2', '--algorithms Nibble --no-bin-log --chunk-size 1 --transaction --lock 1');
 delete $ENV{MKDEBUG};
 like(
    $output,

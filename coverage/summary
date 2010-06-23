@@ -24,6 +24,6 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...refetch/mk-slave-prefetch   20.7    7.7    8.0   37.1    n/a    0.7   17.1
 ...-restart/mk-slave-restart   13.1    2.4    5.7   30.9    n/a    0.0   10.4
 ...hecksum/mk-table-checksum   52.9   34.3   33.0   61.7    n/a  100.0   46.0
-...-table-sync/mk-table-sync   48.3   32.6   29.0   57.9    n/a  100.0   42.7
+...-table-sync/mk-table-sync   63.4   44.0   40.2   73.1    n/a  100.0   56.3
 ...kit/mk-upgrade/mk-upgrade   10.2    0.9    4.7   31.2    n/a  100.0    8.9
 ...explain/mk-visual-explain   49.6   39.0   37.9   66.1    n/a   24.2   46.4

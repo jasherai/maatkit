@@ -52,7 +52,10 @@ diag(`$trunk/mk-table-checksum/mk-table-checksum --create-replicate-table --repl
 diag(`$trunk/mk-table-checksum/mk-table-checksum --replicate issue_375.checksum h=127.1,P=12345,u=msandbox,p=msandbox  --replicate-check 1 > /dev/null`);
 
 # And now sync using the replicated checksum results/differences.
-$output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox --replicate issue_375.checksum --print`;
+$output = output(
+   sub { mk_table_sync::main('--sync-to-master', 'h=127.1,P=12346,u=msandbox,p=msandbox', qw(--replicate issue_375.checksum --print)) },
+   trf => \&remove_traces,
+);
 is(
    $output,
    "REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES ('10', '2009-09-03 14:18:00', 'k');

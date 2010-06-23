@@ -59,7 +59,10 @@ issue_560 buddy_list     9        0        1 `player_id` >= '451'
    'Found checksum differences (issue 560)'
 );
 
-$output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum`;
+$output = output(
+   sub { mk_table_sync::main('--sync-to-master', 'h=127.1,P=12346,u=msandbox,p=msandbox', qw(-d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum)) },
+   trf => \&remove_traces,
+);
 is(
    $output,
 "# Syncing via replication P=12346,h=127.1,p=...,u=msandbox

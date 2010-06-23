@@ -77,7 +77,8 @@ is_deeply(
 
 is(
    output(
-      sub { mk_table_sync::main(@args, qw(--print --execute)) }
+      sub { mk_table_sync::main(@args, qw(--print --execute)) },
+      trf => \&remove_traces,
    ),
    "DELETE FROM `test`.`t` WHERE `i`='3' LIMIT 1;
 ",
