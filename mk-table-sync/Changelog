@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Empty result set with MySQL 4.0 could caused a crash (issue 672).
+
 2010-06-08: version 1.0.28
 
    * Chunking failed on invalid dates (issue 602).
