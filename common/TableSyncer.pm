@@ -226,8 +226,8 @@ sub sync_table {
          . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
                      qw(lock transaction changing_src replicate bidirectional))
          . " pid:$PID "
-         . ($ENV{USER} ? "user: $ENV{USER} " : "")
-         . ($hostname  ? "host: $hostname"   : "")
+         . ($ENV{USER} ? "user:$ENV{USER} " : "")
+         . ($hostname  ? "host:$hostname"   : "")
       :                "";
    MKDEBUG && _d("Binlog trace message:", $trace_msg);
 
