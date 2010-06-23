@@ -221,7 +221,7 @@ sub sync_table {
       = $args{trace} ? "pid:$PID src_db:$src->{db} src_tbl:$src->{tbl} "
          . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
          . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
-         . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
+         . ($dp && $dst->{dsn} ? "dst_dsn:".$dp->as_string($dst->{dsn}) : "")
          . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
                      qw(lock transaction changing_src replicate bidirectional))
       :                "";
