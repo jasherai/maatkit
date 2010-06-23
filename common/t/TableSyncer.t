@@ -96,6 +96,7 @@ my $syncer = new TableSyncer(
    Quoter        => $q,
    TableChecksum => $checksum,
    VersionParser => $vp,
+   DSNParser     => $dp,
 );
 isa_ok($syncer, 'TableSyncer');
 
@@ -181,12 +182,14 @@ sub sync_table {
       $du->get_create_table($src_dbh, $q, $src_db, $src_tbl));
    $src = {
       dbh      => $src_dbh,
+      dsn      => {h=>'127.1',P=>'12345',},
       misc_dbh => $dbh,
       db       => $src_db,
       tbl      => $src_tbl,
    };
    $dst = {
       dbh => $dst_dbh,
+      dsn => {h=>'127.1',P=>'12346',},
       db  => $dst_db,
       tbl => $dst_tbl,
    };
@@ -205,6 +208,7 @@ sub sync_table {
       callback      => $args{callback},
       RowDiff       => $rd,
       ChangeHandler => new_ch(),
+      trace         => 0,
    );
 
    return;

@@ -35,6 +35,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * Quoter         A Quoter module
 #   * VersionParser  A VersionParser module
 #   * TableChecksum  A TableChecksum module
+#   * DSNParser      (optional)
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum);
@@ -90,6 +91,7 @@ sub get_best_plugin {
 #   * buffer_in_mysql  Use SQL_BUFFER_RESULT (default no)
 #   * buffer_to_client Use mysql_use_result (default no)
 #   * callback        Sub called before executing the sql (default none)
+#   * trace           Append trace message to change statements (default yes)
 #   * transaction     locking
 #   * change_dbh      locking
 #   * lock            locking
@@ -108,6 +110,8 @@ sub sync_table {
 
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
+   my $dp = $self->{DSNParser};
+   $args{trace} = 1 unless defined $args{trace};
 
    if ( $args{bidirectional} && $args{ChangeHandler}->{queue} ) {
       # This should be checked by the caller but just in case...
@@ -213,8 +217,18 @@ sub sync_table {
    MKDEBUG && _d('left dbh', $src->{dbh});
    MKDEBUG && _d('right dbh', $dst->{dbh});
 
+   my $trace_msg
+      = $args{trace} ? "src_db:$src->{db} src_tbl:$src->{tbl} "
+         . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
+         . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
+         . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
+         . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
+                     qw(lock transaction replicate changing_src))
+      :                "";
+   MKDEBUG && _d("Binlog trace message:", $trace_msg);
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
-   
+
    my $callback = $args{callback};
    my $cycle    = 0;
    while ( !$plugin->done() ) {
@@ -298,13 +312,13 @@ sub sync_table {
          tbl_struct => $tbl_struct,
       );
       # ...changes may be queued and executed now.
-      $ch->process_rows(1);
+      $ch->process_rows(1, $trace_msg);
 
       MKDEBUG && _d('Finished sync cycle', $cycle);
       $cycle++;
    }
 
-   $ch->process_rows();
+   $ch->process_rows(0, $trace_msg);
 
    $self->unlock(%args, lock_level => 2);
 
