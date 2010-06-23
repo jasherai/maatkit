@@ -21,6 +21,7 @@ use Sandbox;
 my $dp  = new DSNParser ( opts => $dsn_opts );
 my $sb  = new Sandbox ( basedir => '/tmp', DSNParser => $dp );
 my $dbh = $sb->get_dbh_for( 'slave1' );
+my $status;
 
 if ( !$dbh ) {
    plan skip_all => 'Cannot connect to MySQL slave.';
@@ -33,12 +34,11 @@ else {
 }
 
 my $restart = new SlaveRestart(
-   dbh     => $dbh,
-   slave   => \sub { $sb->get_dbh_for( 'slave1' ) }, 
-   onfail  => 1,
-   filter  => [],
-   retries => 3,
-   delay   => \sub { return 5 },
+   dbh              => $dbh,
+   connect_to_slave => \sub { $sb->get_dbh_for( 'slave1' ) }, 
+   onfail           => 1,    # Simulate that the reconnect option is used.
+   retries          => 3,
+   delay            => 5,
 );
 
 isa_ok( $restart, 'SlaveRestart' );
@@ -46,19 +46,20 @@ isa_ok( $restart, 'SlaveRestart' );
 # ###########################################################################
 # Test checking the status of the slave database. 
 # ###########################################################################
-my ($rows) = $restart->_check_slave_status();
+my ($rows) = $restart->_check_slave_status( dbh => $dbh );
 ok( $rows->{Master_Port} == '12345', 'Check and show slave status correctly.' );
 
 # ###########################################################################
 # Test to see if it cannot connect to a slave database.
 # ###########################################################################
 die( 'Cannot stop MySQL slave.' ) if system( '/tmp/12346/stop && sleep 2' );
-($rows) = $restart->retry();
-ok( !defined $rows->{Master_Port}, 'Unable to connect to slave.' );
+($dbh)  = $restart->reconnect();
+ok( $dbh == 0, 'Unable to connect to slave.' );
 
 # ###########################################################################
 # Test reconnecting to a slave database.
 # ###########################################################################
 die( 'Cannot start MySQL slave.' ) if system( 'sleep 1 && /tmp/12346/start &' );
-($rows) = $restart->retry();
-ok( $rows->{Master_Port} == '12345', 'Reconnect to lost slave db.' );
+($dbh)  = $restart->reconnect();
+$status = $dbh->selectrow_hashref("SHOW SLAVE STATUS"); 
+ok( $status->{Master_Port} == '12345', 'Reconnect to lost slave db.' );
