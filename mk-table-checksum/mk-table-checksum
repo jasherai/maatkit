@@ -420,7 +420,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6078
+# TableChecksum package 6511
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChecksum.pm
@@ -732,25 +732,25 @@ sub make_checksum_query {
 
    if ( $algorithm eq 'BIT_XOR' ) {
       if ( $crc_type =~ m/int$/ ) {
-         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
+         $result = "COALESCE(LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)), 0) AS crc ";
       }
       else {
          my $slices = $self->make_xor_slices( query => $expr, %args );
-         $result = "LOWER(CONCAT($slices)) AS crc ";
+         $result = "COALESCE(LOWER(CONCAT($slices)), 0) AS crc ";
       }
    }
    else {
       if ( $crc_type =~ m/int$/ ) {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
       else {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "$func(CONCAT(\@crc, $expr)))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
    }
    if ( $args{replicate} ) {
@@ -2470,7 +2470,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6487
+# TableChunker package 6492
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2573,49 +2573,31 @@ sub find_chunk_columns {
 
 sub calculate_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh tbl_struct chunk_col min max rows_in_range
-                        chunk_size dbh) ) {
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col min max rows_in_range
+                          chunk_size);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
-   my $dbh = $args{dbh};
-   my $q   = $self->{Quoter};
-
-   my @chunks;
-   my ($range_func, $start_point, $end_point);
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q        = $self->{Quoter};
+   my $db_tbl   = $q->quote($db, $tbl);
    my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
    MKDEBUG && _d('chunk col type:', $col_type);
 
-   my %mysql_conv_func_for = (
-      timestamp => 'UNIX_TIMESTAMP',
-      date      => 'TO_DAYS',
-      time      => 'TIME_TO_SEC',
-      datetime  => 'TO_DAYS',
-   );
-
+   my $range_func = $self->range_func_for($col_type);
+   my ($start_point, $end_point);
    eval {
-      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-         $start_point = $args{min};
-         $end_point   = $args{max};
-         $range_func  = 'range_num';
-      }
-      elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
-         my $func = $mysql_conv_func_for{$col_type};
-         my $sql = "SELECT $func(?), $func(?)";
-         MKDEBUG && _d($dbh, $sql, $args{min}, $args{max});
-         my $sth = $dbh->prepare($sql);
-         $sth->execute($args{min}, $args{max});
-         ($start_point, $end_point) = $sth->fetchrow_array();
-         $range_func  = "range_$col_type";
-      }
-      elsif ( $col_type eq 'datetime' ) {
-         $start_point = $self->timestampdiff($dbh, $args{min});
-         $end_point   = $self->timestampdiff($dbh, $args{max});
-         $range_func  = 'range_datetime';
-      }
-      else {
-         die "I don't know how to chunk $col_type\n";
-      }
+      $start_point = $self->value_to_number(
+         value       => $args{min},
+         column_type => $col_type,
+         dbh         => $dbh,
+      );
+      $end_point  = $self->value_to_number(
+         value       => $args{max},
+         column_type => $col_type,
+         dbh         => $dbh,
+      );
    };
    if ( $EVAL_ERROR ) {
       if ( $EVAL_ERROR =~ m/don't know how to chunk/ ) {
@@ -2643,7 +2625,31 @@ sub calculate_chunks {
       MKDEBUG && _d('End point is undefined or before start point');
       $end_point = 0;
    }
-   MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
+   MKDEBUG && _d("Actual chunk range:", $start_point, "to", $end_point);
+
+   my $have_zero_chunk = 0;
+   if ( $args{zero_chunk} ) {
+      if ( $start_point != $end_point && $start_point >= 0 ) {
+         MKDEBUG && _d('Zero chunking');
+         my $nonzero_val = $self->get_nonzero_value(
+            %args,
+            db_tbl   => $db_tbl,
+            col      => $args{chunk_col},
+            col_type => $col_type,
+            val      => $args{min}
+         );
+         $start_point = $self->value_to_number(
+            value       => $nonzero_val,
+            column_type => $col_type,
+            dbh         => $dbh,
+         );
+         $have_zero_chunk = 1;
+      }
+      else {
+         MKDEBUG && _d("Cannot zero chunk");
+      }
+   }
+   MKDEBUG && _d("Using chunk range:", $start_point, "to", $end_point);
 
    my $interval = $args{chunk_size}
                 * ($end_point - $start_point)
@@ -2657,15 +2663,21 @@ sub calculate_chunks {
    }
    MKDEBUG && _d('Chunk interval:', $interval, 'units');
 
+   my @chunks;
    my $col = $q->quote($args{chunk_col});
    if ( $start_point < $end_point ) {
+
+      push @chunks, "$col = 0" if $have_zero_chunk;
+
       my ( $beg, $end );
       my $iter = 0;
       for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
          ( $beg, $end ) = $self->$range_func($dbh, $i, $interval, $end_point);
 
          if ( $iter++ == 0 ) {
-            push @chunks, "$col < " . $q->quote_val($end);
+            push @chunks,
+               ($have_zero_chunk ? "$col > 0 AND " : "")
+               ."$col < " . $q->quote_val($end);
          }
          else {
             push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
@@ -2860,6 +2872,61 @@ sub inject_chunks {
    return $query;
 }
 
+
+sub value_to_number {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(value column_type dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($val, $col_type, $dbh) = @args{@required_args};
+   MKDEBUG && _d('Converting MySQL', $col_type, $val);
+
+   my %mysql_conv_func_for = (
+      timestamp => 'UNIX_TIMESTAMP',
+      date      => 'TO_DAYS',
+      time      => 'TIME_TO_SEC',
+      datetime  => 'TO_DAYS',
+   );
+
+   my $num;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $num = $val;
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      my $func = $mysql_conv_func_for{$col_type};
+      my $sql = "SELECT $func(?)";
+      MKDEBUG && _d($dbh, $sql, $val);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute($val);
+      ($num) = $sth->fetchrow_array();
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $num = $self->timestampdiff($dbh, $val);
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+   MKDEBUG && _d('Converts to', $num);
+   return $num;
+}
+
+sub range_func_for {
+   my ( $self, $col_type ) = @_;
+   return unless $col_type;
+   my $range_func;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      $range_func  = "range_$col_type";
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $range_func  = 'range_datetime';
+   }
+   return $range_func;
+}
+
 sub range_num {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $end = min($max, $start + $interval);
@@ -2953,15 +3020,6 @@ sub get_valid_end_points {
          val      => $real_min,
          endpoint => 'min',
       );
-      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
-         unless defined $valid_min;
-
-      if ( !$args{zero_min} ) {
-         $valid_min = $self->get_nonzero_value(
-            %args,
-            val => $valid_min
-         );
-      }
       die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
          unless defined $valid_min;
    }
@@ -4973,6 +5031,8 @@ sub save_tbl_to_checksum {
             if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
                @chunks = $ch->calculate_chunks(
                   dbh        => $dbh,
+                  db         => $db,
+                  tbl        => $tbl,
                   tbl_struct => $struct,
                   chunk_col  => $chunk_col,
                   chunk_size => $rows_per_chunk,
