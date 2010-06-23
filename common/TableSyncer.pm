@@ -223,7 +223,7 @@ sub sync_table {
          . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
          . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
          . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
-                     qw(lock transaction replicate changing_src))
+                     qw(lock transaction changing_src replicate bidirectional))
       :                "";
    MKDEBUG && _d("Binlog trace message:", $trace_msg);
 
