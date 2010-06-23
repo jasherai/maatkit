@@ -217,13 +217,17 @@ sub sync_table {
    MKDEBUG && _d('left dbh', $src->{dbh});
    MKDEBUG && _d('right dbh', $dst->{dbh});
 
+   chomp(my $hostname = `hostname`);
    my $trace_msg
-      = $args{trace} ? "pid:$PID src_db:$src->{db} src_tbl:$src->{tbl} "
+      = $args{trace} ? "src_db:$src->{db} src_tbl:$src->{tbl} "
          . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
          . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
          . ($dp && $dst->{dsn} ? "dst_dsn:".$dp->as_string($dst->{dsn}) : "")
          . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
                      qw(lock transaction changing_src replicate bidirectional))
+         . " pid:$PID "
+         . ($ENV{USER} ? "user: $ENV{USER} " : "")
+         . ($hostname  ? "host: $hostname"   : "")
       :                "";
    MKDEBUG && _d("Binlog trace message:", $trace_msg);
 
