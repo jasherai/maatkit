@@ -218,7 +218,7 @@ sub sync_table {
    MKDEBUG && _d('right dbh', $dst->{dbh});
 
    my $trace_msg
-      = $args{trace} ? "src_db:$src->{db} src_tbl:$src->{tbl} "
+      = $args{trace} ? "pid:$PID src_db:$src->{db} src_tbl:$src->{tbl} "
          . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
          . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
          . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
