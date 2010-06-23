@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 use ChangeHandler;
 use Quoter;
@@ -442,6 +442,30 @@ SKIP: {
       "UPDATE and INSERT binary data as hex"
    );
 }
+
+# #############################################################################
+# Issue 387: More useful comments in mk-table-sync statements
+# #############################################################################
+@rows = ();
+$ch = new ChangeHandler(
+   Quoter    => $q,
+   right_db  => 'test',  # dst
+   right_tbl => 'foo',
+   left_db   => 'test',  # src
+   left_tbl  => 'test1',
+   actions   => [ sub { push @rows, $_[0]; push @dbhs, $_[1]; } ],
+   replace   => 0,
+   queue     => 1,
+);
+
+$ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );
+$ch->process_rows(1, "trace");
+
+is_deeply(
+   \@rows,
+   ["INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2') /*maatkit trace*/",],
+   "process_rows() appends trace msg to SQL statements"
+);
 
 # #############################################################################
 # Done.

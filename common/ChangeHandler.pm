@@ -184,9 +184,10 @@ sub __queue {
 }
 
 # If called with 1, will process rows that have been deferred from instant
-# processing.  If no arg, will process all rows.
+# processing.  If no arg, will process all rows.  $trace_msg is an optional
+# string to append to each SQL statement for tracing them in binary logs.
 sub process_rows {
-   my ( $self, $queue_level ) = @_;
+   my ( $self, $queue_level, $trace_msg ) = @_;
    my $error_count = 0;
    TRY: {
       if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
@@ -202,9 +203,16 @@ sub process_rows {
             MKDEBUG && _d(scalar(@$rows), 'to', $action);
             $cur_act = $action;
             while ( @$rows ) {
+               # Each row is an arrayref like:
+               # [
+               #   { col1 => val1, colN => ... },
+               #   [ col1, colN, ... ],
+               #   dbh,  # optional
+               # ]
                $row    = shift @$rows;
-               my $dbh = $row->[2] if $row->[2];  # dbh is optional
-               $self->_take_action($self->$func(@$row), $dbh);
+               my $sql = $self->$func(@$row);
+               $sql   .= " /*maatkit $trace_msg*/" if $trace_msg;
+               $self->_take_action($sql, $row->[2]);
             }
          }
          $error_count = 0;
