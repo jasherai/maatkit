@@ -53,9 +53,10 @@ my $binlog = $master_dbh->selectrow_arrayref('show master logs');
 
 $output = `$mysqlbinlog /tmp/12345/data/$binlog->[0] | grep maatkit`;
 $output =~ s/pid:\d+/pid:0/ if $output;
+$output =~ s/host:\S+?\*/host:-*/ if $output;
 is(
    $output,
-"DELETE FROM `onlythisdb`.`t` WHERE `i`='5' LIMIT 1 /*maatkit pid:0 src_db:onlythisdb src_tbl:t src_dsn:P=12345,h=127.0.0.1,p=...,u=msandbox dst_db:onlythisdb dst_tbl:t dst_dsn:P=12346,h=127.0.0.1,p=...,u=msandbox lock:1 transaction:0 changing_src:1 replicate:0 bidirectional:0*/
+"DELETE FROM `onlythisdb`.`t` WHERE `i`='5' LIMIT 1 /*maatkit src_db:onlythisdb src_tbl:t src_dsn:P=12345,h=127.0.0.1,p=...,u=msandbox dst_db:onlythisdb dst_tbl:t dst_dsn:P=12346,h=127.0.0.1,p=...,u=msandbox lock:1 transaction:0 changing_src:1 replicate:0 bidirectional:0 pid:0 user:$ENV{USER} host:-*/
 ",
    "Trace message appended to change SQL"
 );
