@@ -4716,7 +4716,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 6517
+# TableSyncer package 6520
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncer.pm
@@ -4862,7 +4862,7 @@ sub sync_table {
       = $args{trace} ? "pid:$PID src_db:$src->{db} src_tbl:$src->{tbl} "
          . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
          . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
-         . ($dp && $dst->{dsn} ? "src_dsn:".$dp->as_string($dst->{dsn}) : "")
+         . ($dp && $dst->{dsn} ? "dst_dsn:".$dp->as_string($dst->{dsn}) : "")
          . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
                      qw(lock transaction changing_src replicate bidirectional))
       :                "";
@@ -7041,6 +7041,7 @@ sub main {
       VersionParser => $vp,
       MasterSlave   => $ms,
       TableChecksum => $checksum,
+      DSNParser     => $dp,
    );
    my %modules = (
       OptionParser   => $o,

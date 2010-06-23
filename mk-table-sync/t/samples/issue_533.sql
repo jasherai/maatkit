@@ -1,3 +1,4 @@
+DROP DATABASE IF EXISTS onlythisdb;
 CREATE DATABASE onlythisdb;
 USE onlythisdb;
 CREATE TABLE t (
