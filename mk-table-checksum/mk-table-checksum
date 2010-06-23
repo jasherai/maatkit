@@ -7249,16 +7249,18 @@ you specify), 1 is check the server and its slaves, 2 is check the slaves of
 its slaves, and so on.
 
 It finds differences by running the query shown in L<"CONSISTENT CHECKSUMS">,
-and prints results.  Exits after printing.  This is just a convenient way of
+and prints results, then exits after printing.  This is just a convenient way of
 running the query so you don't have to do it manually.
 
 The output is one informational line per slave host, followed by the results
-of the query, if any.  If L<"--quiet"> is specified, there is no output.
+of the query, if any.  If L<"--quiet"> is specified, there is no output.  If
+there are no differences between the master and any slave, there is no output.
+If any slave has chunks that differ from the master, mk-table-checksum's
+exit status is 1; otherwise it is 0.
 
-This option makes C<mk-table-checksum> looks for slaves by running C<SHOW
-PROCESSLIST>.  If it finds connections that appear to be from slaves, it
-derives
-connection information for each slave the same default-and-override method
+This option makes C<mk-table-checksum> look for slaves by running C<SHOW
+PROCESSLIST>.  If it finds connections that appear to be from slaves, it derives
+connection information for each slave with the same default-and-override method
 described in L<"SPECIFYING HOSTS">.
 
 If C<SHOW PROCESSLIST> doesn't return any rows, C<mk-table-checksum> looks at
@@ -7269,9 +7271,6 @@ C<report-port> and so on.
 
 This requires the @@SERVER_ID system variable, so it works only on MySQL
 3.23.26 or newer.
-
-If any slave has chunks that differ from the master, mk-table-checksum's
-exit status is 1; otherwise it is 0.
 
 =item --replicate-database
 
