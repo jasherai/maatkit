@@ -6,22 +6,20 @@ package SlaveRestart;
 
 use strict;
 use warnings FATAL => 'all';
-use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
 #   * dbh                dbh: contains the original slave info.
-#   * slave              coderef: tries to connect to the slave.
+#   * connect_to_slave   coderef: tries to connect to the slave.
 #   * onfail             scalar: whether it will attempt to reconnect or not.
-#   * filter             not used. 
 #   * retries            scalar: number of reconnect attempts.
 #   * delay              coderef: returns the amount of time between each reconnect
 
 sub new {
    my ($class, %args) = @_;
-   foreach my $arg ( qw(dbh slave) ) {
+   foreach my $arg ( qw(dbh connect_to_slave) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -30,9 +28,8 @@ sub new {
          my ($dbh) = @_;
          return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
       },
-      filter            => [],
-      retries           => 1,
-      delay             => \sub { return 5 },
+      retries           => 3,
+      delay             => 5,
 
       # Override defaults
       %args,
@@ -40,49 +37,50 @@ sub new {
    return bless $self, $class;
 }
 
-sub retry {
-   my ($self, $args) = @_;
-   my ($status, $slave) = $self->_check_slave_status($self->{dbh});
+sub reconnect {
+   my ($self) = @_;
+   my $reconnect_attempt = 1;
+   my ($slave, $status);
+  
+   return if $self->{dbh} && $self->{dbh}->ping;
+   warn "Attempting to reconnect to the slave.\n";
+   while ( !$status->{master_host} && $reconnect_attempt <= $self->{retries} ) {
+      my $sleep_time = $self->{delay};
+      MKDEBUG && _d("Reconnect attempt: ", $reconnect_attempt);
+      MKDEBUG && _d("Reconnect time: ", $sleep_time);
+      
+      eval {
+         $slave  = ${ $self->{connect_to_slave} }->();
+      };
 
-   if ( !$status && $self->{onfail} ) {
-      my ($counter, $reconnect_attempt) = (0, 0);
-      print "Attempting to reconnect to the slave.\n";
-
-      RETRY:
-      while ( $counter != 1 ) {
-         my $sleep_time = ${ $self->{delay} }->();
-         ($status, $slave) = $self->_check_slave_status();
-
-         print "Successfully reconnected to the slave.\n"
-            if ( $status->{master_host} && $reconnect_attempt <= $self->{retries} );
-         last RETRY if ( $status->{master_host} || 
-                         $reconnect_attempt > $self->{retries} );
-
-         sleep $sleep_time;
-         $reconnect_attempt++;
-         MKDEBUG && _d("Reconnect attempt: $reconnect_attempt");
-         MKDEBUG && _d("Reconnect time: $sleep_time");
-         next RETRY;
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
       }
-   }  
-   return $status, $slave;
+      $status = $self->_check_slave_status( dbh => $slave );
+
+      MKDEBUG && _d("Successfully reconnected to the slave.")
+         if ( $status->{master_host} && $reconnect_attempt <= $self->{retries} );
+
+      sleep $sleep_time;
+      $reconnect_attempt++;
+   }
+   return $slave;
 };
 
 sub _check_slave_status {
-   my ($self, $args) = @_;
-
-   # If there is no argument, it will use the original slave info.
-   # Otherwise, it will attempt to connect to the slave database.
-   my $slave ||= $args;
-
+   my ($self, %args) = @_;
+   my $dbh = $args{dbh};
    my $show_slave_status = $self->{show_slave_status};
    my $status;
 
    eval{
-      $slave  = ${ $self->{slave} }->();
-      $status = $show_slave_status->($slave);
+      $status = $show_slave_status->($dbh);
    };
-   return $EVAL_ERROR ? undef : $status, $slave;
+
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+   }
+   return $EVAL_ERROR ? undef : $status;
 }
 
 sub _d {
