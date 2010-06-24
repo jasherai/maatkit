@@ -10658,6 +10658,90 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# FileIterator package 6326
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/FileIterator.pm
+#   trunk/common/t/FileIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package FileIterator;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub get_file_itr {
+   my ( $self, @filenames ) = @_;
+
+   my @final_filenames;
+   FILENAME:
+   foreach my $fn ( @filenames ) {
+      if ( !defined $fn ) {
+         warn "Skipping undefined filename";
+         next FILENAME;
+      }
+      if ( $fn ne '-' ) {
+         if ( !-e $fn || !-r $fn ) {
+            warn "$fn does not exist or is not readable";
+            next FILENAME;
+         }
+      }
+      push @final_filenames, $fn;
+   }
+
+   if ( !@filenames ) {
+      push @final_filenames, '-';
+      MKDEBUG && _d('Auto-adding "-" to the list of filenames');
+   }
+
+   MKDEBUG && _d('Final filenames:', @final_filenames);
+   return sub {
+      while ( @final_filenames ) {
+         my $fn = shift @final_filenames;
+         MKDEBUG && _d('Filename:', $fn);
+         if ( $fn eq '-' ) { # Magical STDIN filename.
+            return (*STDIN, undef, undef);
+         }
+         open my $fh, '<', $fn or warn "Cannot open $fn: $OS_ERROR";
+         if ( $fh ) {
+            return ( $fh, $fn, -s $fn );
+         }
+      }
+      return (); # Avoids $f being set to 0 in list context.
+   };
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End FileIterator package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -11504,23 +11588,7 @@ sub main {
    my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
    MKDEBUG && _d('Instrument:', $instrument);
 
-   my @read_files;
-   if ( @ARGV == 0 ) {
-      push @ARGV, '-'; # Magical STDIN filename.
-   }
-
-   # Create callback to read next event.  Some inputs, like Processlist,
-   # may use something else but most use this.
-   my $fh;
-   my $next_event;
-   if ( my $read_time = $o->get('read-timeout') ) {
-      $next_event = sub { return read_timeout($fh, $read_time); };
-   }
-   else {
-      $next_event = sub { return <$fh>; };
-   }
-   my $tell = sub { return tell $fh; };
-
+   my $fi    = new FileIterator();
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
@@ -11536,103 +11604,105 @@ sub main {
          MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
          print "\n# Iteration $iters started at ", ts($iter_start), "\n";
       }
-      my $pr;  # Progress obj created after opening file
 
-      EVENT:
-      while (                                 # Quit if:
-         $oktorun                             # instructed to quit
-         && ($start == $end || $now < $end) ) # or time is exceeded
-      {
-         if ( !$fh ) {
-            my $file = shift @ARGV;
-            if ( !$file ) {
-               MKDEBUG && _d('No more files to parse');
-               last EVENT;
-            }
+      my @read_files;
+      my $next_file = $fi->get_file_itr(@ARGV);
+      my ($fh, $filename, $filesize) = $next_file->();
+      FILE:
+      while ( defined $fh ) {
+         MKDEBUG && _d('Reading', $filename);
+         push @read_files, $filename || "STDIN";
 
-            if ( $file eq '-' ) {
-               $fh = *STDIN;
-               push @read_files, 'STDIN';
-               MKDEBUG && _d('Reading STDIN');
-            }
-            else {
-               if ( !open $fh, "<", $file ) {
+         # Create callback to read next event.  Some inputs, like
+         # Processlist, may use something else but most next_event.
+         my $next_event;
+         if ( my $read_time = $o->get('read-timeout') ) {
+            $next_event = sub { return read_timeout($fh, $read_time); };
+         }
+         else {
+            $next_event = sub { return <$fh>; };
+         }
+         my $tell = sub { return tell $fh; };
+
+         # Reset these var in case we read two logs out of order by time.
+         $past_since = 0;
+         $at_until   = 0;
+
+         # Make a progress reporter, one per file.
+         my $pr;
+         if ( $o->get('progress') && $filename && -e $filename ) {
+            $pr = new Progress(
+               jobsize => $filesize,
+               spec    => $o->get('progress'),
+               name    => $filename,
+            );
+         }
+
+         # Parse and process the events in this file.
+         my $event       = {};
+         my $more_events = 1;
+         my $oktorun_sub = sub { $more_events = $_[0]; };
+         EVENT:
+         while (                                 # Quit if:
+            $oktorun                             # instructed to quit
+            && ($start == $end || $now < $end)   # or time is exceeded
+            && $more_events )                    # or there are no more events
+         {
+            eval {
+               # Run events through the pipeline.  The first pipeline process
+               # is usually responsible for getting the next event. The pipeline
+               # stops if a process does not return the event.  This main loop
+               # stops if a process sets oktorun to false; it usually does this
+               # when there are no more events, but it may do it for other
+               # reasons.  Some inputs are infinite streams of events, like the
+               # proclist, so oktorun is never set to false and it's the user's
+               # job to tell us when to stop.
+               foreach my $callback ( @callbacks ) {
+                  last unless $oktorun;  # the global oktorun var
+                  my $start = $instrument ? time : 0;
+                  $event = $callback->(
+                     $event,                # for backwards compatibility
+                     event      => $event,  # new interface
+                     next_event => $next_event,
+                     tell       => $tell,
+                     oktorun    => $oktorun_sub,
+                     misc       => $misc,
+                     stats      => \%stats,
+                  );
+                  my $end = $instrument ? time : 0;
+                  my $t   = $end - $start;
+                  if ( $instrument ) {
+                     my $name = $callback_names{$callback} || $callback;
+                     $prof{callback}->{$name}->{time} += $t;
+                     $prof{callback}->{$name}->{count}++;
+                     $prof{total}->{time} += $t;
+                     $prof{total}->{count}++;
+                  }
+                  last unless $event;
+               }
+               if ( !$more_events ) {
+                  MKDEBUG && _d('No more events');
+                  close $fh if $fh;
                   $fh = undef;
-                  warn "Cannot open $file: $OS_ERROR\n";
-                  next EVENT;
                }
-               push @read_files, $file;
-               MKDEBUG && _d('Reading', $file);
+            };
+            if ( $EVAL_ERROR ) {
+               _d($EVAL_ERROR);
+               $stats{pipeline_error}++;
 
-               # Reset these var in case we read two logs out of order by time.
-               $past_since = 0;
-               $at_until   = 0;
+               # Don't ignore failure to open a file, else we'll get
+               # "tell() on closed filehandle" errors.
+               last EVENT if $EVAL_ERROR =~ m/Cannot open/;
+
+               last EVENT unless $o->get('continue-on-error');
             }
+            $now = time();
+            $pr->update($tell) if $pr;
+         }  # EVENT
 
-            # Make a progress reporter, one per file.
-            if ( $o->get('progress') && $file && -e $file ) {
-               $pr = new Progress(
-                  jobsize => -s $file,
-                  spec    => $o->get('progress'),
-                  name    => $file,
-               );
-            }
-         }
+         ($fh, $filename, $filesize) = $next_file->();
 
-         eval {
-            # Run events through the pipeline.  The first pipeline process
-            # is usually responsible for getting the next event.  The pipeline
-            # stops if a process does not return the event.  This main loop
-            # stops if a process sets oktorun to false; it usually does this
-            # when there are no more events, but it may do it for other reasons.
-            # Some inputs are infinite streams of events, like the proclist,
-            # so oktorun is never set to false and it's the user's job to tell
-            # us when to stop.
-            my $event       = {};
-            my $more_events = 1;
-            my $oktorun_sub = sub { $more_events = $_[0]; };
-            foreach my $callback ( @callbacks ) {
-               last unless $oktorun;  # the global oktorun var
-               my $start = $instrument ? time : 0;
-               $event = $callback->(
-                  $event,  # for backwards compatibility
-                  event      => $event,  # new interface
-                  next_event => $next_event,
-                  tell       => $tell,
-                  oktorun    => $oktorun_sub,
-                  misc       => $misc,
-                  stats      => \%stats,
-               );
-               my $end = $instrument ? time : 0;
-               my $t   = $end - $start;
-               if ( $instrument ) {
-                  my $name = $callback_names{$callback} || $callback;
-                  $prof{callback}->{$name}->{time} += $t;
-                  $prof{callback}->{$name}->{count}++;
-                  $prof{total}->{time} += $t;
-                  $prof{total}->{count}++;
-               }
-               last unless $event;
-            }
-            if ( !$more_events ) {
-               MKDEBUG && _d('No more events');
-               close $fh if $fh;
-               $fh = undef;
-            }
-         };
-         if ( $EVAL_ERROR ) {
-            _d($EVAL_ERROR);
-            $stats{pipeline_error}++;
-
-            # Don't ignore failure to open a file, else we'll get
-            # "tell() on closed filehandle" errors.
-            last EVENT if $EVAL_ERROR =~ m/Cannot open/;
-
-            last EVENT unless $o->get('continue-on-error');
-         }
-         $now = time();
-         $pr->update($tell) if $pr;
-      }  # EVENT
+      }  # FILE
 
       # ######################################################################
       # Done parsing events, now aggregate, report and possibly do other
