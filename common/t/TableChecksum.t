@@ -388,12 +388,12 @@ is (
       crc_type   => 'varchar',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
    . q{16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 17, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
-   . q{10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc }
+   . q{10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 BIT_XOR',
 );
@@ -411,7 +411,7 @@ is (
       crc_type   => 'bigint',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
+   . q{COALESCE(LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',
 );
@@ -430,7 +430,7 @@ is (
       crc_type   => 'bigint',
    ),
    q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
+   . q{COALESCE(LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',
 );
@@ -449,7 +449,7 @@ is (
       crc_type   => 'int',
    ),
    q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{LOWER(CONV(BIT_XOR(CAST(CRC32(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
+   . q{COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(`film_id`) AS UNSIGNED)), 10, 16)), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film CRC32 BIT_XOR',
 );
@@ -470,12 +470,12 @@ is (
    q{REPLACE /*PROGRESS_COMMENT*/ INTO test.checksum }
    . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
    . q{SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
    . q{16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 17, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
-   . q{10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc }
+   . q{10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 BIT_XOR with replication',
 );
@@ -492,14 +492,14 @@ is (
       crc_type   => 'varchar',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
-   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 ACCUM',
 );
@@ -516,12 +516,12 @@ is (
       crc_type   => 'bigint',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{CONV(CAST(FNV_64(CONCAT(@crc, FNV_64(}
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0}
-   . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
+   . q{))) AS UNSIGNED), 10, 16))), 16), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 ACCUM',
 );
@@ -539,9 +539,9 @@ is (
       cols       => [qw(film_id)],
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{CONV(CAST(CRC32(CONCAT(@crc, CRC32(`film_id`}
-   . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
+   . q{))) AS UNSIGNED), 10, 16))), 16), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film CRC32 ACCUM',
 );
@@ -561,14 +561,14 @@ is (
    q{REPLACE /*PROGRESS_COMMENT*/ INTO test.checksum }
    . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
    . q{SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
-   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40), 0) AS crc }
    . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 ACCUM with replication',
 );
@@ -656,7 +656,7 @@ my $query = $c->make_checksum_query(
    ignorecols => ['c'],
 );
 is($query,
-   'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, \'0\'), CONV(CAST(CRC32(CONCAT(@crc, CRC32(CONCAT_WS(\'#\', `a`, `b`)))) AS UNSIGNED), 10, 16))), 16) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
+   'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, \'0\'), CONV(CAST(CRC32(CONCAT(@crc, CRC32(CONCAT_WS(\'#\', `a`, `b`)))) AS UNSIGNED), 10, 16))), 16), 0) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
    'Ignores specified columns');
 
 $sb->wipe_clean($dbh);

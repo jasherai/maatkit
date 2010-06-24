@@ -129,8 +129,8 @@ SKIP: {
          table    => 'test1',
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
-      . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
-      . q{10, 16)) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' }
+      . q{cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
+      . q{10, 16)), 0) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' }
       . q{AND `b` <= 'en')))},
       'First nibble SQL with FNV_64',
    );
@@ -146,15 +146,15 @@ is(
    ),
    ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
-   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))} :
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
-   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))}
    ),
    'First nibble SQL',
@@ -167,15 +167,15 @@ is(
    ),
    ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
-   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))} :
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
-   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en')))}
    ),
    'First nibble SQL, again',
@@ -191,16 +191,16 @@ is(
    ),
    ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
-   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
    . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))} :
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
-   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
    . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))}
    ),
@@ -231,16 +231,16 @@ is(
    ),
    ($sandbox_version gt '4.0' ?
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{COALESCE(LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
-   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
    . q{1=1))} :
    q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
-   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40) AS crc FROM }
+   . q{COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', `a`, `b`, `c`)))))), 40), 0) AS crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
    . q{1=1))}
    ),
@@ -491,7 +491,7 @@ is(
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085'))) AND (($where))",
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085'))) AND (($where))",
    'Nibble with chunk boundary (chunk sql)'
 );
 
@@ -514,7 +514,7 @@ is(
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '300') OR (`player_id` = '300' AND `buddy_id` > '2085')) AND 1=1)) AND (($where))",
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '300') OR (`player_id` = '300' AND `buddy_id` > '2085')) AND 1=1)) AND (($where))",
    "Next sub-nibble",
 );
 
@@ -550,7 +550,7 @@ is(
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '250') OR (`player_id` = '250' AND `buddy_id` <= '809'))) AND ((`player_id` >= 201 AND `player_id` < 301))",
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list`  WHERE (((`player_id` < '250') OR (`player_id` = '250' AND `buddy_id` <= '809'))) AND ((`player_id` >= 201 AND `player_id` < 301))",
    "Sub-nibble 1"
 );
 
@@ -561,7 +561,7 @@ is(
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '250') OR (`player_id` = '250' AND `buddy_id` > '809')) AND ((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085')))) AND ((`player_id` >= 201 AND `player_id` < 301))",
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list`  WHERE ((((`player_id` > '250') OR (`player_id` = '250' AND `buddy_id` > '809')) AND ((`player_id` < '300') OR (`player_id` = '300' AND `buddy_id` <= '2085')))) AND ((`player_id` >= 201 AND `player_id` < 301))",
    "Sub-nibble 2"
 );
 }
@@ -618,8 +618,8 @@ $sql = $t->get_sql(database=>'issue_804', table=>'t');
 is(
    $sql,
    ($sandbox_version gt '4.0' ?
-   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))" :
-   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), MD5(CONCAT(\@crc, MD5(CONCAT_WS('#', `accountid`, `purchaseid`)))))), 32) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))"
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))" :
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(RIGHT(MAX(\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), MD5(CONCAT(\@crc, MD5(CONCAT_WS('#', `accountid`, `purchaseid`)))))), 32), 0) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))"
    ),
    'SQL nibble for issue_804 table'
 );
