@@ -11,6 +11,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...t/common/EventTimeline.pm   90.9   67.9   50.0   92.9    n/a  100.0   85.0
 ...mon/ExecutionThrottler.pm  100.0   75.0   50.0  100.0    n/a  100.0   92.2
 ...common/ExplainAnalyzer.pm   91.5   65.0   59.1   92.3    0.0   61.1   77.4
+...it/common/FileIterator.pm   79.6   62.5   40.0   88.9    0.0   53.3   72.8
 .../maatkit/common/Grants.pm   76.9   50.0    n/a   85.7    n/a  100.0   75.7
 ...tkit/common/IndexUsage.pm   90.3   62.5   40.0   90.0    0.0   58.7   78.6
 ...mon/InnoDBStatusParser.pm   67.3   37.5   33.3   81.8    n/a  100.0   61.2

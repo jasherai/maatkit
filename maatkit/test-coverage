@@ -29,7 +29,7 @@ update_summary() {
    fi
    summary_file="$summary_dir/summary"
    echo "File                           stmt   bran   cond    sub    pod   time  total" > $summary_file
-   head -q -n 4 $summary_dir/$coverage_files | grep -v File | grep -v '\-\-'  >> $summary_file
+   head -q -n 4 $summary_dir/$coverage_files | grep -v 'File ' | grep -v '\-\-'  >> $summary_file
    echo "Wrote summary to $summary_file"
 }
 
