@@ -447,7 +447,7 @@ sub no_diff {
 
    # Determine cmd type and run it.
    if ( ref $cmd eq 'CODE' ) {
-      output($cmd, $tmp_file);
+      output($cmd, file => $tmp_file);
    }
    else {
       `$cmd > $tmp_file`;
