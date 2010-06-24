@@ -2013,7 +2013,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6309
+# EventAggregator package 6542
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -2563,7 +2563,8 @@ sub top_events {
       } grep {
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
-   my @chosen;
+   my @chosen;  # top events
+   my @other;   # other events (< top)
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
       if ( 
@@ -2580,12 +2581,19 @@ sub top_events {
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
+         else {
+            push @other, $groupby;
+         }
+      }
+
+      else {
+         push @other, $groupby;
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
       $count++;
    }
-   return @chosen;
+   return \@chosen, \@other;
 }
 
 sub add_new_attributes {

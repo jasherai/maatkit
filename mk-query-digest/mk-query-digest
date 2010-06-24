@@ -4618,7 +4618,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6309
+# EventAggregator package 6542
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -5168,7 +5168,8 @@ sub top_events {
       } grep {
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
-   my @chosen;
+   my @chosen;  # top events
+   my @other;   # other events (< top)
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
       if ( 
@@ -5185,12 +5186,19 @@ sub top_events {
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
+         else {
+            push @other, $groupby;
+         }
+      }
+
+      else {
+         push @other, $groupby;
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
       $count++;
    }
-   return @chosen;
+   return \@chosen, \@other;
 }
 
 sub add_new_attributes {
@@ -11726,7 +11734,7 @@ sub main {
             MKDEBUG && _d('Doing reports for groupby', $groupby[$i], 'orderby',
                $orderby_attrib, $orderby_func);
 
-            my @worst = get_worst_queries(
+            my ($worst, $other) = get_worst_queries(
                OptionParser   => $o,
                ea             => $ea[$i],
                orderby_attrib => $orderby_attrib,
@@ -11738,8 +11746,8 @@ sub main {
             if ( $o->get('report') ) {
                my $expected_range = $o->get('expected-range');
                my $explain_why    = $expected_range
-                                  && (   @worst < $expected_range->[0]
-                                      || @worst > $expected_range->[1]);
+                                  && (   @$worst < $expected_range->[0]
+                                      || @$worst > $expected_range->[1]);
 
                # Print a header for this groupby/class if we're doing the
                # standard query report and there's more than one class or
@@ -11762,7 +11770,7 @@ sub main {
                $qrf->print_reports(
                   reports      => \@reports,
                   ea           => $ea[$i],
-                  worst        => \@worst,
+                  worst        => $worst,
                   orderby      => $orderby_attrib,
                   groupby      => $groupby[$i],
                   print_header => $print_header,
@@ -11775,7 +11783,7 @@ sub main {
             if ( $qv ) {  # query review
                update_query_review_tables(
                   ea           => $ea[$i],
-                  worst        => \@worst,
+                  worst        => $worst,
                   QueryReview  => $qv,
                   OptionParser => $o,
                );
@@ -11789,7 +11797,7 @@ sub main {
             if ( $o->get('table-access') ) {  # --table-access
                print_table_access_report(
                   ea           => $ea[$i],
-                  worst        => \@worst,
+                  worst        => $worst,
                   QueryParser  => $qp,
                   OptionParser => $o,
                   Quoter       => $q,
@@ -11799,7 +11807,7 @@ sub main {
             if ( my $file = $o->get('save-results') ) {
                save_results(
                   ea    => $ea[$i],
-                  worst => \@worst,
+                  worst => $worst,
                   file  => $file,
                   gzip  => $o->get('gzip'),
                );
