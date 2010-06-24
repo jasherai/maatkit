@@ -4371,6 +4371,7 @@ sub main {
             }
             my $relay_log = "$relay_log_dir/$slave_status->{file}";
             eval {
+               die "File does not exist" unless -f $relay_log;
                $fh = $spf->open_relay_log(
                   relay_log => $relay_log,
                   start_pos => $slave_status->{pos},
