@@ -35,7 +35,6 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...atkit/common/MySQLDump.pm   63.5   44.4   15.0   73.3    0.0   66.3   52.6
 ...atkit/common/MySQLFind.pm   95.4   85.4   88.1   94.4    n/a  100.0   91.8
 ...t/common/MySQLInstance.pm   91.7   77.8   65.3   96.3    n/a  100.0   84.4
-.../MySQLInstanceReporter.pm    9.7    0.0    0.0   46.2    n/a  100.0   10.5
 ...on/MySQLProtocolParser.pm   82.8   65.3   70.8   97.3    0.0   98.7   75.7
 ...it/common/OptionParser.pm   94.3   83.6   84.5   95.2    0.0   96.2   88.0
 ...maatkit/common/Outfile.pm   81.2   62.5   50.0   88.9    0.0    1.2   74.1
@@ -44,7 +43,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 .../ProcesslistAggregator.pm   85.0   87.5   80.0   85.7    0.0   82.8   82.7
 ...kit/common/Processlist.pm   89.8   84.4   58.8   84.2    0.0   89.7   77.9
 ...aatkit/common/Progress.pm   89.6   76.7   75.0   92.3    0.0   76.3   81.0
-Total                                                                        
+.../common/ProtocolParser.pm   10.0    0.0    3.3   35.3    0.0   31.8    8.3
 ...it/common/QueryAdvisor.pm   71.9   50.0   50.0   80.0    0.0   45.8   64.1
 ...mmon/QueryAdvisorRules.pm   96.0   91.2   76.1   96.7    0.0   45.1   90.2
 ...kit/common/QueryParser.pm   76.3   63.9   62.5   76.5    0.0   87.4   70.0
@@ -57,7 +56,6 @@ Total
 .../common/SchemaDiscover.pm   89.5   42.9  100.0   87.5    n/a  100.0   84.2
 .../common/SchemaFindText.pm   86.7   80.0   50.0   88.9    0.0   96.8   80.0
 .../common/SchemaIterator.pm   95.4   81.8   73.8   92.9    0.0    7.0   86.0
-...kit/common/ServerSpecs.pm   80.4   51.8   62.5   94.1    n/a  100.0   71.1
 ...t/common/SlavePrefetch.pm   77.4   52.6   51.6   88.6    0.0   85.5   66.5
 ...it/common/SlaveRestart.pm   86.8   57.1   45.5   88.9    0.0   85.6   75.3
 ...t/common/SlowLogParser.pm  100.0   94.1   81.2  100.0    0.0   96.8   94.4
