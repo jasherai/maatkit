@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 253;
+use Test::More tests => 255;
 
 use QueryRewriter;
 use QueryParser;
@@ -314,6 +314,22 @@ is(
    $qr->fingerprint($huge_insert),
    q{insert into the_universe values(?+)},
    'truly huge insert 2/2 (issue 687)'
+);
+
+# Issue 1030: Fingerprint can remove ORDER BY ASC
+is(
+   $qr->fingerprint(
+      "select c from t where i=1 order by c asc",
+   ),
+   "select c from t where i=? order by c",
+   "Remove ASC from ORDER BY"
+);
+is(
+   $qr->fingerprint(
+      "select * from t where i=1 order by a, b ASC, d DESC, e asc",
+   ),
+   "select * from t where i=? order by a, b, d desc, e",
+   "Remove only ASC from ORDER BY"
 );
 
 # #############################################################################

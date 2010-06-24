@@ -196,6 +196,21 @@ sub fingerprint {
    # $query =~ s/ , | ,|, /,/g;    # Normalize commas
    # $query =~ s/ = | =|= /=/g;       # Normalize equals
    # $query =~ s# [,=+*/-] ?|[,=+*/-] #+#g;    # Normalize operators
+
+   # Remove ASC keywords from ORDER BY clause so these queries fingerprint
+   # the same:
+   #   SELECT * FROM `products`  ORDER BY name ASC, shape ASC;
+   #   SELECT * FROM `products`  ORDER BY name, shape;
+   # ASC is default so "ORDER BY col ASC" is really the same as just
+   # "ORDER BY col".
+   # http://code.google.com/p/maatkit/issues/detail?id=1030
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      # Replace any occurrence of "ASC" after anchor until end of query.
+      # I have verified this with regex debug: it's a single forward pass
+      # without backtracking.  Probably as fast as it gets.
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
    return $query;
 }
 
