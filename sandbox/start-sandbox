@@ -33,6 +33,9 @@ make_sandbox() {
       echo "sql-mode=$SQL_MODE" >> /tmp/$port/my.sandbox.cnf
    fi
 
+   # Enable the error log.
+   echo "log-error   =    mysqld.log" >> /tmp/$port/my.sandbox.cnf
+
    # Start the sandbox and check that it has InnoDB.
    /tmp/$port/start
    if [ $? -eq 0 ]; then
