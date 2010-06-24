@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added --progress (169).
+
 2010-06-08: version 0.9.18
 
    * Connections did not preserve server SQL modes (issue 801).

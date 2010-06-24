@@ -10512,6 +10512,152 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Progress package 6326
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Progress.pm
+#   trunk/common/t/Progress.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package Progress;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg (qw(jobsize)) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   if ( (!$args{report} || !$args{interval}) ) {
+      if ( $args{spec} && @{$args{spec}} == 2 ) {
+         @args{qw(report interval)} = @{$args{spec}};
+      }
+      else {
+         die "I need either report and interval arguments, or a spec";
+      }
+   }
+
+   my $name  = $args{name} || "Progress";
+   $args{start} ||= time();
+   my $self;
+   $self = {
+      last_reported => $args{start},
+      fraction      => 0,       # How complete the job is
+      callback      => sub {
+         my ($fraction, $elapsed, $remaining, $eta) = @_;
+         printf STDERR "$name: %3d%% %s remain\n",
+            $fraction * 100,
+            Transformers::secs_to_time($remaining),
+            Transformers::ts($eta);
+      },
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub validate_spec {
+   shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
+   my ( $spec ) = @_;
+   if ( @$spec != 2 ) {
+      die "spec array requires a two-part argument\n";
+   }
+   if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+      die "spec array's first element must be one of "
+        . "percentage,time,iterations\n";
+   }
+   if ( $spec->[1] !~ m/^\d+$/ ) {
+      die "spec array's second element must be an integer\n";
+   }
+}
+
+sub set_callback {
+   my ( $self, $callback ) = @_;
+   $self->{callback} = $callback;
+}
+
+sub start {
+   my ( $self, $start ) = @_;
+   $self->{start} = $self->{last_reported} = $start || time();
+}
+
+sub update {
+   my ( $self, $callback, $now ) = @_;
+   my $jobsize   = $self->{jobsize};
+   $now        ||= time();
+   $self->{iterations}++; # How many updates have happened;
+
+   if ( $self->{report} eq 'time'
+         && $self->{interval} > $now - $self->{last_reported}
+   ) {
+      return;
+   }
+   elsif ( $self->{report} eq 'iterations'
+         && ($self->{iterations} - 1) % $self->{interval} > 0
+   ) {
+      return;
+   }
+   $self->{last_reported} = $now;
+
+   my $completed = $callback->();
+   $self->{updates}++; # How many times we have run the update callback
+
+   return if $completed > $jobsize;
+
+   my $fraction = $completed > 0 ? $completed / $jobsize : 0;
+
+   if ( $self->{report} eq 'percentage'
+         && $self->fraction_modulo($self->{fraction})
+            >= $self->fraction_modulo($fraction)
+   ) {
+      $self->{fraction} = $fraction;
+      return;
+   }
+   $self->{fraction} = $fraction;
+
+   my $elapsed   = $now - $self->{start};
+   my $remaining = 0;
+   my $eta       = $now;
+   if ( $completed > 0 && $completed <= $jobsize && $elapsed > 0 ) {
+      my $rate = $completed / $elapsed;
+      if ( $rate > 0 ) {
+         $remaining = ($jobsize - $completed) / $rate;
+         $eta       = $now + int($remaining);
+      }
+   }
+   $self->{callback}->($fraction, $elapsed, $remaining, $eta);
+}
+
+sub fraction_modulo {
+   my ( $self, $num ) = @_;
+   $num *= 100; # Convert from fraction to percentage
+   return sprintf('%d',
+      sprintf('%d', $num / $self->{interval}) * $self->{interval});
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Progress package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -10621,6 +10767,13 @@ sub main {
          }
          else {
             warn $err;
+         }
+      }
+      if ( $o->get('progress') ) {
+         eval { Progress->validate_spec($o->get('progress')) };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            $o->save_error("--progress $EVAL_ERROR");
          }
       }
    }
@@ -11383,6 +11536,7 @@ sub main {
          MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
          print "\n# Iteration $iters started at ", ts($iter_start), "\n";
       }
+      my $pr;  # Progress obj created after opening file
 
       EVENT:
       while (                                 # Quit if:
@@ -11413,6 +11567,15 @@ sub main {
                # Reset these var in case we read two logs out of order by time.
                $past_since = 0;
                $at_until   = 0;
+            }
+
+            # Make a progress reporter, one per file.
+            if ( $o->get('progress') && $file && -e $file ) {
+               $pr = new Progress(
+                  jobsize => -s $file,
+                  spec    => $o->get('progress'),
+                  name    => $file,
+               );
             }
          }
 
@@ -11468,6 +11631,7 @@ sub main {
             last EVENT unless $o->get('continue-on-error');
          }
          $now = time();
+         $pr->update($tell) if $pr;
       }  # EVENT
 
       # ######################################################################
@@ -13019,6 +13183,15 @@ input and prints its reports.  If L<"--iterations"> is 0 or greater than
 1, the next iteration will begin, else the script will exit.
 
 This option requires the Perl POSIX module.
+
+=item --progress
+
+type: array; default: time,30
+
+Print progress reports to STDERR.  The value is a comma-separated list with two
+parts.  The first part can be percentage, time, or iterations; the second part
+specifies how often an update should be printed, in percentage, seconds, or
+number of iterations.
 
 =item --[no]report
 
