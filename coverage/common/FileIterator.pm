@@ -1,8 +1,8 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...it/common/FileIterator.pm   79.6   62.5   40.0   88.9    0.0   53.3   72.8
-FileIterator.t                100.0   50.0   40.0  100.0    n/a   46.7   94.1
+...it/common/FileIterator.pm   79.6   62.5   40.0   88.9    0.0   53.4   72.8
+FileIterator.t                100.0   50.0   40.0  100.0    n/a   46.6   94.1
 Total                          90.1   61.1   40.0   94.4    0.0  100.0   82.6
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
@@ -10,14 +10,14 @@ Total                          90.1   61.1   40.0   94.4    0.0  100.0   82.6
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 19:25:47 2010
-Finish:       Thu Jun 24 19:25:47 2010
+Start:        Thu Jun 24 19:33:17 2010
+Finish:       Thu Jun 24 19:33:17 2010
 
 Run:          FileIterator.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 19:25:48 2010
-Finish:       Thu Jun 24 19:25:48 2010
+Start:        Thu Jun 24 19:33:18 2010
+Finish:       Thu Jun 24 19:33:18 2010
 
 /home/daniel/dev/maatkit/common/FileIterator.pm
 
@@ -43,14 +43,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package FileIterator;
 21                                                    
-22             1                    1             4   use strict;
-               1                                  3   
+22             1                    1             5   use strict;
+               1                                  2   
                1                                  7   
 23             1                    1             5   use warnings FATAL => 'all';
                1                                  2   
-               1                                 12   
+               1                                 10   
 24                                                    
-25             1                    1             5   use English qw(-no_match_vars);
+25             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
                1                                  7   
 26             1                    1             6   use Data::Dumper;
@@ -62,14 +62,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 30                                                    
 31    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                1                                  2   
-               1                                 15   
+               1                                 14   
 32                                                    
 33                                                    sub new {
 34    ***      1                    1      0      5      my ( $class, %args ) = @_;
-35             1                                  4      my $self = {
+35             1                                  9      my $self = {
 36                                                          %args,
 37                                                       };
-38             1                                 13      return bless $self, $class;
+38             1                                 12      return bless $self, $class;
 39                                                    }
 40                                                    
 41                                                    # get_file_itr() returns an iterator over the filenames passed in, which are
@@ -89,43 +89,43 @@ line  err   stmt   bran   cond    sub    pod   time   code
 55                                                    sub get_file_itr {
 56    ***      3                    3      0     15      my ( $self, @filenames ) = @_;
 57                                                    
-58             3                                  8      my @final_filenames;
+58             3                                  7      my @final_filenames;
 59                                                       FILENAME:
-60             3                                 11      foreach my $fn ( @filenames ) {
+60             3                                 12      foreach my $fn ( @filenames ) {
 61    ***      3     50                          13         if ( !defined $fn ) {
 62    ***      0                                  0            warn "Skipping undefined filename";
 63    ***      0                                  0            next FILENAME;
 64                                                          }
 65             3    100                          11         if ( $fn ne '-' ) {
-66    ***      2     50     33                   43            if ( !-e $fn || !-r $fn ) {
+66    ***      2     50     33                   42            if ( !-e $fn || !-r $fn ) {
 67    ***      0                                  0               warn "$fn does not exist or is not readable";
 68    ***      0                                  0               next FILENAME;
 69                                                             }
 70                                                          }
-71             3                                 11         push @final_filenames, $fn;
+71             3                                 13         push @final_filenames, $fn;
 72                                                       }
 73                                                    
 74                                                       # If the list of files is empty, read from STDIN.
 75             3    100                          13      if ( !@filenames ) {
-76             1                                  4         push @final_filenames, '-';
-77             1                                  3         MKDEBUG && _d('Auto-adding "-" to the list of filenames');
+76             1                                  9         push @final_filenames, '-';
+77             1                                  2         MKDEBUG && _d('Auto-adding "-" to the list of filenames');
 78                                                       }
 79                                                    
 80             3                                  8      MKDEBUG && _d('Final filenames:', @final_filenames);
 81                                                       return sub {
-82             5                    5            23         while ( @final_filenames ) {
+82             5                    5            25         while ( @final_filenames ) {
 83             4                                 13            my $fn = shift @final_filenames;
-84             4                                  8            MKDEBUG && _d('Filename:', $fn);
+84             4                                  9            MKDEBUG && _d('Filename:', $fn);
 85             4    100                          17            if ( $fn eq '-' ) { # Magical STDIN filename.
-86             2                                 20               return (*STDIN, undef, undef);
+86             2                                 17               return (*STDIN, undef, undef);
 87                                                             }
 88    ***      2     50                          61            open my $fh, '<', $fn or warn "Cannot open $fn: $OS_ERROR";
-89    ***      2     50                           8            if ( $fh ) {
-90             2                                 21               return ( $fh, $fn, -s $fn );
+89    ***      2     50                           9            if ( $fh ) {
+90             2                                 20               return ( $fh, $fn, -s $fn );
 91                                                             }
 92                                                          }
-93             1                                  5         return (); # Avoids $f being set to 0 in list context.
-94             3                                 33      };
+93             1                                  4         return (); # Avoids $f being set to 0 in list context.
+94             3                                 29      };
 95                                                    }
 96                                                    
 97                                                    sub _d {
@@ -204,7 +204,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     #!/usr/bin/perl
 2                                                     
 3                                                     BEGIN {
-4     ***      1     50     33      1            33      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+4     ***      1     50     33      1            32      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 5                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
 6              1                                  8      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
 7                                                     };
@@ -212,47 +212,47 @@ line  err   stmt   bran   cond    sub    pod   time   code
 9              1                    1            11   use strict;
                1                                  2   
                1                                  6   
-10             1                    1             7   use warnings FATAL => 'all';
+10             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  5   
-11             1                    1            11   use English qw(-no_match_vars);
+               1                                  7   
+11             1                    1            10   use English qw(-no_match_vars);
                1                                  2   
                1                                  8   
-12             1                    1            11   use Test::More tests => 12;
+12             1                    1            10   use Test::More tests => 12;
                1                                  3   
-               1                                  9   
+               1                                 10   
 13                                                    
 14             1                    1            12   use FileIterator;
-               1                                  3   
+               1                                  2   
                1                                 11   
 15             1                    1            11   use MaatkitTest;
-               1                                  6   
-               1                                 37   
+               1                                  5   
+               1                                 40   
 16                                                    
 17    ***      1            50      1             7   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                1                                  2   
-               1                                 23   
+               1                                 24   
 18                                                    
 19             1                    1             6   use Data::Dumper;
                1                                  3   
-               1                                  6   
+               1                                  5   
 20             1                                  4   $Data::Dumper::Indent    = 1;
 21             1                                  4   $Data::Dumper::Sortkeys  = 1;
-22             1                                  3   $Data::Dumper::Quotekeys = 0;
+22             1                                  4   $Data::Dumper::Quotekeys = 0;
 23                                                    
-24             1                                  4   my ($next_fh, $fh, $name, $size);
-25             1                                  6   my $fi = new FileIterator();
-26             1                                  9   isa_ok($fi, 'FileIterator');
+24             1                                  3   my ($next_fh, $fh, $name, $size);
+25             1                                  8   my $fi = new FileIterator();
+26             1                                 10   isa_ok($fi, 'FileIterator');
 27                                                    
 28                                                    # #############################################################################
 29                                                    # Empty list of filenames.
 30                                                    # #############################################################################
-31             1                                  9   $next_fh = $fi->get_file_itr(qw());
-32             1                                  7   is( ref $next_fh, 'CODE', 'get_file_itr() returns a subref' );
-33             1                                  5   ( $fh, $name, $size ) = $next_fh->();
-34             1                                  9   is( "$fh", '*main::STDIN', 'Got STDIN for empty list' );
+31             1                                  8   $next_fh = $fi->get_file_itr(qw());
+32             1                                  6   is( ref $next_fh, 'CODE', 'get_file_itr() returns a subref' );
+33             1                                  4   ( $fh, $name, $size ) = $next_fh->();
+34             1                                  8   is( "$fh", '*main::STDIN', 'Got STDIN for empty list' );
 35             1                                  6   is( $name, undef, 'STDIN has no name' );
-36             1                                  5   is( $size, undef, 'STDIN has no size' );
+36             1                                  4   is( $size, undef, 'STDIN has no size' );
 37                                                    
 38                                                    # #############################################################################
 39                                                    # Magical '-' filename.
@@ -266,19 +266,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 47                                                    # #############################################################################
 48             1                                  6   $next_fh = $fi->get_file_itr(qw(samples/memc_tcpdump009.txt samples/empty));
 49             1                                  9   ( $fh, $name, $size ) = $next_fh->();
-50             1                                  5   is( ref $fh, 'GLOB', 'Open filehandle' );
-51             1                                  6   is( $name, 'samples/memc_tcpdump009.txt', "Got filename for $name");
-52             1                                  7   is( $size, 587, "Got size for $name");
+50             1                                  7   is( ref $fh, 'GLOB', 'Open filehandle' );
+51             1                                  7   is( $name, 'samples/memc_tcpdump009.txt', "Got filename for $name");
+52             1                                  6   is( $size, 587, "Got size for $name");
 53             1                                  6   ( $fh, $name, $size ) = $next_fh->();
 54             1                                  3   is( $name, 'samples/empty', "Got filename for $name");
-55             1                                  7   is( $size, 0, "Got size for $name");
+55             1                                  8   is( $size, 0, "Got size for $name");
 56             1                                  6   ( $fh, $name, $size ) = $next_fh->();
-57             1                                  2   is( $fh, undef, 'Ran off the end of the list' );
+57             1                                  3   is( $fh, undef, 'Ran off the end of the list' );
 58                                                    
 59                                                    # #############################################################################
 60                                                    # Done.
 61                                                    # #############################################################################
-62             1                                  4   exit;
+62             1                                  3   exit;
 
 
 Branches

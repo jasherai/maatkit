@@ -1,16 +1,23 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...mon/InnoDBStatusParser.pm   67.3   37.5   33.3   81.8    n/a  100.0   61.2
-Total                          67.3   37.5   33.3   81.8    n/a  100.0   61.2
+...mon/InnoDBStatusParser.pm   67.3   37.5   40.0   81.8    0.0   91.5   58.7
+InnoDBStatusParser.t          100.0   50.0   33.3  100.0    n/a    8.5   93.0
+Total                          74.8   38.2   37.5   89.5    0.0  100.0   66.2
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
+
+Run:          -e
+Perl version: 118.53.46.49.48.46.48
+OS:           linux
+Start:        Thu Jun 24 19:33:35 2010
+Finish:       Thu Jun 24 19:33:35 2010
 
 Run:          InnoDBStatusParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Sat Aug 29 15:01:59 2009
-Finish:       Sat Aug 29 15:01:59 2009
+Start:        Thu Jun 24 19:33:37 2010
+Finish:       Thu Jun 24 19:33:37 2010
 
 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm
 
@@ -32,26 +39,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # InnoDBStatusParser package $Revision: 4174 $
+18                                                    # InnoDBStatusParser package $Revision: 5266 $
 19                                                    # ###########################################################################
 20                                                    package InnoDBStatusParser;
 21                                                    
 22                                                    # This package was taken from innotop.
 23                                                    
-24             1                    1             8   use strict;
+24             1                    1             5   use strict;
                1                                  2   
                1                                  7   
 25             1                    1             5   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  8   
+               1                                  2   
+               1                                  6   
 26                                                    
-27             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
-               1                                  8   
+27             1                    1             5   use English qw(-no_match_vars);
+               1                                  6   
+               1                                  7   
 28                                                    
-29             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+29    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                1                                  2   
-               1                                 11   
+               1                                 16   
 30                                                    
 31                                                    # TODO see 3 tablespace extents now reserved for B-tree split operations
 32                                                    # example in note on case 1028
@@ -68,8 +75,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 43                                                    my $s  = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
 44                                                    
 45                                                    sub ts_to_time {
-46             1                    1             4      my ( $ts ) = @_;
-47             1                                 17      sprintf('200%d-%02d-%02d %02d:%02d:%02d',
+46    ***      1                    1      0      4      my ( $ts ) = @_;
+47             1                                 19      sprintf('200%d-%02d-%02d %02d:%02d:%02d',
 48                                                          $ts =~ m/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)/);
 49                                                    }
 50                                                    
@@ -916,15 +923,15 @@ line  err   stmt   bran   cond    sub    pod   time   code
 891                                                   );
 892                                                   
 893                                                   sub new {
-894            1                    1            25      my ( $class, %args ) = @_;
-895            1                                 34      return bless {}, $class;
+894   ***      1                    1      0      4      my ( $class, %args ) = @_;
+895            1                                 23      return bless {}, $class;
 896                                                   }
 897                                                   
 898                                                   sub parse {
-899            1                    1            14      my ( $self, $text ) = @_;
+899   ***      1                    1      0     50      my ( $self, $text ) = @_;
 900                                                   
 901                                                      # This will end up holding a series of "tables."
-902            1                                 14      my %result = (
+902            1                                 27      my %result = (
 903                                                         status                => [{}], # Non-repeating data
 904                                                         deadlock_transactions => [],   # The transactions only
 905                                                         deadlock_locks        => [],   # Both held and waited-for
@@ -934,35 +941,35 @@ line  err   stmt   bran   cond    sub    pod   time   code
 909                                                         mutex_waits           => [],
 910                                                         insert_buffer_pages   => [],   # Only if InnoDB built with UNIV_IBUF_DEBUG
 911                                                      );
-912            1                                  4      my $status = $result{status}[0];
+912            1                                  5      my $status = $result{status}[0];
 913                                                   
 914                                                      # Split it into sections and stash for parsing.
-915            1                                  2      my %innodb_sections;
-916            1                                322      my @matches = $text
+915            1                                  3      my %innodb_sections;
+916            1                                351      my @matches = $text
 917                                                         =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
-918            1                                 12      while ( my ($start, $name, $section_text, $end) = splice(@matches, 0, 4) ) {
-919            7                                 51         $innodb_sections{$name} = $section_text;
+918            1                                 16      while ( my ($start, $name, $section_text, $end) = splice(@matches, 0, 4) ) {
+919            7                                 54         $innodb_sections{$name} = $section_text;
 920                                                      }
 921                                                   
 922                                                      # Get top-level info about the status which isn't included in any subsection.
-923            1                                  5      $self->apply_rules($status, $text, 'top_level');
+923            1                                  8      $self->apply_rules($status, $text, 'top_level');
 924                                                   
 925                                                      # Parse non-nested data in each subsection.
 926            1                                  6      foreach my $section ( keys %innodb_sections ) {
-927            7                                 27         my $section_text = $innodb_sections{$section};
+927            7                                 23         my $section_text = $innodb_sections{$section};
 928   ***      7     50                          29         next unless defined $section_text; # No point in trying to parse further.
-929            7                                 32         $self->apply_rules($status, $section_text, $section);
+929            7                                 23         $self->apply_rules($status, $section_text, $section);
 930                                                      }
 931                                                   
 932                                                      # Now get every other table.
-933   ***      1     50                           7      if ( $innodb_sections{'LATEST DETECTED DEADLOCK'} ) {
+933   ***      1     50                           6      if ( $innodb_sections{'LATEST DETECTED DEADLOCK'} ) {
 934   ***      0                                  0         @result{qw(deadlock_transactions deadlock_locks)}
 935                                                            = $self->parse_deadlocks($innodb_sections{'LATEST DETECTED DEADLOCK'});
 936                                                      }
 937   ***      1     50                           5      if ( $innodb_sections{'INSERT BUFFER AND ADAPTIVE HASH INDEX'} ) {
 938   ***      0                                  0         $result{insert_buffer_pages} = [
 939                                                            map {
-940            1                                  7               my %page;
+940            1                                  9               my %page;
 941   ***      0                                  0               @page{qw(page buffer_count)}
 942                                                                  = $_ =~ m/Ibuf count for page $d is $d$/;
 943   ***      0                                  0               \%page;
@@ -970,35 +977,35 @@ line  err   stmt   bran   cond    sub    pod   time   code
 945                                                               =~ m/(^Ibuf count for page.*$)/gs
 946                                                         ];
 947                                                      }
-948   ***      1     50                           6      if ( $innodb_sections{'TRANSACTIONS'} ) {
+948   ***      1     50                           5      if ( $innodb_sections{'TRANSACTIONS'} ) {
 949            1                                  6         $result{transactions} = [
-950            1                                 27            map { $self->parse_txn($_) }
+950            1                                 28            map { $self->parse_txn($_) }
 951                                                               $innodb_sections{'TRANSACTIONS'}
 952                                                               =~ m/(---TRANSACTION \d.*?)(?=\n---TRANSACTION|$)/gs
 953                                                         ];
 954   ***      0                                  0         $result{transaction_locks} = [
 955                                                            map {
-956            1                                  8               my $lock = {};
+956            1                                  9               my $lock = {};
 957   ***      0                                  0               $self->apply_rules($lock, $_, 'lock');
 958   ***      0                                  0               $lock;
 959                                                            }
 960                                                            $innodb_sections{'TRANSACTIONS'} =~ m/(^(?:RECORD|TABLE) LOCKS?.*$)/gm
 961                                                         ];
 962                                                      }
-963   ***      1     50                           8      if ( $innodb_sections{'FILE I/O'} ) {
-964            4                                 13         $result{io_threads} = [
+963   ***      1     50                           5      if ( $innodb_sections{'FILE I/O'} ) {
+964            4                                 12         $result{io_threads} = [
 965                                                            map {
-966            1                                 11               my $thread = {};
-967            4                                 17               $self->apply_rules($thread, $_, 'io_thread');
+966            1                                245               my $thread = {};
+967            4                                 16               $self->apply_rules($thread, $_, 'io_thread');
 968            4                                 15               $thread;
 969                                                            }
 970                                                            $innodb_sections{'FILE I/O'} =~ m{^(I/O thread \d+ .*)$}gm
 971                                                         ];
 972                                                      }
-973   ***      1     50                           9      if ( $innodb_sections{SEMAPHORES} ) {
+973   ***      1     50                           5      if ( $innodb_sections{SEMAPHORES} ) {
 974   ***      0                                  0         $result{mutex_waits} = [
 975                                                            map {
-976            1                                  6               my $cell = {};
+976            1                                  8               my $cell = {};
 977   ***      0                                  0               $self->apply_rules($cell, $_, 'mutex_wait');
 978   ***      0                                  0               $cell;
 979                                                            }
@@ -1006,27 +1013,27 @@ line  err   stmt   bran   cond    sub    pod   time   code
 981                                                         ];
 982                                                      }
 983                                                   
-984            1                                144      return \%result;
+984            1                                140      return \%result;
 985                                                   }
 986                                                   
 987                                                   sub apply_rules {
-988           13                   13            63      my ($self, $hashref, $text, $rulename) = @_;
-989   ***     13     50                          62      my $rules = $parse_rules_for{$rulename}
+988   ***     13                   13      0     63      my ($self, $hashref, $text, $rulename) = @_;
+989   ***     13     50                          70      my $rules = $parse_rules_for{$rulename}
 990                                                         or die "There are no parse rules for '$rulename'";
-991           13                                 33      foreach my $rule ( @{$rules->{rules}} ) {
-              13                                 57   
-992           67                                495         @{$hashref}{ @{$rule->[$COLS]} } = $text =~ m/$rule->[$PATTERN]/m;
-              67                                411   
-              67                                222   
+991           13                                 32      foreach my $rule ( @{$rules->{rules}} ) {
+              13                                 60   
+992           67                                513         @{$hashref}{ @{$rule->[$COLS]} } = $text =~ m/$rule->[$PATTERN]/m;
+              67                                417   
+              67                                219   
 993                                                         # MKDEBUG && _d(@{$rule->[$COLS]}, $rule->[$PATTERN]);
 994                                                         # MKDEBUG && _d(@{$hashref}{ @{$rule->[$COLS]} });
 995                                                      }
 996                                                      # Apply section-specific rules
-997           13                                 62      $rules->{customcode}->($hashref, $text);
+997           13                                 64      $rules->{customcode}->($hashref, $text);
 998                                                   }
 999                                                   
 1000                                                  sub parse_deadlocks {
-1001  ***      0                    0             0      my ($self, $text) = @_;
+1001  ***      0                    0      0      0      my ($self, $text) = @_;
 1002  ***      0                                  0      my (@txns, @locks);
 1003                                                  
 1004  ***      0                                  0      my @sections = $text
@@ -1059,26 +1066,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1031                                                  }
 1032                                                  
 1033                                                  sub parse_txn {
-1034           1                    1             5      my ($self, $text) = @_;
+1034  ***      1                    1      0      7      my ($self, $text) = @_;
 1035                                                  
-1036           1                                 24      my $txn = {};
-1037           1                                  5      $self->apply_rules($txn, $text, 'transaction');
+1036           1                                  4      my $txn = {};
+1037           1                                  8      $self->apply_rules($txn, $text, 'transaction');
 1038                                                  
 1039                                                     # Parsing the line that begins 'MySQL thread id' is complicated.  The only
 1040                                                     # thing always in the line is the thread and query id.  See function
 1041                                                     # innobase_mysql_print_thd() in InnoDB source file sql/ha_innodb.cc.
-1042           1                                  7      my ( $thread_line ) = $text =~ m/^(MySQL thread id .*)$/m;
-1043           1                                  4      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+1042           1                                  9      my ( $thread_line ) = $text =~ m/^(MySQL thread id .*)$/m;
+1043           1                                  5      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
 1044                                                  
-1045  ***      1     50                           6      if ( $thread_line ) {
+1045  ***      1     50                           5      if ( $thread_line ) {
 1046                                                        # These parts can always be gotten.
-1047           1                                 22         ( $mysql_thread_id, $query_id )
+1047           1                                 26         ( $mysql_thread_id, $query_id )
 1048                                                           = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
 1049                                                  
 1050                                                        # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
 1051                                                        # proc_info.  In these cases, there won't be any host/ip/user info
-1052           1                                  5         ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
-1053  ***      1     50                          10         if ( defined($query_status) ) {
+1052           1                                  4         ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
+1053  ***      1     50                          11         if ( defined($query_status) ) {
       ***            50                               
 1054  ***      0                                  0            $user = 'system user';
 1055                                                        }
@@ -1087,17 +1094,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1058                                                        elsif ( $thread_line =~ m/query id \d+ / ) {
 1059                                                           # The IP address is the only non-word thing left, so it's the most
 1060                                                           # useful marker for where I have to start guessing.
-1061           1                                 31            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
+1061           1                                 49            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
 1062  ***      1     50                           5            if ( defined $ip ) {
 1063  ***      0                                  0               ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
 1064                                                           }
 1065                                                           else { # OK, there wasn't an IP address.
 1066                                                              # There might not be ANYTHING except the query status.
-1067           1                                  7               ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
-1068  ***      1     50     33                   16               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
+1067           1                                  8               ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
+1068  ***      1     50     33                   20               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
 1069                                                                 # The remaining tokens are, in order: hostname, user, query_status.
 1070                                                                 # It's basically impossible to know which is which.
-1071           1                                 30                  ( $hostname, $user, $query_status ) = $thread_line
+1071           1                                 33                  ( $hostname, $user, $query_status ) = $thread_line
 1072                                                                    =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
 1073                                                              }
 1074                                                              else {
@@ -1108,7 +1115,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1079                                                     }
 1080                                                  
 1081           1                                  6      @{$txn}{qw(mysql_thread_id query_id hostname ip user query_status)}
-               1                                 11   
+               1                                  8   
 1082                                                        = ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status);
 1083                                                  
 1084           1                                  7      return $txn;
@@ -1163,28 +1170,320 @@ line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
 1068  ***     33      0      0      1   not $query_status =~ /^\w+ing/ and not exists $is_proc_info{$query_status}
 
+or 2 conditions
+
+line  err      %      l     !l   expr
+----- --- ------ ------ ------   ----
+29    ***     50      0      1   $ENV{'MKDEBUG'} || 0
+
 
 Covered Subroutines
 -------------------
 
-Subroutine      Count Location                                                  
---------------- ----- ----------------------------------------------------------
-BEGIN               1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:24  
-BEGIN               1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:25  
-BEGIN               1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:27  
-BEGIN               1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:29  
-apply_rules        13 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:988 
-new                 1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:894 
-parse               1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:899 
-parse_txn           1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1034
-ts_to_time          1 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:46  
+Subroutine      Count Pod Location                                                  
+--------------- ----- --- ----------------------------------------------------------
+BEGIN               1     /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:24  
+BEGIN               1     /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:25  
+BEGIN               1     /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:27  
+BEGIN               1     /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:29  
+apply_rules        13   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:988 
+new                 1   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:894 
+parse               1   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:899 
+parse_txn           1   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1034
+ts_to_time          1   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:46  
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine      Count Location                                                  
---------------- ----- ----------------------------------------------------------
-_d                  0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1088
-parse_deadlocks     0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1001
+Subroutine      Count Pod Location                                                  
+--------------- ----- --- ----------------------------------------------------------
+_d                  0     /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1088
+parse_deadlocks     0   0 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm:1001
+
+
+InnoDBStatusParser.t
+
+line  err   stmt   bran   cond    sub    pod   time   code
+1                                                     #!/usr/bin/perl
+2                                                     
+3                                                     BEGIN {
+4     ***      1     50     33      1            32      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+5                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+6              1                                  7      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+7                                                     };
+8                                                     
+9              1                    1            11   use strict;
+               1                                  2   
+               1                                  5   
+10             1                    1             5   use warnings FATAL => 'all';
+               1                                  2   
+               1                                  7   
+11             1                    1            12   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  8   
+12             1                    1            10   use Test::More tests => 2;
+               1                                  2   
+               1                                  9   
+13                                                    
+14             1                    1            12   use InnoDBStatusParser;
+               1                                  3   
+               1                                 18   
+15             1                    1            14   use MaatkitTest;
+               1                                  6   
+               1                                 40   
+16                                                    
+17             1                    1             6   use Data::Dumper;
+               1                                  3   
+               1                                  7   
+18             1                                  5   $Data::Dumper::Indent    = 1;
+19             1                                  4   $Data::Dumper::Sortkeys  = 1;
+20             1                                  3   $Data::Dumper::Quotekeys = 0;
+21                                                    
+22             1                                  8   my $is = new InnoDBStatusParser();
+23             1                                 10   isa_ok($is, 'InnoDBStatusParser');
+24                                                    
+25                                                    # Very basic status on quiet sandbox server.
+26             1                                 10   is_deeply(
+27                                                       $is->parse(load_file('common/t/samples/is001.txt')),
+28                                                          {
+29                                                            deadlock_locks => [],
+30                                                            deadlock_transactions => [],
+31                                                            insert_buffer_pages => [],
+32                                                            io_threads => [
+33                                                              {
+34                                                                event_set => undef,
+35                                                                id => '0',
+36                                                                io_avg_wait => undef,
+37                                                                io_reads => undef,
+38                                                                io_requests => undef,
+39                                                                io_wait => undef,
+40                                                                io_writes => undef,
+41                                                                max_io_wait => undef,
+42                                                                purpose => 'insert buffer thread',
+43                                                                state => 'waiting for i/o request'
+44                                                              },
+45                                                              {
+46                                                                event_set => undef,
+47                                                                id => '1',
+48                                                                io_avg_wait => undef,
+49                                                                io_reads => undef,
+50                                                                io_requests => undef,
+51                                                                io_wait => undef,
+52                                                                io_writes => undef,
+53                                                                max_io_wait => undef,
+54                                                                purpose => 'log thread',
+55                                                                state => 'waiting for i/o request'
+56                                                              },
+57                                                              {
+58                                                                event_set => undef,
+59                                                                id => '2',
+60                                                                io_avg_wait => undef,
+61                                                                io_reads => undef,
+62                                                                io_requests => undef,
+63                                                                io_wait => undef,
+64                                                                io_writes => undef,
+65                                                                max_io_wait => undef,
+66                                                                purpose => 'read thread',
+67                                                                state => 'waiting for i/o request'
+68                                                              },
+69                                                              {
+70                                                                event_set => undef,
+71                                                                id => '3',
+72                                                                io_avg_wait => undef,
+73                                                                io_reads => undef,
+74                                                                io_requests => undef,
+75                                                                io_wait => undef,
+76                                                                io_writes => undef,
+77                                                                max_io_wait => undef,
+78                                                                purpose => 'write thread',
+79                                                                state => 'waiting for i/o request'
+80                                                              }
+81                                                            ],
+82                                                            mutex_waits => [],
+83                                                            status => [
+84                                                              {
+85                                                                Innodb_awe_memory_allocated => undef,
+86                                                                Innodb_buffer_pool_awe_mapped => undef,
+87                                                                Innodb_buffer_pool_awe_memory_frames => undef,
+88                                                                Innodb_buffer_pool_awe_pages_remapped_sec => undef,
+89                                                                Innodb_buffer_pool_hit_rate => '1',
+90                                                                Innodb_buffer_pool_pages_created => '178',
+91                                                                Innodb_buffer_pool_pages_created_sec => '0.00',
+92                                                                Innodb_buffer_pool_pages_data => '178',
+93                                                                Innodb_buffer_pool_pages_dirty => '0',
+94                                                                Innodb_buffer_pool_pages_free => '333',
+95                                                                Innodb_buffer_pool_pages_read => '0',
+96                                                                Innodb_buffer_pool_pages_read_sec => '0.00',
+97                                                                Innodb_buffer_pool_pages_total => '512',
+98                                                                Innodb_buffer_pool_pages_written => '189',
+99                                                                Innodb_buffer_pool_pages_written_sec => '0.43',
+100                                                               Innodb_buffer_pool_pending_data_writes => '0',
+101                                                               Innodb_buffer_pool_pending_dirty_writes => '0',
+102                                                               Innodb_buffer_pool_pending_fsyncs => 0,
+103                                                               Innodb_buffer_pool_pending_reads => '0',
+104                                                               Innodb_buffer_pool_pending_single_writes => '0',
+105                                                               Innodb_common_memory_allocated => '675584',
+106                                                               Innodb_data_bytes_per_read => '0',
+107                                                               Innodb_data_fsyncs => '16',
+108                                                               Innodb_data_fsyncs_sec => '0.08',
+109                                                               Innodb_data_pending_fsyncs => 0,
+110                                                               Innodb_data_pending_preads => undef,
+111                                                               Innodb_data_pending_pwrites => undef,
+112                                                               Innodb_data_reads => '0',
+113                                                               Innodb_data_reads_sec => '0.00',
+114                                                               Innodb_data_writes => '38',
+115                                                               Innodb_data_writes_sec => '0.14',
+116                                                               Innodb_dictionary_memory_allocated => undef,
+117                                                               Innodb_hash_searches_sec => '0.00',
+118                                                               Innodb_hash_table_buf_frames_reserved => '1',
+119                                                               Innodb_hash_table_size => '17393',
+120                                                               Innodb_hash_table_used_cells => '0',
+121                                                               Innodb_history_list_length => '0',
+122                                                               Innodb_insert_buffer_free_list_length => '0',
+123                                                               Innodb_insert_buffer_inserts => '0',
+124                                                               Innodb_insert_buffer_merged_records => '0',
+125                                                               Innodb_insert_buffer_merges => '0',
+126                                                               Innodb_insert_buffer_pending_reads => '0',
+127                                                               Innodb_insert_buffer_segment_size => '2',
+128                                                               Innodb_insert_buffer_size => '1',
+129                                                               Innodb_lock_struct_count => '0',
+130                                                               Innodb_lock_wait_timeouts => undef,
+131                                                               Innodb_log_caller_write_background_async => undef,
+132                                                               Innodb_log_caller_write_background_sync => undef,
+133                                                               Innodb_log_caller_write_buffer_pool => undef,
+134                                                               Innodb_log_caller_write_checkpoint_async => undef,
+135                                                               Innodb_log_caller_write_checkpoint_sync => undef,
+136                                                               Innodb_log_caller_write_commit_async => undef,
+137                                                               Innodb_log_caller_write_commit_sync => undef,
+138                                                               Innodb_log_caller_write_internal => undef,
+139                                                               Innodb_log_caller_write_log_archive => undef,
+140                                                               Innodb_log_flushed_to => '0 43655',
+141                                                               Innodb_log_ios => '11',
+142                                                               Innodb_log_ios_sec => '0.03',
+143                                                               Innodb_log_last_checkpoint => '0 43655',
+144                                                               Innodb_log_pending_chkp_writes => '0',
+145                                                               Innodb_log_pending_io => '0',
+146                                                               Innodb_log_pending_writes => '0',
+147                                                               Innodb_log_sequence_no => '0 43655',
+148                                                               Innodb_log_syncer_write_background_async => undef,
+149                                                               Innodb_log_syncer_write_background_sync => undef,
+150                                                               Innodb_log_syncer_write_buffer_pool => undef,
+151                                                               Innodb_log_syncer_write_checkpoint_async => undef,
+152                                                               Innodb_log_syncer_write_checkpoint_sync => undef,
+153                                                               Innodb_log_syncer_write_commit_async => undef,
+154                                                               Innodb_log_syncer_write_commit_sync => undef,
+155                                                               Innodb_log_syncer_write_internal => undef,
+156                                                               Innodb_log_syncer_write_log_archive => undef,
+157                                                               Innodb_main_thread_id => '140284306659664',
+158                                                               Innodb_main_thread_proc_no => '4257',
+159                                                               Innodb_main_thread_state => 'waiting for server activity',
+160                                                               Innodb_mutex_os_waits => '0',
+161                                                               Innodb_mutex_rw_excl_os_waits => '0',
+162                                                               Innodb_mutex_rw_excl_spins => '0',
+163                                                               Innodb_mutex_rw_shared_os_waits => '7',
+164                                                               Innodb_mutex_rw_shared_spins => '14',
+165                                                               Innodb_mutex_spin_rounds => '2',
+166                                                               Innodb_mutex_spin_waits => '0',
+167                                                               Innodb_nonhash_searches_sec => '0.00',
+168                                                               Innodb_num_io_threads => 4,
+169                                                               Innodb_os_log_pending_fsyncs => 0,
+170                                                               Innodb_pending_aio_reads => '0',
+171                                                               Innodb_pending_aio_writes => '0',
+172                                                               Innodb_pending_sync_io => '0',
+173                                                               Innodb_purged_to => '0 0',
+174                                                               Innodb_read_views_open => '1',
+175                                                               Innodb_reserved_extent_count => undef,
+176                                                               Innodb_rows_deleted => '0',
+177                                                               Innodb_rows_deleted_sec => '0.00',
+178                                                               Innodb_rows_inserted => '0',
+179                                                               Innodb_rows_inserted_sec => '0.00',
+180                                                               Innodb_rows_read => '0',
+181                                                               Innodb_rows_read_sec => '0.00',
+182                                                               Innodb_rows_updated => '0',
+183                                                               Innodb_rows_updated_sec => '0.00',
+184                                                               Innodb_status_interval => '37',
+185                                                               Innodb_status_time => '2009-07-07 13:18:38',
+186                                                               Innodb_status_truncated => 0,
+187                                                               Innodb_threads_inside_kernel => '0',
+188                                                               Innodb_threads_queued => '0',
+189                                                               Innodb_total_memory_allocated => '20634452',
+190                                                               Innodb_transaction_counter => '0 769',
+191                                                               Innodb_transactions => 1,
+192                                                               Innodb_transactions_truncated => 0,
+193                                                               Innodb_undo_log_record => '0 0',
+194                                                               Innodb_wait_array_reservation_count => '7',
+195                                                               Innodb_wait_array_signal_count => '7'
+196                                                             }
+197                                                           ],
+198                                                           transaction_locks => [],
+199                                                           transactions => [
+200                                                             {
+201                                                               active_secs => undef,
+202                                                               heap_size => undef,
+203                                                               hostname => 'localhost',
+204                                                               ip => undef,
+205                                                               lock_structs => undef,
+206                                                               lock_wait_time => undef,
+207                                                               mysql_tables_locked => undef,
+208                                                               mysql_tables_used => undef,
+209                                                               mysql_thread_id => '3',
+210                                                               os_thread_id => '140284242860368',
+211                                                               proc_no => '4257',
+212                                                               query_id => '11',
+213                                                               query_status => undef,
+214                                                               query_text => 'show innodb status',
+215                                                               read_view_lower_limit => undef,
+216                                                               read_view_upper_limit => undef,
+217                                                               row_locks => undef,
+218                                                               thread_status => undef,
+219                                                               tickets => undef,
+220                                                               txn_id => '0 0',
+221                                                               txn_query_status => undef,
+222                                                               txn_status => 'not started',
+223                                                               undo_log_entries => undef,
+224                                                               user => 'msandbox'
+225                                                             }
+226                                                           ]
+227                                                         },
+228                                                      'Basic InnoDB status'
+229                                                   );
+230                                                   
+231                                                   # #############################################################################
+232                                                   # Done.
+233                                                   # #############################################################################
+234            1                                  4   exit;
+
+
+Branches
+--------
+
+line  err      %   true  false   branch
+----- --- ------ ------ ------   ------
+4     ***     50      0      1   unless $ENV{'MAATKIT_TRUNK'} and -d $ENV{'MAATKIT_TRUNK'}
+
+
+Conditions
+----------
+
+and 3 conditions
+
+line  err      %     !l  l&&!r   l&&r   expr
+----- --- ------ ------ ------ ------   ----
+4     ***     33      0      0      1   $ENV{'MAATKIT_TRUNK'} and -d $ENV{'MAATKIT_TRUNK'}
+
+
+Covered Subroutines
+-------------------
+
+Subroutine Count Location               
+---------- ----- -----------------------
+BEGIN          1 InnoDBStatusParser.t:10
+BEGIN          1 InnoDBStatusParser.t:11
+BEGIN          1 InnoDBStatusParser.t:12
+BEGIN          1 InnoDBStatusParser.t:14
+BEGIN          1 InnoDBStatusParser.t:15
+BEGIN          1 InnoDBStatusParser.t:17
+BEGIN          1 InnoDBStatusParser.t:4 
+BEGIN          1 InnoDBStatusParser.t:9 
 
 

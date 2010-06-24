@@ -1,8 +1,8 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...aatkit/common/Progress.pm   89.6   76.7   75.0   92.3    0.0   40.9   81.0
-Progress.t                    100.0   50.0   40.0  100.0    n/a   59.1   96.4
+...aatkit/common/Progress.pm   89.6   76.7   75.0   92.3    0.0   76.3   81.0
+Progress.t                    100.0   50.0   40.0  100.0    n/a   23.7   96.4
 Total                          96.1   72.2   70.3   97.4    0.0  100.0   88.9
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
@@ -10,14 +10,14 @@ Total                          96.1   72.2   70.3   97.4    0.0  100.0   88.9
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 15:33:44 2010
-Finish:       Thu Jun 24 15:33:44 2010
+Start:        Thu Jun 24 19:35:47 2010
+Finish:       Thu Jun 24 19:35:47 2010
 
 Run:          Progress.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 15:33:45 2010
-Finish:       Thu Jun 24 15:33:45 2010
+Start:        Thu Jun 24 19:35:49 2010
+Finish:       Thu Jun 24 19:35:49 2010
 
 /home/daniel/dev/maatkit/common/Progress.pm
 
@@ -45,23 +45,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    
 22             1                    1             5   use strict;
                1                                  2   
-               1                                  5   
+               1                                  6   
 23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  6   
 24                                                    
-25             1                    1             5   use English qw(-no_match_vars);
+25             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  5   
+               1                                  6   
 26             1                    1             6   use Data::Dumper;
                1                                  3   
-               1                                  6   
+               1                                  7   
 27                                                    $Data::Dumper::Indent    = 1;
 28                                                    $Data::Dumper::Sortkeys  = 1;
 29                                                    $Data::Dumper::Quotekeys = 0;
 30                                                    
-31    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               1                                  2   
+31    ***      1            50      1             5   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               1                                  3   
                1                                 12   
 32                                                    
 33                                                    # This module encapsulates a progress report.  To create a new object, pass in
@@ -88,53 +88,53 @@ line  err   stmt   bran   cond    sub    pod   time   code
 54                                                    #           just prints out "Progress: ..." but you can replace "Progress" with
 55                                                    #           whatever you specify here.
 56                                                    sub new {
-57    ***      6                    6      0     53      my ( $class, %args ) = @_;
-58             6                                 30      foreach my $arg (qw(jobsize)) {
-59    ***      6     50                          43         die "I need a $arg argument" unless defined $args{$arg};
+57    ***      6                    6      0     44      my ( $class, %args ) = @_;
+58             6                                 27      foreach my $arg (qw(jobsize)) {
+59    ***      6     50                          38         die "I need a $arg argument" unless defined $args{$arg};
 60                                                       }
-61    ***      6    100     66                   70      if ( (!$args{report} || !$args{interval}) ) {
+61    ***      6    100     66                   58      if ( (!$args{report} || !$args{interval}) ) {
 62    ***      1     50     33                    7         if ( $args{spec} && @{$args{spec}} == 2 ) {
                1                                  8   
 63             1                                  3            @args{qw(report interval)} = @{$args{spec}};
-               1                                  7   
+               1                                  6   
 64                                                          }
 65                                                          else {
 66    ***      0                                  0            die "I need either report and interval arguments, or a spec";
 67                                                          }
 68                                                       }
 69                                                    
-70             6           100                   49      my $name  = $args{name} || "Progress";
-71             6           100                   36      $args{start} ||= time();
+70             6           100                   44      my $name  = $args{name} || "Progress";
+71             6           100                   33      $args{start} ||= time();
 72             6                                 14      my $self;
 73                                                       $self = {
 74                                                          last_reported => $args{start},
 75                                                          fraction      => 0,       # How complete the job is
 76                                                          callback      => sub {
-77             2                    2            11            my ($fraction, $elapsed, $remaining, $eta) = @_;
-78             2                                 26            printf STDERR "$name: %3d%% %s remain\n",
+77             2                    2             9            my ($fraction, $elapsed, $remaining, $eta) = @_;
+78             2                                 21            printf STDERR "$name: %3d%% %s remain\n",
 79                                                                $fraction * 100,
 80                                                                Transformers::secs_to_time($remaining),
 81                                                                Transformers::ts($eta);
 82                                                          },
-83             6                                110         %args,
+83             6                                 84         %args,
 84                                                       };
-85             6                                 58      return bless $self, $class;
+85             6                                 52      return bless $self, $class;
 86                                                    }
 87                                                    
 88                                                    # Validates the 'spec' argument passed in from --progress command-line option.
 89                                                    # It calls die with a trailing newline to avoid auto-adding the file/line.
 90                                                    sub validate_spec {
 91    ***      3    100             3      0     18      shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
-92             3                                 12      my ( $spec ) = @_;
+92             3                                 11      my ( $spec ) = @_;
 93             3    100                          14      if ( @$spec != 2 ) {
-94             1                                  3         die "spec array requires a two-part argument\n";
+94             1                                  2         die "spec array requires a two-part argument\n";
 95                                                       }
-96             2    100                          17      if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+96             2    100                          16      if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
 97             1                                  3         die "spec array's first element must be one of "
 98                                                            . "percentage,time,iterations\n";
 99                                                       }
 100   ***      1     50                           7      if ( $spec->[1] !~ m/^\d+$/ ) {
-101            1                                  3         die "spec array's second element must be an integer\n";
+101            1                                  2         die "spec array's second element must be an integer\n";
 102                                                      }
 103                                                   }
 104                                                   
@@ -145,14 +145,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 109                                                   # expect to be complete.
 110                                                   sub set_callback {
 111   ***      3                    3      0     12      my ( $self, $callback ) = @_;
-112            3                                 13      $self->{callback} = $callback;
+112            3                                 14      $self->{callback} = $callback;
 113                                                   }
 114                                                   
 115                                                   # Set the start timer of when work began.  You can either set it to time() which
 116                                                   # is the default, or pass in a value.
 117                                                   sub start {
-118   ***      2                    2      0      9      my ( $self, $start ) = @_;
-119   ***      2            33                   15      $self->{start} = $self->{last_reported} = $start || time();
+118   ***      2                    2      0     10      my ( $self, $start ) = @_;
+119   ***      2            33                   13      $self->{start} = $self->{last_reported} = $start || time();
 120                                                   }
 121                                                   
 122                                                   # Provide a progress update.  Pass in a callback subroutine which this code can
@@ -164,13 +164,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 128                                                   # many lines we're done processing -- a number between 0 and 800.  You can also
 129                                                   # optionally pass in the current time, but this is only for testing.
 130                                                   sub update {
-131   ***    156                  156      0    560      my ( $self, $callback, $now ) = @_;
-132          156                                516      my $jobsize   = $self->{jobsize};
-133          156           100                  742      $now        ||= time();
-134          156                                584      $self->{iterations}++; # How many updates have happened;
+131   ***    156                  156      0    561      my ( $self, $callback, $now ) = @_;
+132          156                                512      my $jobsize   = $self->{jobsize};
+133          156           100                  737      $now        ||= time();
+134          156                                445      $self->{iterations}++; # How many updates have happened;
 135                                                   
 136                                                      # Determine whether to just quit and return...
-137   ***    156     50     66                 1474      if ( $self->{report} eq 'time'
+137   ***    156     50     66                 1472      if ( $self->{report} eq 'time'
                     100    100                        
 138                                                            && $self->{interval} > $now - $self->{last_reported}
 139                                                      ) {
@@ -179,46 +179,46 @@ line  err   stmt   bran   cond    sub    pod   time   code
 142                                                      elsif ( $self->{report} eq 'iterations'
 143                                                            && ($self->{iterations} - 1) % $self->{interval} > 0
 144                                                      ) {
-145           25                                 78         return;
+145           25                                 76         return;
 146                                                      }
-147          131                                386      $self->{last_reported} = $now;
+147          131                                387      $self->{last_reported} = $now;
 148                                                   
 149                                                      # Get the updated status of the job
-150          131                                432      my $completed = $callback->();
-151          131                                393      $self->{updates}++; # How many times we have run the update callback
+150          131                                424      my $completed = $callback->();
+151          131                                388      $self->{updates}++; # How many times we have run the update callback
 152                                                   
 153                                                      # Sanity check: can't go beyond 100%
-154          131    100                         454      return if $completed > $jobsize;
+154          131    100                         459      return if $completed > $jobsize;
 155                                                   
 156                                                      # Compute the fraction complete, between 0 and 1.
-157          130    100                         531      my $fraction = $completed > 0 ? $completed / $jobsize : 0;
+157          130    100                         517      my $fraction = $completed > 0 ? $completed / $jobsize : 0;
 158                                                   
 159                                                      # Now that we know the fraction completed, we can decide whether to continue
 160                                                      # on and report, for percentage-based reporting.  Have we crossed an
 161                                                      # interval-percent boundary since the last update?
-162          130    100    100                  820      if ( $self->{report} eq 'percentage'
+162          130    100    100                  824      if ( $self->{report} eq 'percentage'
 163                                                            && $self->fraction_modulo($self->{fraction})
 164                                                               >= $self->fraction_modulo($fraction)
 165                                                      ) {
 166                                                         # We're done; we haven't advanced progress enough to report.
-167           81                                246         $self->{fraction} = $fraction;
-168           81                                239         return;
+167           81                                247         $self->{fraction} = $fraction;
+168           81                                236         return;
 169                                                      }
-170           49                                158      $self->{fraction} = $fraction;
+170           49                                160      $self->{fraction} = $fraction;
 171                                                   
 172                                                      # Continue computing the metrics, and call the callback with them.
-173           49                                161      my $elapsed   = $now - $self->{start};
-174           49                                129      my $remaining = 0;
-175           49                                118      my $eta       = $now;
-176   ***     49    100     66                  546      if ( $completed > 0 && $completed <= $jobsize && $elapsed > 0 ) {
+173           49                                159      my $elapsed   = $now - $self->{start};
+174           49                                126      my $remaining = 0;
+175           49                                122      my $eta       = $now;
+176   ***     49    100     66                  543      if ( $completed > 0 && $completed <= $jobsize && $elapsed > 0 ) {
                            100                        
-177            3                                 11         my $rate = $completed / $elapsed;
-178   ***      3     50                          16         if ( $rate > 0 ) {
-179            3                                 11            $remaining = ($jobsize - $completed) / $rate;
-180            3                                 14            $eta       = $now + int($remaining);
+177            3                                 10         my $rate = $completed / $elapsed;
+178   ***      3     50                          13         if ( $rate > 0 ) {
+179            3                                 10            $remaining = ($jobsize - $completed) / $rate;
+180            3                                 11            $eta       = $now + int($remaining);
 181                                                         }
 182                                                      }
-183           49                                218      $self->{callback}->($fraction, $elapsed, $remaining, $eta);
+183           49                                220      $self->{callback}->($fraction, $elapsed, $remaining, $eta);
 184                                                   }
 185                                                   
 186                                                   # Returns the number rounded to the nearest lower $self->{interval}, for use
@@ -226,9 +226,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 188                                                   # then 0% through 4% all return 0%; 5% through 9% return 5%; and so on.  The
 189                                                   # number needs to be passed as a fraction from 0 to 1.
 190                                                   sub fraction_modulo {
-191   ***    206                  206      0    837      my ( $self, $num ) = @_;
-192          206                                564      $num *= 100; # Convert from fraction to percentage
-193          206                               1822      return sprintf('%d',
+191   ***    206                  206      0    690      my ( $self, $num ) = @_;
+192          206                                569      $num *= 100; # Convert from fraction to percentage
+193          206                               1806      return sprintf('%d',
 194                                                         sprintf('%d', $num / $self->{interval}) * $self->{interval});
 195                                                   }
 196                                                   
@@ -337,45 +337,45 @@ line  err   stmt   bran   cond    sub    pod   time   code
 4     ***      1     50     33      1            32      die
 5                                                           "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 6                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-7              1                                  8      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+7              1                                  7      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
 8                                                     }
 9                                                     
 10             1                    1            11   use strict;
                1                                  2   
-               1                                  6   
-11             1                    1             6   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  6   
-12             1                    1            12   use English qw(-no_match_vars);
+               1                                  5   
+11             1                    1             7   use warnings FATAL => 'all';
                1                                  2   
-               1                                  7   
+               1                                  5   
+12             1                    1            10   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  8   
 13             1                    1            10   use Test::More tests => 29;
-               1                                  4   
-               1                                  9   
-14                                                    
-15             1                    1            20   use Transformers;
                1                                  3   
-               1                                 11   
-16             1                    1            11   use Progress;
-               1                                  3   
-               1                                 14   
-17             1                    1            14   use MaatkitTest;
-               1                                  6   
-               1                                 70   
-18                                                    
-19    ***      1            50      1            11   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               1                                  4   
-               1                                 48   
-20                                                    
-21             1                    1            12   use Data::Dumper;
-               1                                  4   
                1                                 10   
+14                                                    
+15             1                    1            11   use Transformers;
+               1                                  3   
+               1                                 13   
+16             1                    1            11   use Progress;
+               1                                  2   
+               1                                 14   
+17             1                    1            10   use MaatkitTest;
+               1                                  3   
+               1                                 41   
+18                                                    
+19    ***      1            50      1             7   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               1                                  2   
+               1                                 24   
+20                                                    
+21             1                    1             6   use Data::Dumper;
+               1                                  2   
+               1                                  6   
 22             1                                  5   $Data::Dumper::Indent    = 1;
 23             1                                  3   $Data::Dumper::Sortkeys  = 1;
-24             1                                  4   $Data::Dumper::Quotekeys = 0;
+24             1                                  3   $Data::Dumper::Quotekeys = 0;
 25                                                    
-26             1                                  8   my $pr;
-27             1                                  3   my $how_much_done    = 0;
+26             1                                  3   my $pr;
+27             1                                  4   my $how_much_done    = 0;
 28             1                                  3   my $callbacks_called = 0;
 29             1                                  3   my $completion_arr   = [];
 30                                                    
@@ -383,23 +383,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 32                                                    # Checks that the command-line interface works OK
 33                                                    # #############################################################################
 34                                                    
-35             1                                 16   foreach my $test ( (
-36             1                    1           267         [  sub { Progress->validate_spec([qw()]) },
+35             1                                260   foreach my $test ( (
+36             1                    1            19         [  sub { Progress->validate_spec([qw()]) },
 37                                                             'spec array requires a two-part argument', ],
-38             1                    1            16         [  sub { Progress->validate_spec([qw(foo bar)]) },
+38             1                    1            17         [  sub { Progress->validate_spec([qw(foo bar)]) },
 39                                                             'spec array\'s first element must be one of percentage,time,iterations', ],
 40             1                    1            15         [  sub { Progress::validate_spec([qw(time bar)]) },
 41                                                             'spec array\'s second element must be an integer', ],
 42                                                       )
 43                                                    ) {
-44             3                                 81      throws_ok($test->[0], qr/$test->[1]/, $test->[1]);
+44             3                                 83      throws_ok($test->[0], qr/$test->[1]/, $test->[1]);
 45                                                    }
 46                                                    
 47             1                                 16   $pr = new Progress (
 48                                                       jobsize => 100,
 49                                                       spec    => [qw(percentage 15)],
 50                                                    );
-51             1                                  7   is ($pr->{jobsize}, 100, 'jobsize is 100');
+51             1                                  6   is ($pr->{jobsize}, 100, 'jobsize is 100');
 52             1                                  6   is ($pr->{report}, 'percentage', 'report is percentage');
 53             1                                  6   is ($pr->{interval}, 15, 'interval is 15');
 54                                                    
@@ -407,62 +407,62 @@ line  err   stmt   bran   cond    sub    pod   time   code
 56                                                    # Simple percentage-based completion.
 57                                                    # #############################################################################
 58                                                    
-59             1                                  7   $pr = new Progress(
+59             1                                  8   $pr = new Progress(
 60                                                       jobsize  => 100,
 61                                                       report   => 'percentage',
 62                                                       interval => 5,
 63                                                    );
 64                                                    
-65             1                                 16   is($pr->fraction_modulo(.01), 0, 'fraction_modulo .01');
+65             1                                 12   is($pr->fraction_modulo(.01), 0, 'fraction_modulo .01');
 66             1                                  8   is($pr->fraction_modulo(.04), 0, 'fraction_modulo .04');
 67             1                                  6   is($pr->fraction_modulo(.05), 5, 'fraction_modulo .05');
-68             1                                  5   is($pr->fraction_modulo(.09), 5, 'fraction_modulo .09');
+68             1                                  6   is($pr->fraction_modulo(.09), 5, 'fraction_modulo .09');
 69                                                    
 70                                                    $pr->set_callback(
 71                                                       sub{
-72            20                   20            81         my ( $fraction, $elapsed, $remaining, $eta ) = @_;
-73            20                                 59         $how_much_done = $fraction * 100;
-74            20                                 63         $callbacks_called++;
+72            20                   20            84         my ( $fraction, $elapsed, $remaining, $eta ) = @_;
+73            20                                 53         $how_much_done = $fraction * 100;
+74            20                                 66         $callbacks_called++;
 75                                                       }
-76             1                                 10   );
+76             1                                 12   );
 77                                                    
 78                                                    # 0 through 4% shouldn't trigger the callback to be called, so $how_much_done
 79                                                    # should stay at 0%.
-80             1                                  7   my $i = 0;
+80             1                                  8   my $i = 0;
 81             1                                  5   for (0..4) {
-82             5                    5            30      $pr->update(sub{return $i});
+82             5                    5            31      $pr->update(sub{return $i});
                5                                 16   
-83             5                                 22      $i++;
+83             5                                 21      $i++;
 84                                                    }
-85             1                                  6   is($how_much_done, 0, 'Progress has not been updated yet');
+85             1                                  4   is($how_much_done, 0, 'Progress has not been updated yet');
 86             1                                  5   is($callbacks_called, 0, 'Callback has not been called');
 87                                                    
 88                                                    # Now we cross the 5% threshold... this should call the callback.
 89             1                    1             9   $pr->update(sub{return $i});
-               1                                  4   
+               1                                  5   
 90             1                                  4   $i++;
 91             1                                  5   is($how_much_done, 5, 'Progress updated to 5%');
 92             1                                  5   is($callbacks_called, 1, 'Callback has been called');
 93                                                    
-94             1                                  5   for (6..99) {
+94             1                                  6   for (6..99) {
 95            94                   94           546      $pr->update(sub{return $i});
-              94                                308   
-96            94                                373      $i++;
+              94                                310   
+96            94                                371      $i++;
 97                                                    }
-98             1                                  4   is($how_much_done, 95, 'Progress updated to 95%'); # Not 99 because interval=5
-99             1                                  6   is($callbacks_called, 19, 'Callback has been called 19 times');
+98             1                                  7   is($how_much_done, 95, 'Progress updated to 95%'); # Not 99 because interval=5
+99             1                                  7   is($callbacks_called, 19, 'Callback has been called 19 times');
 100                                                   
 101                                                   # Go to 100%
-102            1                    1            11   $pr->update(sub{return $i});
+102            1                    1            10   $pr->update(sub{return $i});
                1                                  4   
 103            1                                  6   is($how_much_done, 100, 'Progress updated to 100%');
 104            1                                  6   is($callbacks_called, 20, 'Callback has been called 20 times');
 105                                                   
 106                                                   # Can't go beyond 100%, right?
-107            1                    1             8   $pr->update(sub{return 200});
-               1                                  5   
-108            1                                  5   is($how_much_done, 100, 'Progress stops at 100%');
-109            1                                  5   is($callbacks_called, 20, 'Callback not called any more times');
+107            1                    1            10   $pr->update(sub{return 200});
+               1                                  4   
+108            1                                  6   is($how_much_done, 100, 'Progress stops at 100%');
+109            1                                  6   is($callbacks_called, 20, 'Callback not called any more times');
 110                                                   
 111                                                   # #############################################################################
 112                                                   # Iteration-based completion.
@@ -473,36 +473,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
 117                                                      report   => 'iterations',
 118                                                      interval => 2,
 119                                                   );
-120            1                                  8   $how_much_done    = 0;
+120            1                                  9   $how_much_done    = 0;
 121            1                                  3   $callbacks_called = 0;
 122                                                   $pr->set_callback(
 123                                                      sub{
-124           26                   26            99         my ( $fraction, $elapsed, $remaining, $eta ) = @_;
+124           26                   26           104         my ( $fraction, $elapsed, $remaining, $eta ) = @_;
 125           26                                 74         $how_much_done = $fraction * 100;
-126           26                                 81         $callbacks_called++;
+126           26                                 84         $callbacks_called++;
 127                                                      }
-128            1                                  9   );
+128            1                                 10   );
 129                                                   
 130            1                                  6   $i = 0;
 131            1                                  5   for ( 0 .. 50 ) {
-132           51                   26           284      $pr->update(sub{return $i});
-              26                                 92   
-133           51                                193      $i++;
+132           51                   26           282      $pr->update(sub{return $i});
+              26                                 89   
+133           51                                200      $i++;
 134                                                   }
-135            1                                  4   is($how_much_done, 10, 'Progress is 10% done');
-136            1                                  4   is($callbacks_called, 26, 'Callback called every 2 iterations');
+135            1                                  8   is($how_much_done, 10, 'Progress is 10% done');
+136            1                                  5   is($callbacks_called, 26, 'Callback called every 2 iterations');
 137                                                   
 138                                                   # #############################################################################
 139                                                   # Time-based completion.
 140                                                   # #############################################################################
 141                                                   
-142            1                                  7   $pr = new Progress(
+142            1                                  8   $pr = new Progress(
 143                                                      jobsize  => 600,
 144                                                      report   => 'time',
 145                                                      interval => 10, # Every ten seconds
 146                                                   );
 147            1                                 10   $pr->start(10); # Current time is 10 seconds.
-148            1                                  3   $completion_arr = [];
+148            1                                  4   $completion_arr = [];
 149            1                                  3   $callbacks_called  = 0;
 150                                                   $pr->set_callback(
 151                                                      sub{
@@ -517,7 +517,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 159                                                      [.1, 25, 225, 260 ],
 160                                                      'Got completion info for time-based stuff'
 161                                                   );
-162            1                                 23   is($callbacks_called, 1, 'Callback called once');
+162            1                                  9   is($callbacks_called, 1, 'Callback called once');
 163                                                   
 164                                                   # #############################################################################
 165                                                   # Test the default callback
@@ -527,45 +527,45 @@ line  err   stmt   bran   cond    sub    pod   time   code
 169            1                                  3   eval {
 170            1                                  7      local *STDERR;
 171   ***      1     50             1             2      open STDERR, '>', \$buffer or die $OS_ERROR;
-               1                              14756   
-               1                                  3   
+               1                                300   
+               1                                  2   
                1                                  7   
-172            1                                 24      $pr = new Progress(
+172            1                                 22      $pr = new Progress(
 173                                                         jobsize  => 600,
 174                                                         report   => 'time',
 175                                                         interval => 10, # Every ten seconds
 176                                                      );
-177            1                                 13      $pr->start(10); # Current time is 10 seconds.
+177            1                                 11      $pr->start(10); # Current time is 10 seconds.
 178            1                    1             8      $pr->update(sub{return 60}, 35);
-               1                                  5   
+               1                                  3   
 179            1                                  7      is($buffer, "Progress:  10% 03:45 remain\n",
 180                                                         'Tested the default callback');
 181                                                   };
-182            1                                 25   is ($EVAL_ERROR, '', "No error in default callback");
+182            1                                 15   is ($EVAL_ERROR, '', "No error in default callback");
 183                                                   
-184            1                                  9   $buffer = '';
-185            1                                  5   eval {
-186            1                                  6      local *STDERR;
-187   ***      1     50                          26      open STDERR, '>', \$buffer or die $OS_ERROR;
-188            1                                 17      $pr = new Progress(
+184            1                                 11   $buffer = '';
+185            1                                  4   eval {
+186            1                                  3      local *STDERR;
+187   ***      1     50                          15      open STDERR, '>', \$buffer or die $OS_ERROR;
+188            1                                 10      $pr = new Progress(
 189                                                         jobsize  => 600,
 190                                                         report   => 'time',
 191                                                         interval => 10, # Every ten seconds
 192                                                         name     => 'custom name',
 193                                                         start    => 10, # Current time is 10 seconds, alternate interface
 194                                                      );
-195            1                                 21      is($pr->{start}, 10, 'Custom start time param works');
-196            1                    1            14      $pr->update(sub{return 60}, 35);
-               1                                  6   
-197            1                                 11      is($buffer, "custom name:  10% 03:45 remain\n",
+195            1                                 11      is($pr->{start}, 10, 'Custom start time param works');
+196            1                    1             9      $pr->update(sub{return 60}, 35);
+               1                                  4   
+197            1                                  6      is($buffer, "custom name:  10% 03:45 remain\n",
 198                                                         'Tested the default callback with custom name');
 199                                                   };
-200            1                                 18   is ($EVAL_ERROR, '', "No error in default callback with custom name");
+200            1                                 10   is ($EVAL_ERROR, '', "No error in default callback with custom name");
 201                                                   
 202                                                   # #############################################################################
 203                                                   # Done.
 204                                                   # #############################################################################
-205            1                                  4   exit;
+205            1                                  3   exit;
 
 
 Branches

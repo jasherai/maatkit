@@ -1,23 +1,23 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...kit/common/MySQLConfig.pm   90.0   72.6   68.2   93.3    0.0   94.6   79.8
-MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    5.4   95.0
-Total                          93.4   71.2   64.0   96.2    0.0  100.0   83.8
+...kit/common/MySQLConfig.pm   90.8   70.0   63.2   88.9    0.0   91.5   79.7
+MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    8.5   95.1
+Total                          93.8   68.8   59.1   93.1    0.0  100.0   83.6
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Apr  6 16:27:25 2010
-Finish:       Tue Apr  6 16:27:25 2010
+Start:        Thu Jun 24 19:35:13 2010
+Finish:       Thu Jun 24 19:35:13 2010
 
 Run:          MySQLConfig.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Apr  6 16:27:27 2010
-Finish:       Tue Apr  6 16:27:27 2010
+Start:        Thu Jun 24 19:35:15 2010
+Finish:       Thu Jun 24 19:35:15 2010
 
 /home/daniel/dev/maatkit/common/MySQLConfig.pm
 
@@ -39,359 +39,345 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # MySQLConfig package $Revision: 6094 $
+18                                                    # MySQLConfig package $Revision: 6397 $
 19                                                    # ###########################################################################
 20                                                    package MySQLConfig;
 21                                                    
-22             1                    1             5   use strict;
+22                                                    # This package encapsulates a MySQL config (i.e. its system variables)
+23                                                    # from different sources: SHOW VARIABLES, mysqld --help --verbose, etc.
+24                                                    # (See set_config() for full list of valid input.)  It basically just
+25                                                    # parses the config into a common data struct, then MySQLConfig objects
+26                                                    # are passed to other modules like MySQLConfigComparer.
+27                                                    
+28             1                    1             5   use strict;
                1                                  2   
-               1                                  7   
-23             1                    1             6   use warnings FATAL => 'all';
+               1                                 11   
+29             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  5   
-24             1                    1             5   use English qw(-no_match_vars);
-               1                                  3   
+30             1                    1             5   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  8   
+31             1                    1             6   use Data::Dumper;
+               1                                  2   
                1                                  7   
-25                                                    
-26    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               1                                  3   
-               1                                 14   
-27                                                    
-28                                                    my %undef_for = (
-29                                                       'log'                         => 'OFF',
-30                                                       log_bin                       => 'OFF',
-31                                                       log_slow_queries              => 'OFF',
-32                                                       log_slave_updates             => 'ON',
-33                                                       log_queries_not_using_indexes => 'ON',
-34                                                       log_update                    => 'OFF',
-35                                                       skip_bdb                      => 0,
-36                                                       skip_external_locking         => 'ON',
-37                                                       skip_name_resolve             => 'ON',
-38                                                    );
-39                                                    
-40                                                    my %eq_for = (
-41                                                       ft_stopword_file          => sub { return _veq(@_, '(built-in)', ''); },
-42                                                       query_cache_type          => sub { return _veq(@_, 'ON', '1');        },
-43                                                       ssl                       => sub { return _veq(@_, '1', 'TRUE');      },
-44                                                       sql_mode                  => sub { return _veq(@_, '', 'OFF');        },
-45                                                    
-46                                                       basedir                   => sub { return _patheq(@_);                },
-47                                                       language                  => sub { return _patheq(@_);                },
-48                                                    
-49                                                       log_bin                   => sub { return _eqifon(@_);                },
-50                                                       log_slow_queries          => sub { return _eqifon(@_);                },
-51                                                    
-52                                                       general_log_file          => sub { return _eqifconfundef(@_);         },
-53                                                       innodb_data_file_path     => sub { return _eqifconfundef(@_);         },
-54                                                       innodb_log_group_home_dir => sub { return _eqifconfundef(@_);         },
-55                                                       log_error                 => sub { return _eqifconfundef(@_);         },
-56                                                       open_files_limit          => sub { return _eqifconfundef(@_);         },
-57                                                       slow_query_log_file       => sub { return _eqifconfundef(@_);         },
-58                                                       tmpdir                    => sub { return _eqifconfundef(@_);         },
+32                                                    $Data::Dumper::Indent    = 1;
+33                                                    $Data::Dumper::Sortkeys  = 1;
+34                                                    $Data::Dumper::Quotekeys = 0;
+35                                                    
+36    ***      1            50      1             7   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               1                                  2   
+               1                                 18   
+37                                                    
+38                                                    my %undef_for = (
+39                                                       'log'                         => 'OFF',
+40                                                       log_bin                       => 'OFF',
+41                                                       log_slow_queries              => 'OFF',
+42                                                       log_slave_updates             => 'ON',
+43                                                       log_queries_not_using_indexes => 'ON',
+44                                                       log_update                    => 'OFF',
+45                                                       skip_bdb                      => 0,
+46                                                       skip_external_locking         => 'ON',
+47                                                       skip_name_resolve             => 'ON',
+48                                                    );
+49                                                    
+50                                                    my %can_be_duplicate = (
+51                                                       replicate_wild_do_table     => 1,
+52                                                       replicate_wild_ignore_table => 1,
+53                                                       replicate_rewrite_db        => 1,
+54                                                       replicate_ignore_table      => 1,
+55                                                       replicate_ignore_db         => 1,
+56                                                       replicate_do_table          => 1,
+57                                                       replicate_do_db             => 1,
+58                                                    );
 59                                                    
-60                                                       long_query_time           => sub { return _numericeq(@_);             },
-61                                                    );
+60                                                    sub new {
+61    ***      3                    3      0     16      my ( $class, %args ) = @_;
 62                                                    
-63                                                    my %can_be_duplicate = (
-64                                                       replicate_wild_do_table     => 1,
-65                                                       replicate_wild_ignore_table => 1,
-66                                                       replicate_rewrite_db        => 1,
-67                                                       replicate_ignore_table      => 1,
-68                                                       replicate_ignore_db         => 1,
-69                                                       replicate_do_table          => 1,
-70                                                       replicate_do_db             => 1,
-71                                                    );
-72                                                    
-73                                                    sub new {
-74    ***      2                    2      0     11      my ( $class, %args ) = @_;
-75                                                    
-76             2                                 27      my $self = {
-77                                                          # defaults
-78                                                          defaults_file => undef, 
-79                                                          commands      => {
-80                                                             mysqld            => "mysqld",
-81                                                             my_print_defaults => "my_print_defaults",
-82                                                             show_variables    => "SHOW /*!40103 GLOBAL*/ VARIABLES",
-83                                                          },
-84                                                    
-85                                                          # override defaults
-86                                                          %args,
-87                                                    
-88                                                          # private
-89                                                          default_defaults_files => [],
-90                                                          duplicate_vars         => {},
-91                                                          config                 => {
-92                                                             offline => {},  # vars as set by defaults files
-93                                                             online  => {},  # vars as currently set on running server
-94                                                          },
-95                                                       };
-96                                                    
-97             2                                 20      return bless $self, $class;
+63             3                                 30      my $self = {
+64                                                          # defaults
+65                                                          defaults_file  => undef,
+66                                                          version        => '',
+67                                                    
+68                                                          # override defaults
+69                                                          %args,
+70                                                    
+71                                                          # private
+72                                                          default_defaults_files => [],
+73                                                          duplicate_vars         => {},
+74                                                          config                 => {},
+75                                                       };
+76                                                    
+77             3                                 27      return bless $self, $class;
+78                                                    }
+79                                                    
+80                                                    # Returns true if the MySQL config has the given system variable.
+81                                                    sub has {
+82    ***      3                    3      0     12      my ( $self, $var ) = @_;
+83             3                                 22      return exists $self->{config}->{$var};
+84                                                    }
+85                                                    
+86                                                    # Returns the value for the given system variable.  Returns its
+87                                                    # online/effective value by default.
+88                                                    sub get {
+89    ***      6                    6      0     30      my ( $self, $var ) = @_;
+90    ***      6     50                          27      return unless $var;
+91             6                                 44      return $self->{config}->{$var};
+92                                                    }
+93                                                    
+94                                                    # Returns the whole hashref of config vals.
+95                                                    sub get_config {
+96    ***      2                    2      0     12      my ( $self, %args ) = @_;
+97             2                                194      return $self->{config};
 98                                                    }
 99                                                    
-100                                                   # Returns true if the MySQL config has the given system variable.
-101                                                   sub has {
-102   ***      3                    3      0     12      my ( $self, $var ) = @_;
-103            3           100                   53      return exists $self->{config}->{offline}->{$var}
-104                                                          || exists $self->{config}->{online}->{$var};
-105                                                   }
-106                                                   
-107                                                   # Returns the value for the given system variable.  Returns its
-108                                                   # online/effective value by default.
-109                                                   sub get {
-110   ***      7                    7      0     38      my ( $self, $var, %args ) = @_;
-111   ***      7     50                          28      return unless $var;
-112            7    100                          68      return $args{offline} ? $self->{config}->{offline}->{$var}
-113                                                         :                    $self->{config}->{online}->{$var};
-114                                                   }
-115                                                   
-116                                                   # Returns the whole online (default) or offline hashref of config vals.
-117                                                   sub get_config {
-118   ***      3                    3      0     16      my ( $self, %args ) = @_;
-119            3    100                         186      return $args{offline} ? $self->{config}->{offline}
-120                                                         :                    $self->{config}->{online};
-121                                                   }
-122                                                   
-123                                                   sub get_duplicate_variables {
-124   ***      1                    1      0      5      my ( $self ) = @_;
-125            1                                  9      return $self->{duplicate_vars};
-126                                                   }
+100                                                   sub get_duplicate_variables {
+101   ***      1                    1      0      4      my ( $self ) = @_;
+102            1                                  9      return $self->{duplicate_vars};
+103                                                   }
+104                                                   
+105                                                   sub version {
+106   ***      0                    0      0      0      my ( $self ) = @_;
+107   ***      0                                  0      return $self->{version};
+108                                                   }
+109                                                   
+110                                                   # Arguments:
+111                                                   #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
+112                                                   #   when from=mysqld or my_print_defaults:
+113                                                   #     * file    scalar: get output from file, or
+114                                                   #     * fh      scalar: get output from fh
+115                                                   #   when from=show_variables:
+116                                                   #     * dbh     obj: get SHOW VARIABLES from dbh, or
+117                                                   #     * rows    arrayref: get SHOW VARIABLES from rows
+118                                                   # Sets the offline or online config values from the given source.
+119                                                   # Returns nothing.
+120                                                   sub set_config {
+121   ***      6                    6      0     42      my ( $self, %args ) = @_;
+122            6                                 27      foreach my $arg ( qw(from) ) {
+123   ***      6     50                          35         die "I need a $arg argument" unless $args{$arg};
+124                                                      }
+125            6                                 21      my $from = $args{from};
+126            6                                 21      MKDEBUG && _d('Set config', Dumper(\%args));
 127                                                   
-128                                                   # Arguments:
-129                                                   #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
-130                                                   #   when from=mysqld or my_print_defaults:
-131                                                   #     * cmd     scalar: get output from cmd, or
-132                                                   #     * file    scalar: get output from file, or
-133                                                   #     * fh      scalar: get output from fh
-134                                                   #   when from=show_variables:
-135                                                   #     * dbh     obj: dbh to get SHOW VARIABLES
-136                                                   #     * rows    arrayref: vals from SHOW VARIABLES
-137                                                   # Sets the offline or online config values from the given source.
-138                                                   # Returns nothing.
-139                                                   sub set_config {
-140   ***      5                    5      0     35      my ( $self, %args ) = @_;
-141            5                                 21      foreach my $arg ( qw(from) ) {
-142   ***      5     50                          29         die "I need a $arg argument" unless $args{$arg};
-143                                                      }
-144            5                                 17      my $from = $args{from};
-145                                                   
-146            5    100    100                   45      if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
+128            6    100    100                   77      if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
       ***            50                               
-147   ***      3     50     33                   34         die "Setting the MySQL config from $from requires a "
+129   ***      3     50     33                   34         die "Setting the MySQL config from $from requires a "
       ***                   33                        
-148                                                               . "cmd, file, or fh argument"
-149                                                            unless $args{cmd} || $args{file} || $args{fh};
-150                                                   
-151            3                                  9         my $output;
-152            3                                  9         my $fh = $args{fh};
-153   ***      3     50                          12         if ( $args{cmd} ) {
-154   ***      0                                  0            my $cmd_sub = "_get_${from}_output";
-155   ***      0                                  0            $output = $self->$cmd_sub();
-156                                                         }
-157   ***      3     50                          13         if ( $args{file} ) {
-158            3    100                          89            open $fh, '<', $args{file}
-159                                                               or die "Cannot open $args{file}: $OS_ERROR";
-160                                                         }
-161   ***      2     50                          10         if ( $fh ) {
-162            2                                  5            $output = do { local $/ = undef; <$fh> };
-               2                                 16   
-               2                                169   
-163                                                         }
-164                                                   
-165            2                                  7         my ($config, $dupes, $ddf);
-166            2    100                          12         if ( $from eq 'mysqld' ) {
+130                                                               . "cmd, file, or fh argument"
+131                                                            unless $args{cmd} || $args{file} || $args{fh};
+132                                                   
+133            3                                  9         my $output;
+134            3                                  9         my $fh = $args{fh};
+135   ***      3     50                          13         if ( $args{file} ) {
+136            3    100                          88            open $fh, '<', $args{file}
+137                                                               or die "Cannot open $args{file}: $OS_ERROR";
+138                                                         }
+139   ***      2     50                           9         if ( $fh ) {
+140            2                                  6            $output = do { local $/ = undef; <$fh> };
+               2                                 10   
+               2                              11898   
+141                                                         }
+142                                                   
+143            2                                  9         my ($config, $dupes, $ddf);
+144            2    100                          22         if ( $from eq 'mysqld' ) {
       ***            50                               
-167            1                                  5            ($config, $ddf) = $self->parse_mysqld($output);
-168                                                         }
-169                                                         elsif ( $from eq 'my_print_defaults' ) {
-170            1                                  5            ($config, $dupes) = $self->parse_my_print_defaults($output);
-171                                                         }
-172                                                   
-173   ***      2     50                          11         die "Failed to parse MySQL config from $from" unless $config;
-174            2                                 68         @{$self->{config}->{offline}}{keys %$config} = values %$config;
-               2                                157   
-175                                                   
-176            2    100                          38         $self->{default_defaults_files} = $ddf   if $ddf;
-177            2    100                           8         $self->{duplicate_vars}         = $dupes if $dupes;
-178                                                      }
-179                                                      elsif ( $args{from} eq 'show_variables' ) {
-180   ***      2     50     66                   23         die "Setting the MySQL config from $from requires a "
-181                                                               . "dbh or rows argument"
-182                                                            unless $args{dbh} || $args{rows};
-183                                                   
-184            2                                  7         my $rows = $args{rows};
-185            2    100                           9         if ( $args{dbh} ) {
-186            1                                  5            my $sql = $self->{commands}->{show_variables};
-187            1                                  2            MKDEBUG && _d($args{dbh}, $sql);
-188            1                                  3            $rows = $args{dbh}->selectall_arrayref($sql);
-189                                                         }
-190            2                               1335         $self->set_online_config($rows);
-191                                                      }
-192                                                      else {
-193   ***      0                                  0         die "I don't know how to set the MySQL config from $from";
-194                                                      }
-195            4                                 51      return;
-196                                                   }
-197                                                   
-198                                                   # Set online config given the arrayref of rows.  This arrayref is
-199                                                   # usually from SHOW VARIABLES.  This sub is usually called via
-200                                                   # set_config().
-201                                                   sub set_online_config {
-202   ***      2                    2      0     11      my ( $self, $rows ) = @_;
-203   ***      2     50                           9      return unless $rows;
-204            2                                  9      my %config = map { @$_ } @$rows;
-             242                               1029   
-205            2                                 61      $self->{config}->{online} = \%config;
-206            2                                 57      return;
-207                                                   }
-208                                                   
-209                                                   # Parse "mysqld --help --verbose" and return a hashref of variable=>values
-210                                                   # and an arrayref of default defaults files if possible.  The "default
-211                                                   # defaults files" are the defaults file that mysqld reads by default if no
-212                                                   # defaults file is explicitly given by --default-file.
-213                                                   sub parse_mysqld {
-214   ***      1                    1      0     97      my ( $self, $output ) = @_;
-215   ***      1     50                           6      return unless $output;
-216                                                   
-217                                                      # First look for the list of default defaults files like
-218                                                      #   Default options are read from the following files in the given order:
-219                                                      #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
-220            1                                  2      my @ddf;
-221   ***      1     50                          10      if ( $output =~ m/^Default options are read.+\n/mg ) {
-222            1                                 51         my ($ddf) = $output =~ m/\G^(.+)\n/m;
-223            1                                  3         my %seen;
-224            1                                  6         my @ddf = grep { !$seen{$_} } split(' ', $ddf);
+145            1                                  5            ($config, $ddf) = $self->parse_mysqld($output);
+146                                                         }
+147                                                         elsif ( $from eq 'my_print_defaults' ) {
+148            1                                 11            ($config, $dupes) = $self->parse_my_print_defaults($output);
+149                                                         }
+150                                                   
+151   ***      2     50                          10         die "Failed to parse MySQL config from $from" unless $config;
+152            2                                  8         $self->{config}                 = $config;
+153            2    100                          12         $self->{default_defaults_files} = $ddf   if $ddf;
+154            2    100                           7         $self->{duplicate_vars}         = $dupes if $dupes;
+155                                                      }
+156                                                      elsif ( $args{from} eq 'show_variables' ) {
+157   ***      3     50     66                   26         die "Setting the MySQL config from $from requires a "
+158                                                               . "dbh or rows argument"
+159                                                            unless $args{dbh} || $args{rows};
+160                                                   
+161            3                                 10         my $rows = $args{rows};
+162            3    100                          13         if ( $args{dbh} ) {
+163            1                                  6            $rows = $self->_show_variables($args{dbh});
+164   ***      1     50                          15            $self->_set_version($args{dbh}) unless $self->{version};
+165                                                         }
+166   ***      3     50                          15         if ( $rows ) {
+167            3                                 15            my %config = map { @$_ } @$rows;
+             542                               2474   
+168            3                                185            $self->{config} = \%config;
+169                                                         }
+170                                                      }
+171                                                      else {
+172   ***      0                                  0         die "I don't know how to set the MySQL config from $from";
+173                                                      }
+174            5                                124      return;
+175                                                   }
+176                                                   
+177                                                   # Parse "mysqld --help --verbose" and return a hashref of variable=>values
+178                                                   # and an arrayref of default defaults files if possible.  The "default
+179                                                   # defaults files" are the defaults file that mysqld reads by default if no
+180                                                   # defaults file is explicitly given by --default-file.
+181                                                   sub parse_mysqld {
+182   ***      1                    1      0     94      my ( $self, $output ) = @_;
+183   ***      1     50                           5      return unless $output;
+184                                                   
+185                                                      # First look for the list of default defaults files like
+186                                                      #   Default options are read from the following files in the given order:
+187                                                      #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
+188            1                                  3      my @ddf;
+189   ***      1     50                          11      if ( $output =~ m/^Default options are read.+\n/mg ) {
+190            1                                 54         my ($ddf) = $output =~ m/\G^(.+)\n/m;
+191            1                                  3         my %seen;
+192            1                                  7         my @ddf = grep { !$seen{$_} } split(' ', $ddf);
                3                                 13   
-225            1                                  4         MKDEBUG && _d('Default defaults files:', @ddf);
-226                                                      }
-227                                                      else {
-228   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list default defaults files");
-229                                                      }
-230                                                   
-231                                                      # The list of sys vars and their default vals begins like:
-232                                                      #   Variables (--variable-name=value)
-233                                                      #   and boolean options {FALSE|TRUE}  Value (after reading options)
-234                                                      #   --------------------------------- -----------------------------
-235                                                      #   help                              TRUE
-236                                                      #   abort-slave-event-count           0
-237                                                      # So we search for that line of hypens.
-238   ***      1     50                         687      if ( $output !~ m/^-+ -+$/mg ) {
-239   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list vars and vals");
-240   ***      0                                  0         return;
-241                                                      }
-242                                                   
-243                                                      # Cut off everything before the list of vars and vals.
-244            1                                 11      my $varvals = substr($output, (pos $output) + 1, length $output);
-245                                                   
-246                                                      # Parse the "var  val" lines.  2nd retval is duplicates but there
-247                                                      # shouldn't be any with mysqld.
-248            1                                237      my ($config, undef) = $self->_parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
-249                                                   
-250            1                                 40      return $config, \@ddf;
-251                                                   }
-252                                                   
-253                                                   # Parse "my_print_defaults" output and return a hashref of variable=>values
-254                                                   # and a hashref of any duplicated variables.
-255                                                   sub parse_my_print_defaults {
-256   ***      1                    1      0      5      my ( $self, $output ) = @_;
-257   ***      1     50                           5      return unless $output;
-258                                                   
-259                                                      # Parse the "--var=val" lines.
-260           18                                 85      my ($config, $dupes) = $self->_parse_varvals(
-261            1                                 11         map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
-262                                                      );
-263                                                   
-264            1                                  7      return $config, $dupes;
-265                                                   }
-266                                                   
-267                                                   # Parses a list of variables and their values ("varvals"), returns two
-268                                                   # hashrefs: one with normalized variable=>value, the other with duplicate
-269                                                   # vars.  The varvals list should start with a var at index 0 and its value
-270                                                   # at index 1 then repeat for the next var-val pair.  
-271                                                   sub _parse_varvals {
-272            2                    2           257      my ( $self, @varvals ) = @_;
-273                                                   
-274                                                      # Config built from parsing the given varvals.
-275            2                                 34      my %config;
-276                                                   
-277                                                      # Discover duplicate vars.  
-278            2                                  6      my $duplicate_var = 0;
-279            2                                  5      my %duplicates;
-280                                                   
-281                                                      # Keep track if item is var or val because each needs special modifications.
-282            2                                  6      my $var      = 1;
-283            2                                  7      my $last_var = undef;
-284                                                   
-285            2                                  7      foreach my $item ( @varvals ) {
-286          552    100                        1627         if ( $var ) {
-287                                                            # Variable names via config files are like "log-bin" but
-288                                                            # via SHOW VARIABLES they're like "log_bin".
-289          276                                868            $item =~ s/-/_/g;
-290                                                   
-291                                                            # If this var exists in the offline config already, then
-292                                                            # its a duplicate.  Its original value will be saved before
-293                                                            # being overwritten with the new value.
-294   ***    276    100     66                 1300            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
-295            4                                  9               MKDEBUG && _d("Duplicate var:", $item);
-296            4                                 10               $duplicate_var = 1;
-297                                                            }
-298                                                   
-299          276                                676            $var      = 0;  # next item should be the val for this var
-300          276                                886            $last_var = $item;
-301                                                         }
-302                                                         else {
-303          276    100                         896            if ( $item ) {
-304          275                                834               $item =~ s/^\s+//;
-305                                                   
-306          275    100                        1627               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])/i ) {
+193            1                                  4         MKDEBUG && _d('Default defaults files:', @ddf);
+194                                                      }
+195                                                      else {
+196   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list default defaults files");
+197                                                      }
+198                                                   
+199                                                      # The list of sys vars and their default vals begins like:
+200                                                      #   Variables (--variable-name=value)
+201                                                      #   and boolean options {FALSE|TRUE}  Value (after reading options)
+202                                                      #   --------------------------------- -----------------------------
+203                                                      #   help                              TRUE
+204                                                      #   abort-slave-event-count           0
+205                                                      # So we search for that line of hypens.
+206   ***      1     50                         711      if ( $output !~ m/^-+ -+$/mg ) {
+207   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list vars and vals");
+208   ***      0                                  0         return;
+209                                                      }
+210                                                   
+211                                                      # Cut off everything before the list of vars and vals.
+212            1                                 10      my $varvals = substr($output, (pos $output) + 1, length $output);
+213                                                   
+214                                                      # Parse the "var  val" lines.  2nd retval is duplicates but there
+215                                                      # shouldn't be any with mysqld.
+216            1                                236      my ($config, undef) = $self->_parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+217                                                   
+218            1                                 35      return $config, \@ddf;
+219                                                   }
+220                                                   
+221                                                   # Parse "my_print_defaults" output and return a hashref of variable=>values
+222                                                   # and a hashref of any duplicated variables.
+223                                                   sub parse_my_print_defaults {
+224   ***      1                    1      0      9      my ( $self, $output ) = @_;
+225   ***      1     50                           9      return unless $output;
+226                                                   
+227                                                      # Parse the "--var=val" lines.
+228           18                                122      my ($config, $dupes) = $self->_parse_varvals(
+229            1                                 19         map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
+230                                                      );
+231                                                   
+232            1                                  9      return $config, $dupes;
+233                                                   }
+234                                                   
+235                                                   # Parses a list of variables and their values ("varvals"), returns two
+236                                                   # hashrefs: one with normalized variable=>value, the other with duplicate
+237                                                   # vars.  The varvals list should start with a var at index 0 and its value
+238                                                   # at index 1 then repeat for the next var-val pair.  
+239                                                   sub _parse_varvals {
+240            2                    2           249      my ( $self, @varvals ) = @_;
+241                                                   
+242                                                      # Config built from parsing the given varvals.
+243            2                                 34      my %config;
+244                                                   
+245                                                      # Discover duplicate vars.  
+246            2                                  6      my $duplicate_var = 0;
+247            2                                  5      my %duplicates;
+248                                                   
+249                                                      # Keep track if item is var or val because each needs special modifications.
+250            2                                  6      my $var      = 1;
+251            2                                  6      my $last_var = undef;
+252            2                                  8      foreach my $item ( @varvals ) {
+253          552    100                        1599         if ( $var ) {
+254                                                            # Variable names via config files are like "log-bin" but
+255                                                            # via SHOW VARIABLES they're like "log_bin".
+256          276                                987            $item =~ s/-/_/g;
+257                                                   
+258                                                            # If this var exists in the offline config already, then
+259                                                            # its a duplicate.  Its original value will be saved before
+260                                                            # being overwritten with the new value.
+261   ***    276    100     66                 1301            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
+262            4                                  9               MKDEBUG && _d("Duplicate var:", $item);
+263            4                                 10               $duplicate_var = 1;
+264                                                            }
+265                                                   
+266          276                                688            $var      = 0;  # next item should be the val for this var
+267          276                                845            $last_var = $item;
+268                                                         }
+269                                                         else {
+270          276    100                         910            if ( $item ) {
+271          275                                858               $item =~ s/^\s+//;
+272                                                   
+273          275    100                        1595               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
                     100                               
-307            4                                 19                  my %factor_for = (
-308                                                                     k => 1_024,
-309                                                                     m => 1_048_576,
-310                                                                     g => 1_073_741_824,
-311                                                                     t => 1_099_511_627_776,
-312                                                                  );
-313            4                                 20                  $item = $num * $factor_for{lc $factor};
-314                                                               }
-315                                                               elsif ( $item =~ m/No default/ ) {
-316           37                                112                  $item = undef;
-317                                                               }
-318                                                            }
-319                                                   
-320          276    100    100                 1127            $item = $undef_for{$last_var} || '' unless defined $item;
-321                                                   
-322          276    100                         893            if ( $duplicate_var ) {
-323                                                               # Save var's original value before overwritng with this new value.
-324            4                                 12               push @{$duplicates{$last_var}}, $config{$last_var};
-               4                                 20   
-325            4                                 10               $duplicate_var = 0;
-326                                                            }
-327                                                   
-328                                                            # Save this var-val.
-329          276                               1008            $config{$last_var} = $item;
+274            3                                 16                  my %factor_for = (
+275                                                                     k => 1_024,
+276                                                                     m => 1_048_576,
+277                                                                     g => 1_073_741_824,
+278                                                                     t => 1_099_511_627_776,
+279                                                                  );
+280            3                                 17                  $item = $num * $factor_for{lc $factor};
+281                                                               }
+282                                                               elsif ( $item =~ m/No default/ ) {
+283           37                                113                  $item = undef;
+284                                                               }
+285                                                            }
+286                                                   
+287          276    100    100                 1117            $item = $undef_for{$last_var} || '' unless defined $item;
+288                                                   
+289          276    100                         953            if ( $duplicate_var ) {
+290                                                               # Save var's original value before overwritng with this new value.
+291            4                                  8               push @{$duplicates{$last_var}}, $config{$last_var};
+               4                                 22   
+292            4                                 12               $duplicate_var = 0;
+293                                                            }
+294                                                   
+295                                                            # Save this var-val.
+296          276                               1024            $config{$last_var} = $item;
+297                                                   
+298          276                                848            $var = 1;  # next item should be a var
+299                                                         }
+300                                                      }
+301                                                   
+302            2                                 50      return \%config, \%duplicates;
+303                                                   }
+304                                                   
+305                                                   sub _show_variables {
+306            1                    1             5      my ( $self, $dbh ) = @_;
+307            1                                  3      my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
+308            1                                  3      MKDEBUG && _d($dbh, $sql);
+309            1                                  2      my $rows = $dbh->selectall_arrayref($sql);
+310            1                               1776      return $rows;
+311                                                   }
+312                                                   
+313                                                   sub _set_version {
+314            1                    1             4      my ( $self, $dbh ) = @_;
+315            1                                  3      my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
+316   ***      1     50                         151      return unless $version;
+317            1                                 26      $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
+318            1                                  4      MKDEBUG && _d('MySQL version', $version);
+319            1                                  4      $self->{version} = $version;
+320            1                                  4      return;
+321                                                   }
+322                                                   
+323                                                   sub _d {
+324   ***      0                    0                    my ($package, undef, $line) = caller 0;
+325   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+      ***      0                                      
+      ***      0                                      
+326   ***      0                                              map { defined $_ ? $_ : 'undef' }
+327                                                           @_;
+328   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+329                                                   }
 330                                                   
-331          276                                865            $var = 1;  # next item should be a var
-332                                                         }
-333                                                      }
-334                                                   
-335            2                                 55      return \%config, \%duplicates;
-336                                                   }
-337                                                   
-338                                                   sub _d {
-339   ***      0                    0                    my ($package, undef, $line) = caller 0;
-340   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-341   ***      0                                              map { defined $_ ? $_ : 'undef' }
-342                                                           @_;
-343   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-344                                                   }
-345                                                   
-346                                                   1;
-347                                                   
-348                                                   # ###########################################################################
-349                                                   # End MySQLConfig package
-350                                                   # ###########################################################################
+331                                                   1;
+332                                                   
+333                                                   # ###########################################################################
+334                                                   # End MySQLConfig package
+335                                                   # ###########################################################################
 
 
 Branches
@@ -399,37 +385,36 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-111   ***     50      0      7   unless $var
-112          100      4      3   $args{'offline'} ? :
-119          100      1      2   $args{'offline'} ? :
-142   ***     50      0      5   unless $args{$arg}
-146          100      3      2   if ($from eq 'mysqld' or $from eq 'my_print_defaults') { }
-      ***     50      2      0   elsif ($args{'from'} eq 'show_variables') { }
-147   ***     50      0      3   unless $args{'cmd'} or $args{'file'} or $args{'fh'}
-153   ***     50      0      3   if ($args{'cmd'})
-157   ***     50      3      0   if ($args{'file'})
-158          100      1      2   unless open $fh, '<', $args{'file'}
-161   ***     50      2      0   if ($fh)
-166          100      1      1   if ($from eq 'mysqld') { }
+90    ***     50      0      6   unless $var
+123   ***     50      0      6   unless $args{$arg}
+128          100      3      3   if ($from eq 'mysqld' or $from eq 'my_print_defaults') { }
+      ***     50      3      0   elsif ($args{'from'} eq 'show_variables') { }
+129   ***     50      0      3   unless $args{'cmd'} or $args{'file'} or $args{'fh'}
+135   ***     50      3      0   if ($args{'file'})
+136          100      1      2   unless open $fh, '<', $args{'file'}
+139   ***     50      2      0   if ($fh)
+144          100      1      1   if ($from eq 'mysqld') { }
       ***     50      1      0   elsif ($from eq 'my_print_defaults') { }
-173   ***     50      0      2   unless $config
-176          100      1      1   if $ddf
-177          100      1      1   if $dupes
-180   ***     50      0      2   unless $args{'dbh'} or $args{'rows'}
-185          100      1      1   if ($args{'dbh'})
-203   ***     50      0      2   unless $rows
-215   ***     50      0      1   unless $output
-221   ***     50      1      0   if ($output =~ /^Default options are read.+\n/gm) { }
-238   ***     50      0      1   if (not $output =~ /^-+ -+$/gm)
-257   ***     50      0      1   unless $output
-286          100    276    276   if ($var) { }
-294          100      4    272   if (exists $config{$item} and not $can_be_duplicate{$item})
-303          100    275      1   if ($item)
-306          100      4    271   if (my($num, $factor) = $item =~ /(\d+)([kmgt])/i) { }
-             100     37    234   elsif ($item =~ /No default/) { }
-320          100     38    238   unless defined $item
-322          100      4    272   if ($duplicate_var)
-340   ***      0      0      0   defined $_ ? :
+151   ***     50      0      2   unless $config
+153          100      1      1   if $ddf
+154          100      1      1   if $dupes
+157   ***     50      0      3   unless $args{'dbh'} or $args{'rows'}
+162          100      1      2   if ($args{'dbh'})
+164   ***     50      1      0   unless $$self{'version'}
+166   ***     50      3      0   if ($rows)
+183   ***     50      0      1   unless $output
+189   ***     50      1      0   if ($output =~ /^Default options are read.+\n/gm) { }
+206   ***     50      0      1   if (not $output =~ /^-+ -+$/gm)
+225   ***     50      0      1   unless $output
+253          100    276    276   if ($var) { }
+261          100      4    272   if (exists $config{$item} and not $can_be_duplicate{$item})
+270          100    275      1   if ($item)
+273          100      3    272   if (my($num, $factor) = $item =~ /(\d+)([kmgt])$/i) { }
+             100     37    235   elsif ($item =~ /No default/) { }
+287          100     38    238   unless defined $item
+289          100      4    272   if ($duplicate_var)
+316   ***     50      0      1   unless $version
+325   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -439,24 +424,23 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-294   ***     66    272      0      4   exists $config{$item} and not $can_be_duplicate{$item}
+261   ***     66    272      0      4   exists $config{$item} and not $can_be_duplicate{$item}
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-26    ***     50      0      1   $ENV{'MKDEBUG'} || 0
-320          100      4     34   $undef_for{$last_var} || ''
+36    ***     50      0      1   $ENV{'MKDEBUG'} || 0
+287          100      4     34   $undef_for{$last_var} || ''
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-103          100      1      1      1   exists $$self{'config'}{'offline'}{$var} || exists $$self{'config'}{'online'}{$var}
-146          100      2      1      2   $from eq 'mysqld' or $from eq 'my_print_defaults'
-147   ***     33      0      3      0   $args{'cmd'} or $args{'file'}
+128          100      2      1      3   $from eq 'mysqld' or $from eq 'my_print_defaults'
+129   ***     33      0      3      0   $args{'cmd'} or $args{'file'}
       ***     33      3      0      0   $args{'cmd'} or $args{'file'} or $args{'fh'}
-180   ***     66      1      1      0   $args{'dbh'} or $args{'rows'}
+157   ***     66      1      2      0   $args{'dbh'} or $args{'rows'}
 
 
 Covered Subroutines
@@ -464,27 +448,30 @@ Covered Subroutines
 
 Subroutine              Count Pod Location                                          
 ----------------------- ----- --- --------------------------------------------------
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:22 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:23 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:24 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:26 
-_parse_varvals              2     /home/daniel/dev/maatkit/common/MySQLConfig.pm:272
-get                         7   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:110
-get_config                  3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:118
-get_duplicate_variables     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:124
-has                         3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:102
-new                         2   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:74 
-parse_my_print_defaults     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:256
-parse_mysqld                1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:214
-set_config                  5   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:140
-set_online_config           2   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:202
+BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:28 
+BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:29 
+BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:30 
+BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:31 
+BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:36 
+_parse_varvals              2     /home/daniel/dev/maatkit/common/MySQLConfig.pm:240
+_set_version                1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:314
+_show_variables             1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:306
+get                         6   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:89 
+get_config                  2   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:96 
+get_duplicate_variables     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:101
+has                         3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:82 
+new                         3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:61 
+parse_my_print_defaults     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:224
+parse_mysqld                1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:182
+set_config                  6   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:121
 
 Uncovered Subroutines
 ---------------------
 
 Subroutine              Count Pod Location                                          
 ----------------------- ----- --- --------------------------------------------------
-_d                          0     /home/daniel/dev/maatkit/common/MySQLConfig.pm:339
+_d                          0     /home/daniel/dev/maatkit/common/MySQLConfig.pm:324
+version                     0   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:106
 
 
 MySQLConfig.t
@@ -493,58 +480,58 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     #!/usr/bin/perl
 2                                                     
 3                                                     BEGIN {
-4     ***      1     50     33      1            32      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+4     ***      1     50     33      1            33      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 5                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
 6              1                                  8      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
 7                                                     };
 8                                                     
-9              1                    1            10   use strict;
+9              1                    1            11   use strict;
                1                                  2   
-               1                                  6   
+               1                                  5   
 10             1                    1             7   use warnings FATAL => 'all';
                1                                  2   
-               1                                  6   
-11             1                    1            12   use English qw(-no_match_vars);
+               1                                  5   
+11             1                    1            11   use English qw(-no_match_vars);
                1                                  2   
-               1                                  6   
-12             1                    1            11   use Test::More tests => 15;
+               1                                  8   
+12             1                    1            11   use Test::More tests => 13;
                1                                  3   
                1                                 10   
 13                                                    
-14             1                    1            11   use MySQLConfig;
+14             1                    1            13   use MySQLConfig;
+               1                                 91   
+               1                                 12   
+15             1                    1            11   use DSNParser;
+               1                                  3   
+               1                                 12   
+16             1                    1            14   use Sandbox;
                1                                  3   
                1                                 10   
-15             1                    1            10   use DSNParser;
-               1                                  4   
-               1                                 12   
-16             1                    1            12   use Sandbox;
-               1                                  3   
-               1                                 14   
-17             1                    1            14   use MaatkitTest;
-               1                                  3   
-               1                                 16   
+17             1                    1            12   use MaatkitTest;
+               1                                  5   
+               1                                 39   
 18                                                    
-19             1                                  9   my $dp  = new DSNParser(opts=>$dsn_opts);
-20             1                                228   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-21             1                                 52   my $dbh = $sb->get_dbh_for('master');
+19             1                                 11   my $dp  = new DSNParser(opts=>$dsn_opts);
+20             1                                239   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+21             1                                 61   my $dbh = $sb->get_dbh_for('master');
 22                                                    
 23             1                    1             6   use Data::Dumper;
-               1                                  2   
-               1                                  6   
-24             1                                201   $Data::Dumper::Indent    = 1;
-25             1                                  5   $Data::Dumper::Sortkeys  = 1;
+               1                                  3   
+               1                                 22   
+24             1                                396   $Data::Dumper::Indent    = 1;
+25             1                                  4   $Data::Dumper::Sortkeys  = 1;
 26             1                                  3   $Data::Dumper::Quotekeys = 0;
 27                                                    
-28             1                                 11   my $config = new MySQLConfig();
+28             1                                 13   my $config = new MySQLConfig();
 29                                                    
 30             1                                  3   my $output;
 31             1                                  3   my $sample = "common/t/samples/configs/";
 32                                                    
 33                                                    throws_ok(
 34                                                       sub {
-35             1                    1            17         $config->set_config(from=>'mysqld', file=>"fooz");
+35             1                    1            19         $config->set_config(from=>'mysqld', file=>"fooz");
 36                                                       },
-37             1                                 18      qr/Cannot open /,
+37             1                                 24      qr/Cannot open /,
 38                                                       'set_config() dies if the file cannot be opened'
 39                                                    );
 40                                                    
@@ -552,7 +539,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 42                                                    # Config from mysqld --help --verbose
 43                                                    # #############################################################################
 44                                                    
-45             1                                 20   $config->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
+45             1                                 19   $config->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
 46             1                                  8   is_deeply(
 47                                                       $config->get_config(offline=>1),
 48                                                       {
@@ -815,112 +802,102 @@ line  err   stmt   bran   cond    sub    pod   time   code
 305                                                      'set_config(from=>mysqld, file=>mysqldhelp001.txt)'
 306                                                   );
 307                                                   
-308            1                                 39   is_deeply(
-309                                                      $config->get_config(),
-310                                                      {},
-311                                                      "Didn't set online config"
+308            1                                 41   is(
+309                                                      $config->get('wait_timeout', offline=>1),
+310                                                      28800,
+311                                                      'get() from mysqld'
 312                                                   );
 313                                                   
-314            1                                 11   is(
-315                                                      $config->get('wait_timeout'),
-316                                                      undef,
-317                                                      'get(), default online but not loaded'
-318                                                   );
-319                                                   
-320            1                                  6   is(
-321                                                      $config->get('wait_timeout', offline=>1),
-322                                                      28800,
-323                                                      'get(), offline'
-324                                                   );
-325                                                   
-326            1                                  7   ok(
-327                                                      $config->has('wait_timeout'),
-328                                                      'has(), has it from offline'
-329                                                   );
-330                                                   
-331            1                                  7   ok(
-332                                                     !$config->has('foo'),
-333                                                     "has(), doesn't have it"
-334                                                   );
-335                                                   
-336                                                   # #############################################################################
-337                                                   # Config from SHOW VARIABLES
-338                                                   # #############################################################################
-339                                                   
-340            1                                 10   $config->set_config(from=>'show_variables', rows=>[ [qw(foo bar)], [qw(a z)] ]);
-341            1                                  6   is_deeply(
-342                                                      $config->get_config(),
-343                                                      {
-344                                                         foo => 'bar',
-345                                                         a   => 'z',
-346                                                      },
-347                                                      'set_config(from=>show_variables, rows=>...)'
-348                                                   );
-349                                                   
-350            1                                 10   is(
-351                                                      $config->get('foo'),
-352                                                      'bar',
-353                                                      'get()',
-354                                                   );
+314            1                                  7   ok(
+315                                                      $config->has('wait_timeout'),
+316                                                      'has() from mysqld'
+317                                                   );
+318                                                   
+319            1                                  6   ok(
+320                                                     !$config->has('foo'),
+321                                                     "has(), doesn't have it"
+322                                                   );
+323                                                   
+324                                                   # #############################################################################
+325                                                   # Config from SHOW VARIABLES
+326                                                   # #############################################################################
+327                                                   
+328            1                                 10   $config->set_config(from=>'show_variables', rows=>[ [qw(foo bar)], [qw(a z)] ]);
+329            1                                  6   is_deeply(
+330                                                      $config->get_config(),
+331                                                      {
+332                                                         foo => 'bar',
+333                                                         a   => 'z',
+334                                                      },
+335                                                      'set_config(from=>show_variables, rows=>...)'
+336                                                   );
+337                                                   
+338            1                                 10   is(
+339                                                      $config->get('foo'),
+340                                                      'bar',
+341                                                      'get() from show variables'
+342                                                   );
+343                                                   
+344            1                                  6   ok(
+345                                                      $config->has('foo'),
+346                                                      'has() from show variables'
+347                                                   );
+348                                                   
+349                                                   # #############################################################################
+350                                                   # Config from my_print_defaults
+351                                                   # #############################################################################
+352                                                   
+353            1                                 10   $config->set_config(from=>'my_print_defaults',
+354                                                      file=>"$trunk/$sample/myprintdef001.txt");
 355                                                   
-356            1                                  7   is(
-357                                                      $config->get('foo', offline=>1),
-358                                                      undef,
-359                                                      "Didn't load online var into offline"
+356            1                                  6   is(
+357                                                      $config->get('port', offline=>1),
+358                                                      '12349',
+359                                                      "Duplicate var's last value used"
 360                                                   );
 361                                                   
-362            1                                  6   ok(
-363                                                      $config->has('foo'),
-364                                                      'has(), has it from online'
-365                                                   );
-366                                                   
-367                                                   # #############################################################################
-368                                                   # Config from my_print_defaults
-369                                                   # #############################################################################
-370                                                   
-371            1                                  9   $config->set_config(from=>'my_print_defaults',
-372                                                      file=>"$trunk/$sample/myprintdef001.txt");
-373                                                   
-374            1                                  6   is(
-375                                                      $config->get('port', offline=>1),
-376                                                      '12349',
-377                                                      "Duplicate var's last value used"
-378                                                   );
-379                                                   
-380            1                                  7   is(
-381                                                      $config->get('innodb_buffer_pool_size', offline=>1),
-382                                                      '16777216',
-383                                                      'Converted size char to int'
-384                                                   );
-385                                                   
-386            1                                  6   is_deeply(
-387                                                      $config->get_duplicate_variables(),
-388                                                      {
-389                                                         'port' => [12345],
-390                                                      },
-391                                                      'get_duplicate_variables()'
-392                                                   );
-393                                                   
-394                                                   # #############################################################################
-395                                                   # Online tests.
-396                                                   # #############################################################################
-397   ***      1     50                           5   SKIP: {
-398            1                                  8      skip 'Cannot connect to sandbox master', 1 unless $dbh;
+362            1                                  7   is(
+363                                                      $config->get('innodb_buffer_pool_size', offline=>1),
+364                                                      '16777216',
+365                                                      'Converted size char to int'
+366                                                   );
+367                                                   
+368            1                                  6   is_deeply(
+369                                                      $config->get_duplicate_variables(),
+370                                                      {
+371                                                         'port' => [12345],
+372                                                      },
+373                                                      'get_duplicate_variables()'
+374                                                   );
+375                                                   
+376                                                   # #############################################################################
+377                                                   # Online tests.
+378                                                   # #############################################################################
+379   ***      1     50                           5   SKIP: {
+380            1                                  7      skip 'Cannot connect to sandbox master', 1 unless $dbh;
+381                                                   
+382            1                                  9      $config = new MySQLConfig();
+383            1                                 12      $config->set_config(from=>'show_variables', dbh=>$dbh);
+384            1                                  8      is(
+385                                                         $config->get('datadir'),
+386                                                         '/tmp/12345/data/',
+387                                                         'set_config(from=>show_variables, dbh=>...)'
+388                                                      );
+389                                                   
+390            1                                  9      $config  = new MySQLConfig();
+391            1                                  3      my $rows = $dbh->selectall_arrayref('show variables');
+392            1                               1665      $config->set_config(from=>'show_variables', rows=>$rows);
+393            1                                  8      is(
+394                                                         $config->get('datadir'),
+395                                                         '/tmp/12345/data/',
+396                                                         'set_config(from=>show_variables, rows=>...)'
+397                                                      );
+398                                                   }
 399                                                   
-400            1                                  8      $config = new MySQLConfig();
-401                                                   
-402            1                                 72      $config->set_config(from=>'show_variables', dbh=>$dbh);
-403            1                                  7      is(
-404                                                         $config->get('datadir'),
-405                                                         '/tmp/12345/data/',
-406                                                         'set_config(from=>show_variables, dbh=>...)'
-407                                                      );
-408                                                   }
-409                                                   
-410                                                   # #############################################################################
-411                                                   # Done.
-412                                                   # #############################################################################
-413            1                                  4   exit;
+400                                                   # #############################################################################
+401                                                   # Done.
+402                                                   # #############################################################################
+403            1                                  4   exit;
 
 
 Branches
@@ -929,7 +906,7 @@ Branches
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
 4     ***     50      0      1   unless $ENV{'MAATKIT_TRUNK'} and -d $ENV{'MAATKIT_TRUNK'}
-397   ***     50      0      1   unless $dbh
+379   ***     50      0      1   unless $dbh
 
 
 Conditions

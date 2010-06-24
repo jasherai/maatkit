@@ -1,8 +1,8 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...common/ExplainAnalyzer.pm   91.5   65.0   59.1   92.3    0.0   61.1   77.4
-ExplainAnalyzer.t             100.0   50.0   40.0  100.0    n/a   38.9   93.9
+...common/ExplainAnalyzer.pm   91.5   65.0   59.1   92.3    0.0   61.5   77.4
+ExplainAnalyzer.t             100.0   50.0   40.0  100.0    n/a   38.5   93.9
 Total                          95.4   62.5   55.6   96.2    0.0  100.0   83.7
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
@@ -10,14 +10,14 @@ Total                          95.4   62.5   55.6   96.2    0.0  100.0   83.7
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Jun  8 16:19:57 2010
-Finish:       Tue Jun  8 16:19:57 2010
+Start:        Thu Jun 24 19:33:13 2010
+Finish:       Thu Jun 24 19:33:13 2010
 
 Run:          ExplainAnalyzer.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Jun  8 16:19:59 2010
-Finish:       Tue Jun  8 16:19:59 2010
+Start:        Thu Jun 24 19:33:15 2010
+Finish:       Thu Jun 24 19:33:15 2010
 
 /home/daniel/dev/maatkit/common/ExplainAnalyzer.pm
 
@@ -44,21 +44,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 20                                                    package ExplainAnalyzer;
 21                                                    
 22    ***      1            50      1             5   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               1                                  3   
-               1                                 15   
-23             1                    1             6   use strict;
                1                                  2   
+               1                                 18   
+23             1                    1             6   use strict;
+               1                                  3   
                1                                  7   
-24             1                    1             9   use warnings FATAL => 'all';
+24             1                    1             5   use warnings FATAL => 'all';
                1                                  2   
                1                                  5   
 25                                                    
-26             1                    1             5   use English qw(-no_match_vars);
+26             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
                1                                  7   
 27             1                    1             6   use Data::Dumper;
-               1                                  3   
-               1                                  6   
+               1                                  2   
+               1                                  7   
 28                                                    $Data::Dumper::Indent    = 1;
 29                                                    $Data::Dumper::Sortkeys  = 1;
 30                                                    $Data::Dumper::Quotekeys = 0;
@@ -69,11 +69,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 35                                                    # if used in this way -- it is not a data-less collection of methods.
 36                                                    
 37                                                    sub new {
-38    ***      1                    1      0      7      my ( $class, %args ) = @_;
-39             1                                  5      foreach my $arg ( qw(QueryRewriter QueryParser) ) {
+38    ***      1                    1      0      6      my ( $class, %args ) = @_;
+39             1                                  6      foreach my $arg ( qw(QueryRewriter QueryParser) ) {
 40    ***      2     50                          12         die "I need a $arg argument" unless defined $args{$arg};
 41                                                       }
-42             1                                  6      my $self = {
+42             1                                  5      my $self = {
 43                                                          %args,
 44                                                       };
 45             1                                 11      return bless $self, $class;
@@ -88,54 +88,54 @@ line  err   stmt   bran   cond    sub    pod   time   code
 54                                                    sub explain_query {
 55    ***      2                    2      0     13      my ( $self, %args ) = @_;
 56             2                                  9      foreach my $arg ( qw(dbh sql) ) {
-57    ***      4     50                          19         die "I need a $arg argument" unless defined $args{$arg};
+57    ***      4     50                          20         die "I need a $arg argument" unless defined $args{$arg};
 58                                                       }
-59             2                                 12      my ($sql, $dbh) = @args{qw(sql dbh)};
-60             2    100                          34      if ( $sql !~ m/^\s*select/i ) {
+59             2                                 11      my ($sql, $dbh) = @args{qw(sql dbh)};
+60             2    100                          16      if ( $sql !~ m/^\s*select/i ) {
 61             1                                 10         $sql = $self->{QueryRewriter}->convert_to_select($sql);
 62                                                       }
-63             2                                 30      return $dbh->selectall_arrayref("EXPLAIN $sql", { Slice => {} });
+63             2                                 33      return $dbh->selectall_arrayref("EXPLAIN $sql", { Slice => {} });
 64                                                    }
 65                                                    
 66                                                    # Normalizes raw EXPLAIN into a format that's easier to work with.  For example,
 67                                                    # the Extra column is parsed into a hash.  Accepts the output of explain_query()
 68                                                    # as input.
 69                                                    sub normalize {
-70    ***      5                    5      0     22      my ( $self, $explain ) = @_;
-71             5                                 13      my @result; # Don't modify the input.
+70    ***      5                    5      0     20      my ( $self, $explain ) = @_;
+71             5                                 14      my @result; # Don't modify the input.
 72                                                    
-73             5                                 19      foreach my $row ( @$explain ) {
-74            10                                 79         $row = { %$row }; # Make a copy -- don't modify the input.
+73             5                                 18      foreach my $row ( @$explain ) {
+74            10                                 81         $row = { %$row }; # Make a copy -- don't modify the input.
 75                                                    
 76                                                          # Several of the columns are really arrays of values in many cases.  For
 77                                                          # example, the "key" column has an array when there is an index merge.
 78            10                                 43         foreach my $col ( qw(key possible_keys key_len ref) ) {
-79            40           100                  317            $row->{$col} = [ split(/,/, $row->{$col} || '') ];
+79            40           100                  332            $row->{$col} = [ split(/,/, $row->{$col} || '') ];
 80                                                          }
 81                                                    
 82                                                          # Handle the Extra column.  Parse it into a hash by splitting on
 83                                                          # semicolons.  There are many special cases to handle.
-84             9                                 23         $row->{Extra} = {
+84             9                                 26         $row->{Extra} = {
 85                                                             map {
-86            10                                 54               my $var = $_;
+86            10                                 52               my $var = $_;
 87                                                    
 88                                                                # Index merge query plans have an array of indexes to split up.
-89             9    100                          63               if ( my($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
-90             2                                 13                  $key => [ split(/,/, $vals) ];
+89             9    100                          52               if ( my($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
+90             2                                 14                  $key => [ split(/,/, $vals) ];
 91                                                                }
 92                                                    
 93                                                                # The default is just "this key/characteristic/flag exists."
 94                                                                else {
-95             7                                 43                  $var => 1;
+95             7                                 46                  $var => 1;
 96                                                                }
 97                                                             }
 98                                                             split(/; /, $row->{Extra}) # Split on semicolons.
 99                                                          };
 100                                                   
-101           10                                 40         push @result, $row;
+101           10                                 39         push @result, $row;
 102                                                      }
 103                                                   
-104            5                                 71      return \@result;
+104            5                                 68      return \@result;
 105                                                   }
 106                                                   
 107                                                   # Trims down alternate indexes to those that were truly alternates (were not
@@ -144,9 +144,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 110                                                   # and the return value is an arrayref too.
 111                                                   sub get_alternate_indexes {
 112   ***      5                    5      0     21      my ( $self, $keys, $possible_keys ) = @_;
-113            5                                 19      my %used = map { $_ => 1 } @$keys;
+113            5                                 20      my %used = map { $_ => 1 } @$keys;
                6                                 30   
-114            5                                 27      return [ grep { !$used{$_} } @$possible_keys ];
+114            5                                 28      return [ grep { !$used{$_} } @$possible_keys ];
                8                                 42   
 115                                                   }
 116                                                   
@@ -163,30 +163,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 127                                                   #  idx   =>    An arrayref of indexes accessed in this table
 128                                                   #  alt   =>    An arrayref of indexes considered but not accessed
 129                                                   sub get_index_usage {
-130   ***      3                    3      0     25      my ( $self, %args ) = @_;
+130   ***      3                    3      0     20      my ( $self, %args ) = @_;
 131            3                                 11      foreach my $arg ( qw(sql explain) ) {
-132   ***      6     50                          30         die "I need a $arg argument" unless defined $args{$arg};
+132   ***      6     50                          29         die "I need a $arg argument" unless defined $args{$arg};
 133                                                      }
 134            3                                 15      my ($sql, $explain) = @args{qw(sql explain)};
-135            3                                  6      my @result;
+135            3                                  7      my @result;
 136                                                   
 137                                                      # First we must get a lookup data structure to translate the possibly aliased
 138                                                      # names back into real table names.
-139            3                                 19      my $lookup = $self->{QueryParser}->get_aliases($sql);
+139            3                                 22      my $lookup = $self->{QueryParser}->get_aliases($sql);
 140                                                   
-141            3                                812      foreach my $row ( @$explain ) {
+141            3                                841      foreach my $row ( @$explain ) {
 142                                                   
 143                                                         # Filter out any row that doesn't access a (real) table.  However, a row
 144                                                         # that accesses a table but not an index is still interesting, so we do
 145                                                         # not filter that out.
-146            6    100    100                   86         next if !defined $row->{table}
+146            6    100    100                   64         next if !defined $row->{table}
 147                                                            # Tables named like <union1,2> are just internal temp tables, not real
 148                                                            # tables that we can analyze.
 149                                                            || $row->{table} =~ m/^<(derived|union)\d/;
 150                                                   
 151   ***      4            33                   23         my $table = $lookup->{TABLE}->{$row->{table}} || $row->{table};
-152   ***      4            66                   29         my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
-153            4                                 27         push @result, {
+152   ***      4            66                   28         my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
+153            4                                 29         push @result, {
 154                                                            db  => $db,
 155                                                            tbl => $table,
 156                                                            idx => $row->{key},
@@ -208,24 +208,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 172                                                   # - The database connection's default database.  If a query is run against two
 173                                                   #   different databases, it might use different tables and indexes.
 174                                                   sub get_usage_for {
-175   ***      2                    2      0     10      my ( $self, $checksum, $db ) = @_;
-176   ***      2     50     33                   19      die "I need a checksum and db" unless defined $checksum && defined $db;
-177   ***      2    100     66                   19      if ( exists $self->{usage}->{$db} # Don't auto-vivify
+175   ***      2                    2      0     11      my ( $self, $checksum, $db ) = @_;
+176   ***      2     50     33                   23      die "I need a checksum and db" unless defined $checksum && defined $db;
+177   ***      2    100     66                   23      if ( exists $self->{usage}->{$db} # Don't auto-vivify
 178                                                        && exists $self->{usage}->{$db}->{$checksum} )
 179                                                      {
 180            1                                 11         return $self->{usage}->{$db}->{$checksum};
 181                                                      }
 182                                                      else {
-183            1                                  5         return undef;
+183            1                                  6         return undef;
 184                                                      }
 185                                                   }
 186                                                   
 187                                                   # This methods saves the query's index usage patterns for later retrieval with
 188                                                   # get_usage_for().  See that method for an explanation of the arguments.
 189                                                   sub save_usage_for {
-190   ***      1                    1      0      6      my ( $self, $checksum, $db, $usage ) = @_;
-191   ***      1     50     33                   17      die "I need a checksum and db" unless defined $checksum && defined $db;
-192            1                                  8      $self->{usage}->{$db}->{$checksum} = $usage;
+190   ***      1                    1      0     10      my ( $self, $checksum, $db, $usage ) = @_;
+191   ***      1     50     33                   13      die "I need a checksum and db" unless defined $checksum && defined $db;
+192            1                                  7      $self->{usage}->{$db}->{$checksum} = $usage;
 193                                                   }
 194                                                   
 195                                                   sub _d {
@@ -323,10 +323,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 3                                                     BEGIN {
 4     ***      1     50     33      1            32      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 5                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-6              1                                  7      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+6              1                                  8      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
 7                                                     };
 8                                                     
-9     ***      1            50      1            12   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+9     ***      1            50      1            11   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                1                                  2   
                1                                 16   
 10             1                    1             6   use strict;
@@ -336,47 +336,47 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                  2   
                1                                  5   
 12             1                    1            12   use English qw(-no_match_vars);
-               1                                  3   
-               1                                  6   
-13             1                    1             7   use Data::Dumper;
                1                                  2   
-               1                                 12   
+               1                                  7   
+13             1                    1             6   use Data::Dumper;
+               1                                  2   
+               1                                 11   
 14             1                                  5   $Data::Dumper::Indent    = 1;
-15             1                                  9   $Data::Dumper::Sortkeys  = 1;
-16             1                                  3   $Data::Dumper::Quotekeys = 0;
+15             1                                  3   $Data::Dumper::Sortkeys  = 1;
+16             1                                  4   $Data::Dumper::Quotekeys = 0;
 17                                                    
 18             1                    1            10   use Test::More tests => 10;
                1                                  3   
-               1                                 10   
+               1                                  9   
 19                                                    
-20             1                    1            51   use ExplainAnalyzer;
+20             1                    1            11   use ExplainAnalyzer;
                1                                  3   
                1                                 15   
-21             1                    1            11   use QueryRewriter;
-               1                                  3   
-               1                                 10   
-22             1                    1            10   use QueryParser;
+21             1                    1            10   use QueryRewriter;
                1                                  3   
                1                                 11   
-23             1                    1            10   use DSNParser;
-               1                                  3   
-               1                                 13   
-24             1                    1            13   use Sandbox;
+22             1                    1            12   use QueryParser;
                1                                  3   
                1                                 10   
-25             1                    1            10   use MaatkitTest;
+23             1                    1            14   use DSNParser;
+               1                                  3   
+               1                                 13   
+24             1                    1            12   use Sandbox;
+               1                                  3   
+               1                                 11   
+25             1                    1            11   use MaatkitTest;
                1                                  5   
-               1                                 39   
+               1                                 38   
 26                                                    
-27             1                                 11   my $dp  = new DSNParser(opts=>$dsn_opts);
-28             1                                233   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-29    ***      1     50                          52   my $dbh = $sb->get_dbh_for('master')
+27             1                                 10   my $dp  = new DSNParser(opts=>$dsn_opts);
+28             1                                231   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+29    ***      1     50                          58   my $dbh = $sb->get_dbh_for('master')
 30                                                       or BAIL_OUT('Cannot connect to sandbox master');
-31             1                                473   $dbh->do('use sakila');
+31             1                                482   $dbh->do('use sakila');
 32                                                    
-33             1                                 16   my $qr  = new QueryRewriter();
-34             1                                 35   my $qp  = new QueryParser();
-35             1                                 26   my $exa = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
+33             1                                 17   my $qr  = new QueryRewriter();
+34             1                                 40   my $qp  = new QueryParser();
+35             1                                 27   my $exa = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
 36                                                    
 37                                                    # #############################################################################
 38                                                    # Tests for getting an EXPLAIN from a database.
@@ -403,7 +403,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 59                                                       'Got a simple EXPLAIN result',
 60                                                    );
 61                                                    
-62             1                                 18   is_deeply(
+62             1                                 19   is_deeply(
 63                                                       $exa->explain_query(
 64                                                          dbh => $dbh,
 65                                                          sql => 'delete from actor where actor_id = 5',
@@ -435,7 +435,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 91                                                    # #############################################################################
 92                                                    # Tests for normalizing raw EXPLAIN into a format that's easier to work with.
 93                                                    # #############################################################################
-94             1                                 29   is_deeply(
+94             1                                 28   is_deeply(
 95                                                       $exa->normalize(
 96                                                          [
 97                                                             { id            => 1,
@@ -553,7 +553,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 209                                                   # #############################################################################
 210                                                   # Tests for trimming indexes out of possible_keys.
 211                                                   # #############################################################################
-212            1                                 43   is_deeply(
+212            1                                 40   is_deeply(
 213                                                      $exa->get_alternate_indexes(
 214                                                         [qw(index1 index2)],
 215                                                         [qw(index1 index2 index3 index4)],
@@ -568,7 +568,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 224                                                   
 225                                                   # Putting it all together: given a query and an EXPLAIN, determine which indexes
 226                                                   # the query used.
-227            1                                 28   is_deeply(
+227            1                                 29   is_deeply(
 228                                                      $exa->get_index_usage(
 229                                                         sql => "select * from film_actor as fa inner join sakila.actor as a "
 230                                                              . "on a.actor_id = fa.actor_id and a.last_name is not null "
@@ -668,7 +668,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 324                                                   );
 325                                                   
 326                                                   # Here's a query that uses a table but no indexes in it.
-327            1                                 32   is_deeply(
+327            1                                 37   is_deeply(
 328                                                      $exa->get_index_usage(
 329                                                         sql => "select * from film_text",
 330                                                         db  => 'sakila',
@@ -700,12 +700,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 356                                                   # #############################################################################
 357                                                   # Methods to save and retrieve index usage for a specific query and database.
 358                                                   # #############################################################################
-359            1                                 22   is_deeply(
+359            1                                 18   is_deeply(
 360                                                      $exa->get_usage_for('0xdeadbeef', 'sakila'),
 361                                                      undef,
 362                                                      'No usage recorded for 0xdeadbeef');
 363                                                   
-364            1                                 13   $exa->save_usage_for('0xdeadbeef', 'sakila',
+364            1                                 15   $exa->save_usage_for('0xdeadbeef', 'sakila',
 365                                                      [  {  db  => 'sakila',
 366                                                            tbl => 'actor',
 367                                                            idx => [qw(PRIMARY)],
