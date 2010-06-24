@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 use MaatkitTest;
 
@@ -375,6 +375,17 @@ ok(
       "mk-query-digest/t/samples/slow032.txt",
    ),
    'Analysis for slow032 (issue 948)',
+);
+
+# #############################################################################
+# Issue 1030: Fingerprint can remove ORDER BY ASC
+# #############################################################################
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, '--report-format', 'query_report,profile',  $sample.'slow048.txt') },
+      "mk-query-digest/t/samples/slow048.txt",
+   ),
+   'Analysis for slow048 (issue 1030)',
 );
 
 # #############################################################################

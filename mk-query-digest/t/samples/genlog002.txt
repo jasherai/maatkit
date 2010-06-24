@@ -29,7 +29,7 @@ SELECT category_id
                 FROM auction_category_map 
                 WHERE auction_id = '3015563'\G
 
-# Query 2: 0 QPS, 0x concurrency, ID 0x428C44194E8EF40F at byte 237 ______
+# Query 2: 0 QPS, 0x concurrency, ID 0x0A3E6DCD23F3445A at byte 237 ______
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         50       1
@@ -67,4 +67,4 @@ SELECT auction_id, auction_title_en AS title, close_time,
 # Rank Query ID           Response time    Calls R/Call   Item
 # ==== ================== ================ ===== ======== ================
 #    1 0x2361B36A4AEB397B     0.0000  0.0%     1   0.0000 SELECT auction_category_map
-#    2 0x428C44194E8EF40F     0.0000  0.0%     1   0.0000 SELECT REPLACE auction_search
+#    2 0x0A3E6DCD23F3445A     0.0000  0.0%     1   0.0000 SELECT REPLACE auction_search

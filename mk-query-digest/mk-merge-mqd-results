@@ -1646,7 +1646,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6132
+# QueryRewriter package 6535
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -1784,6 +1784,11 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
    return $query;
 }
 

@@ -1,6 +1,7 @@
 Changelog for mk-query-digest:
 
    * Added --progress (169).
+   * ORDER BY with ASC fingerprinted differently than without ASC (issue 1030).
 
 2010-06-08: version 0.9.18
 
