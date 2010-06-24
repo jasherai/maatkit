@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 30;
 
 use Transformers;
 use QueryReportFormatter;
@@ -908,6 +908,7 @@ ok(
          reports => [qw(header query_report profile)],
          ea      => $ea,
          worst   => [['select col from tbl where id=?','top']],
+         other   => [],
          orderby => 'Query_time',
          groupby => 'fingerprint',
          ReportFormatter => $report,
@@ -993,6 +994,52 @@ ok(
    "print_reports(query_report, prepared)"
 );
 
+
+push @$events,
+   {
+      Query_time    => '1.030281',
+      arg           => 'update foo set col=1 where 1',
+      fingerprint   => 'update foo set col=? where ?',
+      bytes         => 37,
+      cmd           => 'Query',
+      pos_in_log    => 100,
+      ts            => '091208 09:23:49.637892',
+   },
+$ea = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+$report = new ReportFormatter(
+   line_width       => 74,
+   long_last_column => 1, 
+   extend_right     => 1
+);
+ok(
+   no_diff(
+      sub {
+         $qrf->print_reports(
+            reports => ['profile'],
+            ea      => $ea,
+            worst   => [
+               ['update foo set col=? where ?', 'top']
+            ],
+            other => [
+               'execute select i from d.t where i=?',
+               'prepare select i from d.t where i=?',
+            ],
+            orderby => 'Query_time',
+            groupby => 'fingerprint',
+            ReportFormatter => $report,
+         );
+      },
+      "common/t/samples/QueryReportFormatter/reports004.txt",
+   ),
+   "MISC items in profile"
+);
 
 # #############################################################################
 # EXPLAIN report

@@ -95,6 +95,7 @@ sub new {
 #   * orderby       scalar: attrib worst items ordered by
 #   * groupby       scalar: attrib worst items grouped by
 # Optional arguments:
+#   * other         arrayref: other items (that didn't make it into top worst)
 #   * files         arrayref: files read for input
 #   * group         hashref: don't add blank line between these reports
 #                            if they appear together
@@ -605,6 +606,7 @@ sub chart_distro {
 #   * worst         arrayref: worst items
 #   * groupby       scalar: attrib worst items grouped by
 # Optional arguments:
+#   * other            arrayref: other items (that didn't make it into top worst)
 #   * distill_args     hashref: extra args for distill()
 #   * ReportFormatter  obj: passed-in ReportFormatter for testing
 sub profile {
@@ -614,6 +616,7 @@ sub profile {
    }
    my $ea      = $args{ea};
    my $worst   = $args{worst};
+   my $other   = $args{other};
    my $groupby = $args{groupby};
    my $n_worst = scalar @$worst;
 
@@ -667,6 +670,33 @@ sub profile {
          $item->{sample},
       );
    }
+
+   # The last line of the profile is for all the other, non-worst items.
+   # http://code.google.com/p/maatkit/issues/detail?id=1043
+   if ( $other && @$other ) {
+      my $misc = {
+            r   => 0,
+            cnt => 0,
+      };
+      foreach my $item ( @$other ) {
+         my $stats     = $ea->results->{classes}->{$item};
+         $misc->{r}   += $stats->{Query_time}->{sum};
+         $misc->{cnt} += $stats->{Query_time}->{cnt};
+         $total_r     += $misc->{r};  # TODO
+      }
+      my $rt  = sprintf('%10.4f', $misc->{r});
+      my $rtp = sprintf('%4.1f%%', $misc->{r} / ($total_r || 1) * 100);
+      my $rc  = sprintf('%8.4f', $misc->{r} / $misc->{cnt});
+      $report->add_line(
+         "MISC",
+         "0xMISC",
+         "$rt $rtp",
+         $misc->{cnt},
+         $rc,
+         "<".scalar @$other." ITEMS>",
+      );
+   }
+
    return $report->get_report();
 }
 
