@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 74;
+use Test::More tests => 75;
 
 use QueryRewriter;
 use EventAggregator;
@@ -871,9 +871,10 @@ while ( my $event = generate_event() ) {
    $ea->aggregate($event);
 }
 $ea->calculate_statistical_metrics();
-my @chosen;
+my $chosen;
+my $other;
 
-@chosen = $ea->top_events(
+($chosen, $other) = $ea->top_events(
    groupby => 'fingerprint',
    attrib  => 'Query_time',
    orderby => 'sum',
@@ -886,15 +887,22 @@ my @chosen;
 );
 
 is_deeply(
-   \@chosen,
+   $chosen,
    [
       [qw(event2 top)],
       [qw(event3 top)],
       [qw(event1 outlier)],
    ],
-   'Got top events' );
+   'Got top events'
+);
 
-@chosen = $ea->top_events(
+is_deeply(
+   $other,
+   [qw(event4 event0)],
+   "Got other, non-top events"
+);
+
+($chosen, $other) = $ea->top_events(
    groupby => 'fingerprint',
    attrib  => 'Query_time',
    orderby => 'sum',
@@ -907,7 +915,7 @@ is_deeply(
 );
 
 is_deeply(
-   \@chosen,
+   $chosen,
    [
       [qw(event2 top)],
       [qw(event3 top)],
@@ -922,7 +930,7 @@ eval {
    $ea->aggregate({fingerprint => 'FAIL'});
    # but not this one -- the caller should eval to catch this.
    # $ea->aggregate({fingerprint => 'FAIL2', Query_time => 'FAIL' });
-   @chosen = $ea->top_events(
+   ($chosen, $other) = $ea->top_events(
       groupby => 'fingerprint',
       attrib  => 'Query_time',
       orderby => 'sum',

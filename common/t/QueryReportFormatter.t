@@ -529,13 +529,14 @@ sub report_from_file {
       total   => 100,
       count   => 100,
    );
-   my @worst  = $ea2->top_events(%top_spec);
+   my ($worst, $other) = $ea2->top_events(%top_spec);
+   my $top_n = scalar @$worst;
    my $report = '';
-   foreach my $rank ( 1 .. @worst ) {
+   foreach my $rank ( 1 .. $top_n ) {
       $report .= $qrf->event_report(
          ea      => $ea2,
          # select  => [ $ea2->get_attributes() ],
-         item    => $worst[$rank - 1]->[0],
+         item    => $worst->[$rank - 1]->[0],
          rank    => $rank,
          orderby => 'Query_time',
          reason  => '',

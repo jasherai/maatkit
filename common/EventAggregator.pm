@@ -733,8 +733,10 @@ sub metrics {
 #  ol_attrib   ...or events where the 95th percentile of this attribute...
 #  ol_limit    ...is greater than this value, AND...
 #  ol_freq     ...the event occurred at least this many times.
-# The return value is a list of arrayrefs.  Each arrayref is the event key and
-# an explanation of why it was included (top|outlier).
+# The return value is two arrayref.  The first is a list of arrayrefs of the
+# chosen (top) events.  Each arrayref is the event key and an explanation of
+# why it was included (top|outlier).  The second is a list of the non-top
+# event keys.
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_classes};
@@ -745,7 +747,8 @@ sub top_events {
          # Defensive programming
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
-   my @chosen;
+   my @chosen;  # top events
+   my @other;   # other events (< top)
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
       # Events that fall into the top criterion for some reason
@@ -764,12 +767,20 @@ sub top_events {
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
+         else {
+            push @other, $groupby;
+         }
+      }
+
+      # Events not in the top criterion
+      else {
+         push @other, $groupby;
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
       $count++;
    }
-   return @chosen;
+   return \@chosen, \@other;
 }
 
 # Adds all new attributes in $event to $self->{attributes}.
