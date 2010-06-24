@@ -36,6 +36,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...maatkit/common/Outfile.pm   81.2   62.5    n/a   88.9    n/a  100.0   79.6
 .../ProcesslistAggregator.pm   85.0   87.5   80.0   85.7    n/a  100.0   85.3
 ...kit/common/Processlist.pm   89.3   85.0   56.6   84.2    n/a  100.0   78.2
+...aatkit/common/Progress.pm   89.6   76.7   75.0   92.3    0.0   40.9   81.0
 ...it/common/QueryAdvisor.pm   73.7   44.4   50.0   80.0    0.0    8.7   64.1
 ...mmon/QueryAdvisorRules.pm   96.2   86.2   68.2   96.7    0.0   57.0   89.1
 ...kit/common/QueryParser.pm   93.9   73.8   69.2   91.7    n/a  100.0   88.3
