@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * The tool crashed if only empty databases were dumped (issue 1034).
+
 2010-06-08: version 1.0.25
 
    * Connections did not preserve server SQL modes (issue 801).
