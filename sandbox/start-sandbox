@@ -16,7 +16,10 @@ err() {
 make_sandbox() {
    # Make the sandbox dir and extract the base files.
    mkdir /tmp/$port >/dev/null 2>&1
-   cp --force --recursive $MAATKIT_TRUNK/sandbox/servers/$version/* /tmp/$port
+   cp $MAATKIT_TRUNK/sandbox/servers/$version/my.sandbox.cnf /tmp/$port
+   tar xzf $MAATKIT_TRUNK/sandbox/servers/$version/data.tar.gz -C /tmp/$port
+   cp $MAATKIT_TRUNK/sandbox/server-scripts/* /tmp/$port
+
    for file in `grep -rl PORT /tmp/$port`; do
       sed -i -e "s/PORT/$port/g" $file
       # Use ! instead of / because the replacment has / (it's a directory)
