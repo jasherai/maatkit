@@ -37,8 +37,7 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 
 $output = output(
    sub { mk_table_checksum::main("F=$cnf", qw(--replicate=test.checksum --replicate-check=0)) },
-   undef,
-   stderr   => 1,
+   stderr => 1,
 );
 
 is (

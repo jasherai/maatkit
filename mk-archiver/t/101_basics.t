@@ -87,7 +87,7 @@ $output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$
 like($output, qr{SELECT /\*!40001 SQL_NO_CACHE \*/ `a` FROM}, '--primary-key-only works');
 
 # Test that tables must have same columns
-$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_4 --source), "D=test,t=table_1,F=$cnf", qw(--purge)) }, undef, stderr=>1, dont_die=>1);
+$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_4 --source), "D=test,t=table_1,F=$cnf", qw(--purge)) }, stderr=>1);
 like($output, qr/The following columns exist in --source /, 'Column check throws error');
 $output = output(sub {mk_archiver::main(@args, qw(--no-check-columns --dest t=table_4 --source), "D=test,t=table_1,F=$cnf", qw(--purge)) });
 like($output, qr/SELECT/, 'I can disable the check OK');

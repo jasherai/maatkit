@@ -134,9 +134,7 @@ SKIP: {
 
    $output = output(
       sub { mk_table_checksum::main(@args) },
-      undef,
       stderr   => 1,
-      dont_die => 1,
    );
    like(
       $output,

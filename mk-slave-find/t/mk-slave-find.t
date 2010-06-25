@@ -96,7 +96,7 @@ diag(`rm -rf $outfile >/dev/null`);
 
 $output = output(
    sub { mk_slave_find::main(@args) },
-   $outfile,
+   file => $outfile,
 );
 diag(`sed -i -e 's/Version.*/Version/g' $outfile`);
 diag(`sed -i -e 's/Uptime.*/Uptime/g' $outfile`);

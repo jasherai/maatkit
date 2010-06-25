@@ -41,7 +41,6 @@ diag(`/tmp/12346/start >/dev/null`);
 
 $output = output(
    sub { mk_table_checksum::main(@args, '--create-replicate-table') },
-   undef,
    stderr => 1,
 );
 unlike(

@@ -71,8 +71,7 @@ $output = output(
    sub { mk_table_checksum::main("F=$cnf", qw(--no-check-replication-filters),
       qw(--replicate=test.checksum -d mysql -t user --empty-replicate-table))
    },
-   undef,
-   stderr  => 1,
+   stderr => 1,
 );
 
 $master_dbh = $sb->get_dbh_for('master');
@@ -118,7 +117,6 @@ $output = output(
    sub { mk_table_checksum::main("F=$cnf", qw(--no-check-replication-filters),
       qw(--replicate=test.checksum -d mysql -t user))
    },
-   undef,
    stderr => 1,
 );
 
@@ -148,7 +146,6 @@ $output = output(
       qw(--replicate=test.checksum -d mysql -t user),
       qw(--replicate-database test))
    },
-   undef,
    stderr => 1,
 );
 sleep 1;
@@ -187,7 +184,6 @@ $output = output(
    sub { mk_table_checksum::main("F=$cnf",
       qw(--replicate=test.checksum), '--ignore-tables', $it, qw(--chunk-size 20k))
    },
-   undef,
    stderr => 1,
 );
 sleep 1;
@@ -210,7 +206,6 @@ $output = output(
    sub { mk_table_checksum::main("F=$cnf", qw(--replicate-database test),
       qw(--replicate=test.checksum), '--ignore-tables', $it, qw(--chunk-size 20k))
    },
-   undef,
    stderr => 1,
 );
 sleep 1;

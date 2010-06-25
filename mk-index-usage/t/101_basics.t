@@ -101,7 +101,6 @@ ok(
 # #############################################################################
 $output = output(
    sub { mk_index_usage::main(@args, "$trunk/$samples/slow004.txt") },
-   undef,
    stderr => 1,
 );
 my @errs = $output =~ m/DBD::mysql::db selectall_arrayref failed/g;
