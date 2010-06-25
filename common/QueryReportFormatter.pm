@@ -21,7 +21,7 @@
 package QueryReportFormatter;
 
 # This package is used primarily by mk-query-digest to print its reports.
-# The main sub is print_reports() which prints the various reports fo
+# The main sub is print_reports() which prints the various reports for
 # mk-query-digest --report-format.  Each report is produced in a sub of
 # the same name; e.g. --report-format=query_report == sub query_report().
 # The given ea (EventAggregator object) is expected to be "complete"; i.e.
@@ -622,9 +622,11 @@ sub profile {
 
    my $qr  = $self->{QueryRewriter};
 
-   my @profiles;
-   my $total_r = 0;
+   # Total response time of all events.
+   my $results = $ea->results();
+   my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
 
+   my @profiles;
    foreach my $rank ( 1..$n_worst ) {
       my $item       = $worst->[$rank - 1]->[0];
       my $stats      = $ea->results->{classes}->{$item};
@@ -638,7 +640,6 @@ sub profile {
                     $qr->distill($samp_query, %{$args{distill_args}}) : $item,
          id     => $groupby eq 'fingerprint' ? make_checksum($item)   : '',
       );
-      $total_r += $profile{r};
       push @profiles, \%profile;
    }
 
@@ -682,7 +683,6 @@ sub profile {
          my $stats     = $ea->results->{classes}->{$item};
          $misc->{r}   += $stats->{Query_time}->{sum};
          $misc->{cnt} += $stats->{Query_time}->{cnt};
-         $total_r     += $misc->{r};  # TODO
       }
       my $rt  = sprintf('%10.4f', $misc->{r});
       my $rtp = sprintf('%4.1f%%', $misc->{r} / ($total_r || 1) * 100);
