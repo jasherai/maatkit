@@ -1,0 +1,7 @@
+#!/bin/sh
+
+BASEDIR="MAATKIT_SANDBOX_BASEDIR"
+
+$BASEDIR/bin/mysql --defaults-file=/tmp/PORT/my.sandbox.cnf "$@"
+
+exit

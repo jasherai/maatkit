@@ -1,0 +1,3 @@
+#!/bin/sh
+
+mysql --defaults-file=/tmp/NODE/my.sandbox.cnf "$@"

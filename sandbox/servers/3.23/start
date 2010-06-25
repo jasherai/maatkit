@@ -1,0 +1,40 @@
+#!/bin/sh
+
+PIDFILE="/tmp/NODE/data/mysql_sandboxNODE.pid"
+SOCKETFILE="/tmp/NODE/mysql_sandboxNODE.sock"
+
+BASEDIR="/usr"
+if [ $MSANDBOX_BASEDIR ]; then
+   BASEDIR=$MSANDBOX_BASEDIR
+fi
+
+MYSQLD_SAFE=`which safe_mysqld 2>/dev/null`
+if [ $MSANDBOX_MYSQLD_SAFE ]; then
+   MYSQLD_SAFE=$MSANDBOX_MYSQLD_SAFE
+fi
+
+if [ -f $PIDFILE ]
+then
+    echo "sandbox NODE already started (found pid file $PIDFILE)"
+else
+    PWD=`pwd`
+    cd $BASEDIR
+    $MYSQLD_SAFE --defaults-file=/tmp/NODE/my.sandbox.cnf > /dev/null 2>&1 &
+    cd $PWD
+fi
+
+echo -n "Waiting for sandbox to start: "
+for i in 1 2 3 4 5; do
+   sleep 1
+   if [ -f $PIDFILE ] && [ -S $SOCKETFILE ]
+   then
+      break
+   fi
+done
+
+if [ -f $PIDFILE ] && [ -S $SOCKETFILE ]
+then
+   echo "sandbox NODE has started."
+else
+   echo "sandbox NODE failed to start."
+fi

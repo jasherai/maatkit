@@ -1,0 +1,14 @@
+[client]
+user            = msandbox
+password        = msandbox
+port            = NODE
+socket          = /tmp/NODE/mysql_sandboxNODE.sock
+
+[mysqld]
+port              = NODE
+socket            = /tmp/NODE/mysql_sandboxNODE.sock
+basedir           = /tmp/NODE
+datadir           = /tmp/NODE/data
+innodb_data_file_path      = ibdata1:10M:autoextend
+pid-file          = /tmp/NODE/data/mysql_sandboxNODE.pid
+server-id         = NODE

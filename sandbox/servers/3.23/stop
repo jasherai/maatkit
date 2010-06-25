@@ -1,0 +1,9 @@
+#!/bin/sh
+
+PIDFILE="/tmp/NODE/data/mysql_sandboxNODE.pid"
+
+if [ -f $PIDFILE ]
+then
+    mysqladmin --defaults-file=/tmp/NODE/my.sandbox.cnf shutdown
+    echo "Stopped NODE"
+fi
