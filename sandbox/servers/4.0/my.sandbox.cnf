@@ -22,7 +22,4 @@ log_slave_updates
 server-id                  = PORT
 report-host                = 127.0.0.1
 report-port                = PORT
-# 5.0:
-#  log                        = /tmp/PORT/mysql.log
-# 5.1:
-#  general-log                = /tmp/PORT/mysql.log
+log-error                  = mysqld.log
