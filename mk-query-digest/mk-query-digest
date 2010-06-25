@@ -5830,7 +5830,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6361
+# QueryReportFormatter package 6545
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -6322,14 +6322,16 @@ sub profile {
    }
    my $ea      = $args{ea};
    my $worst   = $args{worst};
+   my $other   = $args{other};
    my $groupby = $args{groupby};
    my $n_worst = scalar @$worst;
 
    my $qr  = $self->{QueryRewriter};
 
-   my @profiles;
-   my $total_r = 0;
+   my $results = $ea->results();
+   my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
 
+   my @profiles;
    foreach my $rank ( 1..$n_worst ) {
       my $item       = $worst->[$rank - 1]->[0];
       my $stats      = $ea->results->{classes}->{$item};
@@ -6343,7 +6345,6 @@ sub profile {
                     $qr->distill($samp_query, %{$args{distill_args}}) : $item,
          id     => $groupby eq 'fingerprint' ? make_checksum($item)   : '',
       );
-      $total_r += $profile{r};
       push @profiles, \%profile;
    }
 
@@ -6375,6 +6376,30 @@ sub profile {
          $item->{sample},
       );
    }
+
+   if ( $other && @$other ) {
+      my $misc = {
+            r   => 0,
+            cnt => 0,
+      };
+      foreach my $item ( @$other ) {
+         my $stats     = $ea->results->{classes}->{$item};
+         $misc->{r}   += $stats->{Query_time}->{sum};
+         $misc->{cnt} += $stats->{Query_time}->{cnt};
+      }
+      my $rt  = sprintf('%10.4f', $misc->{r});
+      my $rtp = sprintf('%4.1f%%', $misc->{r} / ($total_r || 1) * 100);
+      my $rc  = sprintf('%8.4f', $misc->{r} / $misc->{cnt});
+      $report->add_line(
+         "MISC",
+         "0xMISC",
+         "$rt $rtp",
+         $misc->{cnt},
+         $rc,
+         "<".scalar @$other." ITEMS>",
+      );
+   }
+
    return $report->get_report();
 }
 

@@ -37,9 +37,9 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
       inner join db1.gonzo a using(gonzo) \G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   Item
-# ==== ================== ================= ===== ======== ===============
-#    1 0x66825DDC008FFA89     0.7261 100.0%     1   0.7261 UPDATE db?.tuningdetail_?_? db?.gonzo
+# Rank Query ID           Response time    Calls R/Call   Item
+# ==== ================== ================ ===== ======== ================
+#    1 0x66825DDC008FFA89     0.7261 95.3%     1   0.7261 UPDATE db?.tuningdetail_?_? db?.gonzo
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x66825DDC008FFA89 at byte 332 ______
 # This item is included in the report because it matches --limit.
@@ -79,6 +79,6 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
       inner join db1.gonzo a using(gonzo) \G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   Item
-# ==== ================== ================= ===== ======== ===============
-#    1 0x66825DDC008FFA89     0.7261 100.0%     1   0.7261 UPDATE db?.tuningdetail_?_? db?.gonzo
+# Rank Query ID           Response time    Calls R/Call   Item
+# ==== ================== ================ ===== ======== ================
+#    1 0x66825DDC008FFA89     0.7261 95.3%     1   0.7261 UPDATE db?.tuningdetail_?_? db?.gonzo

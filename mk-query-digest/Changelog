@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Profile response time % did not match query pct (issue 1073).
    * Added --progress (169).
    * ORDER BY with ASC fingerprinted differently than without ASC (issue 1030).
 
