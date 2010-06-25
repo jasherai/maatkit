@@ -976,7 +976,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6226
+# Quoter package 6549
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -1007,9 +1007,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val ) = @_;
 
-   return 'NULL' unless defined $val;         # undef = NULL
-   return "''" if $val eq '';                 # blank string = ''
-   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
+   return 'NULL' unless defined $val;          # undef = NULL
+   return "''" if $val eq '';                  # blank string = ''
+   return $val if $val =~ m/0x[0-9a-fA-F]+$/;  # hex data
 
    $val =~ s/(['\\])/\\$1/g;
    return "'$val'";
@@ -1031,6 +1031,19 @@ sub literal_like {
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
    return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
 }
 
 1;
