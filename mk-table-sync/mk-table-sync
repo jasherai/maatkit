@@ -8220,9 +8220,13 @@ rows are different, without changing any data, use L<"--print"> instead of
 L<"--execute">.  
 
 Be careful when using mk-table-sync in any master-master setup.  Master-master
-replication is inherently tricky, and it's easy to make mistakes.  Yyou need to
+replication is inherently tricky, and it's easy to make mistakes.  You need to
 be sure you're using the tool correctly for master-master replication.  See the
 L<"SYNOPSIS"> for the overview of the correct usage.
+
+Also be careful with tables that have foreign key constraints with C<ON DELETE>
+or C<ON UPDATE> definitions because these might cause unintended changes on the
+child tables.
 
 In general, this tool is best suited when your tables have a primary key or
 unique index.  Although it can synchronize data in tables lacking a primary key
