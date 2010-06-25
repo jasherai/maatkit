@@ -29,7 +29,9 @@ diag(`rm -rf $resdir ; mkdir $resdir`);
 
 # A difference is expect.  The original saw all 7 unique queries,
 # but only the top worst query was saved so the merged report only
-# differs in that it reports 1 unique query instead of 7.
+# differs in that it reports 1 unique query instead of 7.  And,
+# re issue 1043, the MISC items aren't present in the new report
+# because they weren't saved either.
 $diff = `diff $resdir/orig $resdir/mrgd`;
 is(
    $diff,
@@ -37,12 +39,15 @@ is(
 < # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
 ---
 > # Overall: 8 total, 1 unique, 0 QPS, 0x concurrency ______________________
+60d59
+< # MISC 0xMISC                 0.0360  4.7%     7   0.0051 <6 ITEMS>
 ",
    "slow002.txt default results"
 );
 
 # Going to have a similar diff: mrgd sees only the 3 unique queries
-# that were saved instead of the original 7.
+# that were saved instead of the original 7, and the 7 non-saved MISC
+# items are gone.
 diag(`rm -rf $resdir/*`);
 `$mqd $sample/slow002.txt --limit 3            > $resdir/orig`;
 `$cmd $ressample/slow002-limit-3.txt --limit 3 > $resdir/mrgd`;
@@ -53,10 +58,11 @@ is(
 < # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
 ---
 > # Overall: 8 total, 3 unique, 0 QPS, 0x concurrency ______________________
+139d138
+< # MISC 0xMISC                 0.0016  0.2%     4   0.0004 <4 ITEMS>
 ",
    "slow002.txt --limit 3 results"
 );
-
 
 # #############################################################################
 # A more realistic example, merging 3 different results.
@@ -85,6 +91,8 @@ is(
 ---
 > #    SHOW TABLE STATUS LIKE \'a\'\G
 > #    SHOW CREATE TABLE `a`\G
+89d87
+< # MISC 0xMISC                 0.0361  1.3%    13   0.0028 <8 ITEMS>
 ',
    "slow002.txt, slow006.txt, slow0028.txt"
 );

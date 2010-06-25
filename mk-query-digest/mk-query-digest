@@ -11796,6 +11796,7 @@ sub main {
                   reports      => \@reports,
                   ea           => $ea[$i],
                   worst        => $worst,
+                  other        => $other,
                   orderby      => $orderby_attrib,
                   groupby      => $groupby[$i],
                   print_header => $print_header,

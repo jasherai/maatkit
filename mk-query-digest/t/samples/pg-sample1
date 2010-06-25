@@ -22,3 +22,4 @@
 #   18 0x9AA827C1DF73EE43     0.0496  1.1%    17   0.0029 SELECT users news_bytes groups
 #   19 0x4636BFC0875521C9     0.0447  1.0%    40   0.0011 SELECT supported_languages
 #   20 0xB1C777CE6EBFE87E     0.0434  1.0%    17   0.0026 SELECT frs_package frs_release
+# MISC 0xMISC                 0.5823 13.4%   334   0.0017 <47 ITEMS>
