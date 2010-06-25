@@ -306,8 +306,8 @@ fi
 # bin/mysqld -V should print something like:
 #  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
 version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
-if [ ! -f "$MAATKIT_TRUNK/sandbox/server-$version.tar.gz" ]; then
-   err "Maatkit sandbox server-$version.tar.gz does not exists."
+if [ ! -d "$MAATKIT_TRUNK/sandbox/servers/$version" ]; then
+   err "Maatkit sandbox server version $version does not exists."
    exit 1
 fi
 
