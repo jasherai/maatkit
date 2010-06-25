@@ -43,9 +43,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val ) = @_;
 
-   return 'NULL' unless defined $val;         # undef = NULL
-   return "''" if $val eq '';                 # blank string = ''
-   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
+   return 'NULL' unless defined $val;          # undef = NULL
+   return "''" if $val eq '';                  # blank string = ''
+   return $val if $val =~ m/0x[0-9a-fA-F]+$/;  # hex data
 
    # Quote and return non-numeric vals.
    $val =~ s/(['\\])/\\$1/g;
