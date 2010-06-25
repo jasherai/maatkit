@@ -7062,15 +7062,20 @@ sub main {
    );
 
    # Create the sync plugins.
-   my $plugins = [];
-   foreach my $plugin_name ( split(',', $o->get('algorithms')) ) {
-      $plugin_name = "TableSync$plugin_name";
+   my $plugins     = [];
+   my %have_plugin = get_plugins();
+   foreach my $algo ( split(',', $o->get('algorithms')) ) {
+      my $plugin_name = $have_plugin{lc $algo};
+      if ( !$plugin_name ) {
+         die "The $algo algorithm is not available.  Available algorithms: "
+            . join(", ", sort keys %have_plugin);
+      }
       MKDEBUG && _d('Loading', $plugin_name);
       my $plugin;
       eval {
          $plugin = $plugin_name->new(%modules);
       };
-      die "Cannot load $plugin_name for --algorithm: $EVAL_ERROR"
+      die "Error loading $plugin_name for $algo algorithm: $EVAL_ERROR"
          if $EVAL_ERROR;
       push @$plugins, $plugin;
    }
@@ -8116,6 +8121,26 @@ sub set_bidirectional_callbacks {
    });
 
    return;
+}
+
+# Returns a hash of available algoritms and the plugin/module names that
+# implement them, like "chunk => TableSyncChunk".  Currently, we just
+# parse our self for TableSync* packages.
+sub get_plugins {
+   my ( %args ) = @_;
+   
+   my $file = __FILE__;
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+
+   my %local_plugins = map {
+      my $package = $_;
+      my ($module, $algo) = $package =~ m/(TableSync(\w+))/;
+      lc $algo => $module;
+   } $contents =~ m/^package TableSync\w{3,};/gm;
+
+   return %local_plugins;
 }
 
 sub _d {
