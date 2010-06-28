@@ -160,9 +160,10 @@ sub find_chunk_columns {
 #   * max            scalar: max col value
 #   * rows_in_range  scalar: number of rows to chunk
 #   * chunk_size     scalar: requested size of each chunk
+#   * zero_chunk     bool: add an extra chunk for zero values (0, 00:00, etc.)
 # Optional arguments:
 #   * exact          bool: use exact chunk_size if true else use approximates
-#   * tries
+#   * tries          scalar: fetch up to this many rows to find a non-zero value
 # Returns a list of WHERE predicates like "`col` >= '10' AND `col` < '20'",
 # one for each chunk.  All values are single-quoted due to
 # http://code.google.com/p/maatkit/issues/detail?id=1002
@@ -180,6 +181,8 @@ sub calculate_chunks {
    my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
    MKDEBUG && _d('chunk col type:', $col_type);
 
+   # Convert the given MySQL values to (Perl) numbers using some MySQL function.
+   # E.g.: SELECT TIME_TO_SEC('12:34') == 45240.  
    my $range_func = $self->range_func_for($col_type);
    my ($start_point, $end_point);
    eval {
@@ -230,7 +233,13 @@ sub calculate_chunks {
    MKDEBUG && _d("Actual chunk range:", $start_point, "to", $end_point);
 
    # Determine if we can include a zero chunk (col = 0).  If yes, then
-   # make sure the start point is non-zero.
+   # make sure the start point is non-zero.  $start_point and $end_point
+   # should be numbers (converted from MySQL values earlier).  The purpose
+   # of the zero chunk is to capture a potentially large number of zero
+   # values that might imbalance the size of the first chunk.  E.g. if a
+   # lot of invalid times were inserted and stored as 00:00:00, these
+   # zero (equivalent) values are captured by the zero chunk instead of
+   # the first chunk + all the non-zero values in the first chunk.
    my $have_zero_chunk = 0;
    if ( $args{zero_chunk} ) {
       if ( $start_point != $end_point && $start_point >= 0 ) {
@@ -464,7 +473,7 @@ sub size_to_rows {
 # Optional arguments:
 #   * where      scalar: WHERE clause without "WHERE" to restrict range
 #   * index_hint scalar: "FORCE INDEX (...)" clause
-#   * tries      scalar: number of tries to get next real value
+#   * tries      scalar: fetch up to this many rows to find a valid value
 # Returns an array:
 #   * min row value
 #   * max row values
@@ -740,7 +749,7 @@ sub timestampdiff {
 # Optional arguments:
 #   * index_hint scalar: "FORCE INDEX (...)" hint
 #   * where      scalar: WHERE clause without "WHERE"
-#   * tries      scalar: only try this many times/rows to find a real value
+#   * tries      scalar: fetch up to this many rows to find a valid value
 #   * zero_chunk bool: do a separate chunk for zero values
 # Some column types can store invalid values, like most of the temporal
 # types.  When evaluated, invalid values return NULL.  If the value is
@@ -844,7 +853,7 @@ sub _get_valid_end_point {
 #   * validate  coderef: returns a defined value if the given value is valid
 #   * endpoint  scalar: "min" or "max", i.e. find first endpoint() real val
 # Optional arguments:
-#   * tries      scalar: only try this many times/rows to find a real value
+#   * tries      scalar: fetch up to this many rows to find a valid value
 #   * index_hint scalar: "FORCE INDEX (...)" hint
 #   * where      scalar: WHERE clause without "WHERE"
 # Returns the first column value from the given db_tbl that does *not*
