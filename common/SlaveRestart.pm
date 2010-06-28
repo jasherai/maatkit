@@ -44,25 +44,27 @@ sub reconnect {
   
    return if $self->{dbh} && $self->{dbh}->ping;
    warn "Attempting to reconnect to the slave.\n";
-   while ( !$status->{master_host} && $reconnect_attempt <= $self->{retries} ) {
+   while ( !$status && $reconnect_attempt <= $self->{retries} ) {
       my $sleep_time = $self->{delay};
       MKDEBUG && _d("Reconnect attempt: ", $reconnect_attempt);
-      MKDEBUG && _d("Reconnect time: ", $sleep_time);
       
       eval {
-         $slave  = ${ $self->{connect_to_slave} }->();
+         my $connect_to_slave = $self->{connect_to_slave};
+         $slave = $$connect_to_slave->();
       };
 
-      if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR || !$slave ) {
          MKDEBUG && _d($EVAL_ERROR);
+         MKDEBUG && _d("Reconnect time: ", $sleep_time);
+         sleep $sleep_time;
+         $reconnect_attempt++;
       }
-      $status = $self->_check_slave_status( dbh => $slave );
-
-      MKDEBUG && _d("Successfully reconnected to the slave.")
-         if ( $status->{master_host} && $reconnect_attempt <= $self->{retries} );
-
-      sleep $sleep_time;
-      $reconnect_attempt++;
+      else {
+         $status = $self->_check_slave_status( dbh => $slave );
+         if ( $status && %$status ) {
+            MKDEBUG && _d("Successfully reconnected to the slave.");
+         }
+      }
    }
    return $slave;
 };
@@ -80,7 +82,7 @@ sub _check_slave_status {
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d($EVAL_ERROR);
    }
-   return $EVAL_ERROR ? undef : $status;
+   return $status;
 }
 
 sub _d {
