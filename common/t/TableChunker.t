@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 70;
+   plan tests => 71;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -943,6 +943,15 @@ is_deeply(
    ) ],
    [ 'film_id', 'PRIMARY' ],
    "get_first_chunkable_column(), bad preferred column and index"
+);
+
+$sb->load_file('master', "common/t/samples/t1.sql", 'test');
+$t = $p->parse( load_file('common/t/samples/t1.sql') );
+
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t) ],
+   [undef, undef],
+   "get_first_chunkable_column(), no chunkable columns"
 );
 
 # #############################################################################
