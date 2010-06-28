@@ -2470,7 +2470,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6492
+# TableChunker package 6571
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -5036,6 +5036,7 @@ sub save_tbl_to_checksum {
                   tbl_struct => $struct,
                   chunk_col  => $chunk_col,
                   chunk_size => $rows_per_chunk,
+                  zero_chunk => $final_o->get('zero-chunk'),
                   %params,
                );
                $maxval = $params{max};
@@ -7607,6 +7608,18 @@ This option is much like the -w option to mysqldump.  Do not specify the WHERE
 keyword.  You may need to quote the value.  Here is an example:
 
   mk-table-checksum --where "foo=bar"
+
+=item --[no]zero-chunk
+
+default: yes
+
+Add a chunk for rows with zero or zero-equivalent values.  The only has an
+effect when L<"--check-size"> is specified.  The purpose of the zero chunk
+is to capture a potentially large number of zero values that would imbalance
+the size of the first chunk.  For example, if a lot of negative numbers were
+inserted into an unsigned integer column causing them to be stored as zeros,
+then these zero values are captured by the zero chunk instead of the first
+chunk and all its non-zero values.
 
 =back
 

@@ -35,7 +35,7 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # Ensure chunking works
 $output = `$cmd --function sha1 --explain --chunk-size 200 -d test -t chunk`;
-like($output, qr/test\s+chunk\s+`film_id` < '\d+'/, 'chunking works');
+like($output, qr/test\s+chunk\s+`film_id` > 0 AND `film_id` < '\d+'/, 'chunking works');
 my $num_chunks = scalar(map { 1 } $output =~ m/^test/gm);
 ok($num_chunks >= 5 && $num_chunks < 8, "Found $num_chunks chunks");
 
@@ -43,7 +43,7 @@ ok($num_chunks >= 5 && $num_chunks < 8, "Found $num_chunks chunks");
 $output = `$cmd --function sha1 -d test -t chunk --chunk-size 50 --replicate test.checksum 127.0.0.1`;
 $output = `/tmp/12345/use --skip-column-names -e "select boundaries from test.checksum where db='test' and tbl='chunk' and chunk=0"`;
 chomp $output;
-like ( $output, qr/`film_id` < '\d+'/, 'chunk boundaries stored right');
+like ( $output, qr/`film_id` = 0/, 'chunk boundaries stored right');
 
 # #############################################################################
 # Done.

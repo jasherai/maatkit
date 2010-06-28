@@ -85,14 +85,15 @@ sleep 1;
 $output = `$cmd -d test --resume-replicate --replicate test.checksum --chunk-size 3`;
 
 # The TIME value can fluctuate between 1 and 0.  Make it 0.
-$output =~ s/bce55ff5    \d+/bce55ff5    0/;
+$output =~ s/6abf4a82(\s+)\d+/6abf4a82${1}0/;
 
 is(
    $output,
 "DATABASE TABLE  CHUNK HOST      ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
 # already checksummed: test resume 0 127.0.0.1
 # already checksummed: test resume 1 127.0.0.1
-test     resume     2 127.0.0.1 InnoDB          4         bce55ff5    0 NULL NULL NULL
+test     resume     2 127.0.0.1 InnoDB          3         6abf4a82    0 NULL NULL NULL
+# already checksummed: test resume 3 127.0.0.1
 ",
    '--resume-replicate'
 );
