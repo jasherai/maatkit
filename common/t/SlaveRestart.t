@@ -53,13 +53,13 @@ ok( $rows->{Master_Port} == '12345', 'Check and show slave status correctly.' );
 # Test to see if it cannot connect to a slave database.
 # ###########################################################################
 die( 'Cannot stop MySQL slave.' ) if system( '/tmp/12346/stop && sleep 2' );
-($dbh)  = $restart->reconnect();
+$dbh = $restart->reconnect();
 ok( $dbh == 0, 'Unable to connect to slave.' );
 
 # ###########################################################################
 # Test reconnecting to a slave database.
 # ###########################################################################
 die( 'Cannot start MySQL slave.' ) if system( 'sleep 1 && /tmp/12346/start &' );
-($dbh)  = $restart->reconnect();
+$dbh = $restart->reconnect();
 $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS"); 
 ok( $status->{Master_Port} == '12345', 'Reconnect to lost slave db.' );
