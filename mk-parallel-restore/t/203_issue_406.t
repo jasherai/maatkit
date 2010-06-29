@@ -41,7 +41,7 @@ $sb->create_dbs($dbh, ['test']);
 # ./mk-parallel-restore line 1808
 # #############################################################################
 
-`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25 --no-zero-chunk`;
 
 $output = `$cmd -D test $basedir 2>&1`;
 

@@ -40,7 +40,7 @@ diag(`rm -rf $basedir`);
 # #############################################################################
 $sb->load_file('master', 'mk-parallel-restore/t/samples/issue_30.sql');
 
-`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25 --no-gzip`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25 --no-gzip --no-zero-chunk`;
 # The above makes the following chunks:
 #
 # #   WHERE                         SIZE  FILE
@@ -95,7 +95,7 @@ ok(
 
 # Test that resume doesn't do anything on a tab dump because there's
 # no chunks file
-`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab --no-gzip`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab --no-gzip --no-zero-chunk`;
 $output = `MKDEBUG=1 $cmd --no-atomic-resume -D test --local --tab $basedir/test/ 2>&1`;
 like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
 
@@ -103,7 +103,7 @@ like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab 
 
 # Test that resume doesn't do anything on non-chunked dump because
 # there's only 1 chunk: where 1=1
-`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 10000 --no-gzip`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 10000 --no-gzip --no-zero-chunk`;
 $output = `MKDEBUG=1 $cmd --no-atomic-resume -D test $basedir/test/ 2>&1`;
 like(
    $output,
