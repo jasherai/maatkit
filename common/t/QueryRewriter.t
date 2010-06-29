@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 255;
+use Test::More tests => 256;
 
 use QueryRewriter;
 use QueryParser;
@@ -330,6 +330,16 @@ is(
    ),
    "select * from t where i=? order by a, b, d desc, e",
    "Remove only ASC from ORDER BY"
+);
+is(
+   $qr->fingerprint(
+      "select * from t where i=1      order            by 
+      a,  b          ASC, d    DESC,    
+                             
+                             e asc",
+   ),
+   "select * from t where i=? order by a, b, d desc, e",
+   "Remove ASC from spacey ORDER BY"
 );
 
 # #############################################################################
