@@ -50,7 +50,7 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 58;
+   plan tests => 59;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -958,6 +958,33 @@ is_deeply(
    \@rows,
    [],
    "Sync with transaction"
+);
+
+$syncer->lock_and_wait(
+   src         => {
+      dbh => $src_dbh,
+      db  => 'sakila',
+      tbl => 'actor',
+   },
+   dst         => {
+      dbh => $dst_dbh,
+      db  => 'sakila',
+      tbl => 'actor',
+   },
+   lock        => 1,
+   lock_level  => 1,
+   transaction => 1,
+);
+
+
+my $cid = $src_dbh->selectrow_arrayref("SELECT CONNECTION_ID()")->[0];
+$src_dbh->do("SELECT * FROM sakila.actor WHERE 1=1 LIMIT 2 FOR UPDATE");
+my $idb_status = $src_dbh->selectrow_arrayref("SHOW INNODB STATUS");
+$src_dbh->commit();
+like(
+   $idb_status->[2],
+   qr/MySQL thread id $cid, query id \d+/,
+   "Open transaction"
 );
 
 # #############################################################################
