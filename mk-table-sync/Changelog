@@ -4,6 +4,7 @@ Changelog for mk-table-sync:
    * Added trace messages to write statements (issue 387).
    * --algorithms was case-sensitive (issue 1065).
    * Hex-like stings were not quoted (issue 1019).
+   * Added --[no]zero-chunk (issue 941).
 
 2010-06-08: version 1.0.28
 

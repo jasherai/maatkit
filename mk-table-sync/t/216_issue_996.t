@@ -71,7 +71,7 @@ sleep 1;
 $output = `$mk_table_checksum --replicate issue_375.checksums --replicate-check 1`;
 like(
    $output,
-   qr/issue_375\s+t\s+1\s+0\s+1\s+`id` >= '21' AND `id` < '41'/,
+   qr/issue_375\s+t\s+2\s+0\s+1\s+`id` >= '21' AND `id` < '41'/,
    "Chunk checksum diff"
 );
 
@@ -88,14 +88,16 @@ output(
 $output = `cat $file | grep 'AS chunk_num' | cut -d' ' -f3,4`;
 is(
    $output,
-"/*issue_375.t:1/4*/ 0
-/*issue_375.t:1/4*/ 0
-/*issue_375.t:2/4*/ 1
-/*issue_375.t:2/4*/ 1
-/*issue_375.t:3/4*/ 2
-/*issue_375.t:3/4*/ 2
-/*issue_375.t:4/4*/ 3
-/*issue_375.t:4/4*/ 3
+"/*issue_375.t:1/5*/ 0
+/*issue_375.t:1/5*/ 0
+/*issue_375.t:2/5*/ 1
+/*issue_375.t:2/5*/ 1
+/*issue_375.t:3/5*/ 2
+/*issue_375.t:3/5*/ 2
+/*issue_375.t:4/5*/ 3
+/*issue_375.t:4/5*/ 3
+/*issue_375.t:5/5*/ 4
+/*issue_375.t:5/5*/ 4
 ",
    "Chunks within chunk"
 );

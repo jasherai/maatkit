@@ -2793,7 +2793,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6492
+# TableChunker package 6571
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -7673,6 +7673,7 @@ sub sync_a_table {
          index_hint        => $o->get('index-hint'),
          chunk_index       => $o->get('chunk-index'),
          chunk_col         => $o->get('chunk-column'),
+         zero_chunk        => $o->get('zero-chunk'),
          lock              => $o->get('lock'),
          replace           => $o->get('replace'),
          replicate         => $o->get('replicate'),
@@ -9176,6 +9177,18 @@ value is in effect, run with L<"--help">.
 type: string
 
 C<WHERE> clause to restrict syncing to part of the table.
+
+=item --[no]zero-chunk
+
+default: yes
+
+Add a chunk for rows with zero or zero-equivalent values.  The only has an
+effect when L<"--check-size"> is specified.  The purpose of the zero chunk
+is to capture a potentially large number of zero values that would imbalance
+the size of the first chunk.  For example, if a lot of negative numbers were
+inserted into an unsigned integer column causing them to be stored as zeros,
+then these zero values are captured by the zero chunk instead of the first
+chunk and all its non-zero values.
 
 =back
 
