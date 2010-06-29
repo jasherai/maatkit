@@ -11626,31 +11626,45 @@ sub main {
    my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
    MKDEBUG && _d('Instrument:', $instrument);
 
-   my $fi    = new FileIterator();
-   my $start = time();
-   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now   = $start;
-   my $iters = 0;
-   ITERATION:
-   while (  # Quit if instructed to, or if iterations are exceeded.
-      $oktorun
-      && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
-   ) {
+   # The EVENT loop is the core work cycle.  It collects/parses events for
+   # either a limited or unlimited period.  It's limited by an optional
+   # run-time or by a finite input, like files.  When a cycle of event
+   # collection ends, a report is made.  Each collect-and-report cycle is
+   # an iteration, and iterations are limited (1 by default) or unlimited.
+   # They're limited by count (--iterations) or by a finite input.  All
+   # work is ultimately limited by $oktorun, which usually becomes false
+   # due to an interrupt (CTRL-C).  So in brief: time limits apply to event
+   # collection; iterations apply to collect-and-report cycles, and all work
+   # stops at the end of input or $oktorun being false.
+   my $max_iters = $o->get('iterations');
+   my $iters     = 0;
+   my $fi        = new FileIterator();
+   my $next_file = $fi->get_file_itr(@ARGV);
+   my @read_files;
 
+   # Get first input (a file, STDIN, proclist, etc.)
+   my ($fh, $filename, $filesize) = $next_file->();
+   MKDEBUG && _d('Reading', $filename);
+   push @read_files, $filename || "STDIN" if $fh;
+
+   ITERATION:
+   while (                                      # Quit if
+      $oktorun                                  # interrupted (e.g. CTRL-C), or
+      && (!$max_iters || $iters++ < $max_iters) # at max iterations, or
+      && defined $fh                            # no more input
+   ) {
+      MKDEBUG && _d("Start iteration", $iters, "of", $max_iters);
       if ( $o->get('print-iterations') ) {
          my $iter_start = time;
          MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
          print "\n# Iteration $iters started at ", ts($iter_start), "\n";
       }
 
-      my @read_files;
-      my $next_file = $fi->get_file_itr(@ARGV);
-      my ($fh, $filename, $filesize) = $next_file->();
-      FILE:
-      while ( defined $fh ) {
-         MKDEBUG && _d('Reading', $filename);
-         push @read_files, $filename || "STDIN";
-
+      # This block covers the current input being parsed.  The input changes
+      # when it runs out of events and makes $more_events false.  This happens
+      # when the input is a list of files, else it doesn't change for inputs
+      # like STDIN and proclist.
+      INPUT: {
          # Create callback to read next event.  Some inputs, like
          # Processlist, may use something else but most next_event.
          my $next_event;
@@ -11676,7 +11690,11 @@ sub main {
             );
          }
 
-         # Parse and process the events in this file.
+         # Parse and process the events in this input
+         # limited run-time.
+         my $start       = time;
+         my $end         = $start + ($o->get('run-time') || 0); # when to stop
+         my $now         = $start;
          my $event       = {};
          my $more_events = 1;
          my $oktorun_sub = sub { $more_events = $_[0]; };
@@ -11697,7 +11715,7 @@ sub main {
                # job to tell us when to stop.
                foreach my $callback ( @callbacks ) {
                   last unless $oktorun;  # the global oktorun var
-                  my $start = $instrument ? time : 0;
+                  my $call_start = $instrument ? time : 0;
                   $event = $callback->(
                      $event,                # for backwards compatibility
                      event      => $event,  # new interface
@@ -11707,13 +11725,13 @@ sub main {
                      misc       => $misc,
                      stats      => \%stats,
                   );
-                  my $end = $instrument ? time : 0;
-                  my $t   = $end - $start;
                   if ( $instrument ) {
-                     my $name = $callback_names{$callback} || $callback;
-                     $prof{callback}->{$name}->{time} += $t;
+                     my $call_end = time;
+                     my $call_t   = $call_end - $call_start;
+                     my $name     = $callback_names{$callback} || $callback;
+                     $prof{callback}->{$name}->{time} += $call_t;
                      $prof{callback}->{$name}->{count}++;
-                     $prof{total}->{time} += $t;
+                     $prof{total}->{time} += $call_t;
                      $prof{total}->{count}++;
                   }
                   last unless $event;
@@ -11721,26 +11739,28 @@ sub main {
                if ( !$more_events ) {
                   MKDEBUG && _d('No more events');
                   close $fh if $fh;
-                  $fh = undef;
+                  $fh = undef; 
+
+                  # Only get the next file when there's no more events in
+                  # the current file.  This allows us to do collect-and-report
+                  # cycles (i.e. iterations) on huge files.  This doesn't
+                  # apply to infinite inputs because they do not set
+                  # $more_events false.
+                  ($fh, $filename, $filesize) = $next_file->();
+                  MKDEBUG && _d('Reading', $filename);
+                  push @read_files, $filename || "STDIN" if $fh;
                }
             };
             if ( $EVAL_ERROR ) {
                _d($EVAL_ERROR);
                $stats{pipeline_error}++;
-
-               # Don't ignore failure to open a file, else we'll get
-               # "tell() on closed filehandle" errors.
-               last EVENT if $EVAL_ERROR =~ m/Cannot open/;
-
                last EVENT unless $o->get('continue-on-error');
             }
-            $now = time();
+
             $pr->update($tell) if $pr;
+            $now = time();
          }  # EVENT
-
-         ($fh, $filename, $filesize) = $next_file->();
-
-      }  # FILE
+      }  # INPUT
 
       # ######################################################################
       # Done parsing events, now aggregate, report and possibly do other
@@ -11901,12 +11921,6 @@ sub main {
             print "\n# No statistics values.\n";
          }
       }
-      
-      # Reset the start/end/now times so the next iteration will run for the
-      # same amount of time.
-      $start = time();
-      $end   = $start + ($o->get('run-time') || 0); # When we should exit
-      $now   = $start;
    } # ITERATION
 
    # Disconnect all open $dbh's
