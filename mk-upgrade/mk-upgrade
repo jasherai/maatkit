@@ -6213,7 +6213,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 6373
+# TableSyncer package 6523
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncer.pm
@@ -6274,6 +6274,8 @@ sub sync_table {
 
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
+   my $dp = $self->{DSNParser};
+   $args{trace} = 1 unless defined $args{trace};
 
    if ( $args{bidirectional} && $args{ChangeHandler}->{queue} ) {
       die "Queueing does not work with bidirectional syncing";
@@ -6353,8 +6355,22 @@ sub sync_table {
    MKDEBUG && _d('left dbh', $src->{dbh});
    MKDEBUG && _d('right dbh', $dst->{dbh});
 
+   chomp(my $hostname = `hostname`);
+   my $trace_msg
+      = $args{trace} ? "src_db:$src->{db} src_tbl:$src->{tbl} "
+         . ($dp && $src->{dsn} ? "src_dsn:".$dp->as_string($src->{dsn}) : "")
+         . " dst_db:$dst->{db} dst_tbl:$dst->{tbl} "
+         . ($dp && $dst->{dsn} ? "dst_dsn:".$dp->as_string($dst->{dsn}) : "")
+         . " " . join(" ", map { "$_:" . ($args{$_} || 0) }
+                     qw(lock transaction changing_src replicate bidirectional))
+         . " pid:$PID "
+         . ($ENV{USER} ? "user:$ENV{USER} " : "")
+         . ($hostname  ? "host:$hostname"   : "")
+      :                "";
+   MKDEBUG && _d("Binlog trace message:", $trace_msg);
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
-   
+
    my $callback = $args{callback};
    my $cycle    = 0;
    while ( !$plugin->done() ) {
@@ -6417,13 +6433,13 @@ sub sync_table {
          syncer     => $plugin,
          tbl_struct => $tbl_struct,
       );
-      $ch->process_rows(1);
+      $ch->process_rows(1, $trace_msg);
 
       MKDEBUG && _d('Finished sync cycle', $cycle);
       $cycle++;
    }
 
-   $ch->process_rows();
+   $ch->process_rows(0, $trace_msg);
 
    $self->unlock(%args, lock_level => 2);
 
@@ -6566,6 +6582,11 @@ sub lock_and_wait {
       if ( $args{transaction} ) {
          if ( $args{src_sth} ) {
             MKDEBUG && _d('Executing statement on source to lock rows');
+
+            my $sql = "START TRANSACTION /*!40108 WITH CONSISTENT SNAPSHOT */";
+            MKDEBUG && _d($src->{dbh}, $sql);
+            $src->{dbh}->do($sql);
+
             $args{src_sth}->execute();
             $result = 1;
          }
