@@ -2034,7 +2034,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6492
+# TableChunker package 6571
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -4301,6 +4301,7 @@ sub get_chunks {
       tbl_struct => $tbl_struct,
       chunk_col  => $col,
       chunk_size => $rows_per_chunk,
+      zero_chunk => $o->get('zero-chunk'),
       %range_stats,
    );
    my $avg_chunk_size = $rows_per_chunk * $avg_row_len;
@@ -5407,6 +5408,18 @@ killed the server, so no tables will be retried.  Tables that were being
 concurrently dumped when the crash happened will not be retried.  No additional
 locks will be taken after the server restarts; it's assumed this behavior is
 useful only on a server you're not trying to dump while it's in production.
+
+=item --[no]zero-chunk
+
+default: yes
+
+Add a chunk for rows with zero or zero-equivalent values.  The only has an
+effect when L<"--check-size"> is specified.  The purpose of the zero chunk
+is to capture a potentially large number of zero values that would imbalance
+the size of the first chunk.  For example, if a lot of negative numbers were
+inserted into an unsigned integer column causing them to be stored as zeros,
+then these zero values are captured by the zero chunk instead of the first
+chunk and all its non-zero values.
 
 =back
 

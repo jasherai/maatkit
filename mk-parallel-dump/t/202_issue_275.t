@@ -54,18 +54,25 @@ diag(`rm -rf $basedir`);
 $dbh->do('insert into test.t1 values (999)');
 diag(`$cmd --base-dir $basedir --csv --chunk-size 28 -d test -t t1 > /dev/null`);
 
-$output = `wc -l $basedir/test/t1.000000.txt`;
+$output = `wc -l $basedir/test/t1.000001.txt`;
 like($output, qr/^55/, 'First chunk of csv dump (issue 275)');
 
-$output = `cat $basedir/test/t1.000001.txt`;
+$output = `cat $basedir/test/t1.000002.txt`;
 is($output, "999\n", 'Second chunk of csv dump (issue 275)');
 
 $output = `cat $basedir/test/t1.chunks`;
-is($output, "`a` < '500'\n`a` >= '500'\n", 'Chunks of csv dump (issue 275)');
+is(
+   $output,
+   "`a` = 0
+`a` > 0 AND `a` < '500'
+`a` >= '500'
+",
+   'Chunks of csv dump (issue 275)'
+);
 
 # #############################################################################
 # Done.
 # #############################################################################
-diag(`rm -rf $basedir`);
+#diag(`rm -rf $basedir`);
 $sb->wipe_clean($dbh);
 exit;
