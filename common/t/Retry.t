@@ -16,7 +16,8 @@ use Test::More tests => 1;
 use Retry;
 use MaatkitTest;
 
-ok(1, "OK");
+my $retry = new Retry();
+isa_ok($retry, 'Retry');
 
 # #############################################################################
 # Done.
