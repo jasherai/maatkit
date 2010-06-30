@@ -1,13 +1,27 @@
+# This program is copyright 2010 Percona Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# SlaveRestart package $Revision: 0000 $
+# Retry package $Revision$
 # ###########################################################################
-
-package SlaveRestart;
+package Retry;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
@@ -16,7 +30,6 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * onfail             scalar: whether it will attempt to reconnect or not.
 #   * retries            scalar: number of reconnect attempts.
 #   * delay              coderef: returns the amount of time between each reconnect
-
 sub new {
    my ($class, %args) = @_;
    foreach my $arg ( qw(dbh connect_to_slave) ) {
@@ -37,54 +50,6 @@ sub new {
    return bless $self, $class;
 }
 
-sub reconnect {
-   my ($self) = @_;
-   my $reconnect_attempt = 1;
-   my ($slave, $status);
-  
-   return if $self->{dbh} && $self->{dbh}->ping;
-   warn "Attempting to reconnect to the slave.\n";
-   while ( !$status && $reconnect_attempt <= $self->{retries} ) {
-      my $sleep_time = $self->{delay};
-      MKDEBUG && _d("Reconnect attempt: ", $reconnect_attempt);
-      
-      eval {
-         my $connect_to_slave = $self->{connect_to_slave};
-         $slave = $$connect_to_slave->();
-      };
-
-      if ( $EVAL_ERROR || !$slave ) {
-         MKDEBUG && _d($EVAL_ERROR);
-         MKDEBUG && _d("Reconnect time: ", $sleep_time);
-         sleep $sleep_time;
-         $reconnect_attempt++;
-      }
-      else {
-         $status = $self->_check_slave_status( dbh => $slave );
-         if ( $status && %$status ) {
-            MKDEBUG && _d("Successfully reconnected to the slave.");
-         }
-      }
-   }
-   return $slave;
-};
-
-sub _check_slave_status {
-   my ($self, %args) = @_;
-   my $dbh = $args{dbh};
-   my $show_slave_status = $self->{show_slave_status};
-   my $status;
-
-   eval{
-      $status = $show_slave_status->($dbh);
-   };
-
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d($EVAL_ERROR);
-   }
-   return $status;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -96,5 +61,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End SlaveRestart package
+# End Retry package
 # ###########################################################################
