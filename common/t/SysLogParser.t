@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 
 BEGIN {
-   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
-      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 };
 
 use strict;
@@ -35,7 +35,7 @@ test_log_parser(
 # to break the last event up into two parts, even though they are the same event
 # in the syslog entry.
 {
-   my $file = "$ENV{MAATKIT_TRUNK}/common/t/samples/pg-syslog-002.txt";
+   my $file = "$ENV{MAATKIT_WORKING_COPY}/common/t/samples/pg-syslog-002.txt";
    eval {
       open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
       my %parser_args = (
@@ -105,7 +105,7 @@ test_log_parser(
 # This test case checks a $line_filter, and sees whether lines get proper
 # newline-munging.
 {
-   my $file = "$ENV{MAATKIT_TRUNK}/common/t/samples/pg-syslog-003.txt";
+   my $file = "$ENV{MAATKIT_WORKING_COPY}/common/t/samples/pg-syslog-003.txt";
    eval {
       open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
       my %parser_args = (
@@ -154,7 +154,7 @@ test_log_parser(
 
 # This test case checks pos_in_log again, without any filters.
 {
-   my $file = "$ENV{MAATKIT_TRUNK}/common/t/samples/pg-syslog-005.txt";
+   my $file = "$ENV{MAATKIT_WORKING_COPY}/common/t/samples/pg-syslog-005.txt";
    eval {
       open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
       my %parser_args = (
