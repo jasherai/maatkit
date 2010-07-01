@@ -11749,6 +11749,7 @@ sub main {
                   ($fh, $filename, $filesize) = $next_file->();
                   MKDEBUG && _d('Reading', $filename);
                   push @read_files, $filename || "STDIN" if $fh;
+                  $more_events = 1 if $fh;
                }
             };
             if ( $EVAL_ERROR ) {
