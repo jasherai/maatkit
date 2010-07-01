@@ -1,9 +1,9 @@
 #!/usr/bin/env perl
 
 BEGIN {
-   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
-      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 };
 
 use strict;
@@ -76,24 +76,11 @@ diag(`rm -rf $resdir/*`);
 # query in a different file which is probably wrong/misleading.  Ran
 # separately, the 3 slowlogs have 4 unique queries (w/ default 95% --limit),
 # so the new "4 unique" is correct, too.
-$diff = `diff $resdir/orig $resdir/mrgd`;
-is(
-   $diff,
-'2c2
-< # Overall: 15 total, 10 unique, 0.00 QPS, 0.00x concurrency ______________
----
-> # Overall: 15 total, 4 unique, 0.00 QPS, 0.00x concurrency _______________
-29d28
-< # Databases              1     foo
-42,43c41,42
-< #    SHOW TABLE STATUS FROM `foo` LIKE \'a\'\G
-< #    SHOW CREATE TABLE `foo`.`a`\G
----
-> #    SHOW TABLE STATUS LIKE \'a\'\G
-> #    SHOW CREATE TABLE `a`\G
-89d87
-< # MISC 0xMISC                 0.0361  1.3%    13   0.0028 <8 ITEMS>
-',
+ok(
+   no_diff(
+      "diff $resdir/orig $resdir/mrgd",
+      "mk-query-digest/t/samples/save-results/diff001.txt",
+   ),
    "slow002.txt, slow006.txt, slow0028.txt"
 );
 
