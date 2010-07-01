@@ -4749,13 +4749,30 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-merge-mqd-results - Merge multiple mk-query-digest reports into one.
+mk-merge-mqd-results - Merge multiple mk-query-digest reports into one.
 
 =head1 SYNOPSIS
 
   mk-query-digest slow.log-1 --save-results res1.txt
   mk-query-digest slow.log-2 --save-results res2.txt
-  merge-mqd-results res1.txt res2.txt
+  mk-merge-mqd-results res1.txt res2.txt
+
+=head1 RISKS
+
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
+
+At the time of this release, we know of no bugs that could cause serious harm
+to users.
+
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-merge-mqd-results>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
@@ -4810,10 +4827,10 @@ type: DSN
 
 Run EXPLAIN for the sample query with this DSN and print results.
 
-This works only when L<"--group-by"> includes fingerprint.  It causes
-mk-query-digest to run EXPLAIN and include the output into the report.  For
-safety, queries that appear to have a subquery that EXPLAIN will execute won't
-be EXPLAINed.  Those are typically "derived table" queries of the form
+This causes mk-merge-mqd-results to run EXPLAIN and include the output into
+the report.  For safety, queries that appear to have a subquery that EXPLAIN
+will execute won't be EXPLAINed.  Those are typically "derived table" queries
+of the form
 
   select ... from ( select .... ) der;
 
@@ -4854,10 +4871,6 @@ argument is an integer followed by the C<%> sign, report that percentage of the
 worst queries.  If the percentage is followed by a colon and another integer,
 report the top percentage or the number specified by that integer, whichever
 comes first.
-
-The value is actually a comma-separated array of values, one for each item in
-L<"--group-by">.  If you don't specify a value for any of those items, the
-default is the top 95%.
 
 See also L<"--outliers">.
 
@@ -4941,7 +4954,7 @@ Shorten long statements in reports.
 
 Shortens long statements, replacing the omitted portion with a C</*... omitted
 ...*/> comment.  This applies only to the output in reports, not to information
-stored for L<"--review"> or other places.  It prevents a large statement from
+stored other places.  It prevents a large statement from
 causing difficulty in a report.  The argument is the preferred length of the
 shortened statement.  Not all statements can be shortened, but very large INSERT
 and similar statements often can; and so can IN() lists, although only the first
@@ -5050,10 +5063,45 @@ User for login if not current user.
 
 =back
 
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
 =head1 SYSTEM REQUIREMENTS
 
 You need Perl and some core packages that ought to be installed in any
 reasonably new version of Perl.
+
+=head1 BUGS
+
+For list of known bugs see L<http://www.maatkit.org/bugs/mk-merge-mqd-results>.
+
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
+discuss Maatkit.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 

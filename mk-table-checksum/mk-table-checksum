@@ -7624,7 +7624,7 @@ keyword.  You may need to quote the value.  Here is an example:
 default: yes
 
 Add a chunk for rows with zero or zero-equivalent values.  The only has an
-effect when L<"--check-size"> is specified.  The purpose of the zero chunk
+effect when L<"--chunk-size"> is specified.  The purpose of the zero chunk
 is to capture a potentially large number of zero values that would imbalance
 the size of the first chunk.  For example, if a lot of negative numbers were
 inserted into an unsigned integer column causing them to be stored as zeros,

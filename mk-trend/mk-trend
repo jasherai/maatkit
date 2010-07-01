@@ -1862,6 +1862,8 @@ mk-trend - Compute statistics over a set of time-series data points.
 
 =head1 SYNOPSIS
 
+mk-trend
+
 =head1 RISKS
 
 The following section is included to inform users about the potential risks,
