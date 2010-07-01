@@ -13296,6 +13296,15 @@ Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
 If the connection fails, mk-query-digest tries to reopen it once per second. See
 also L<"--mirror">.
 
+=item --progress
+
+type: array; default: time,30
+
+Print progress reports to STDERR.  The value is a comma-separated list with two
+parts.  The first part can be percentage, time, or iterations; the second part
+specifies how often an update should be printed, in percentage, seconds, or
+number of iterations.
+
 =item --read-timeout
 
 type: time; default: 0
@@ -13309,15 +13318,6 @@ input and prints its reports.  If L<"--iterations"> is 0 or greater than
 1, the next iteration will begin, else the script will exit.
 
 This option requires the Perl POSIX module.
-
-=item --progress
-
-type: array; default: time,30
-
-Print progress reports to STDERR.  The value is a comma-separated list with two
-parts.  The first part can be percentage, time, or iterations; the second part
-specifies how often an update should be printed, in percentage, seconds, or
-number of iterations.
 
 =item --[no]report
 

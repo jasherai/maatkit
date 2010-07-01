@@ -7093,18 +7093,6 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
 
-=item --[no]use-index
-
-default: yes
-
-Add FORCE INDEX hints to SQL statements.
-
-By default C<mk-table-checksum> adds an index hint (C<FORCE INDEX> for MySQL
-v4.0.9 and newer, C<USE INDEX> for older MySQL versions) to each SQL statement
-to coerce MySQL into using the L<"--chunk-index"> (whether the index is
-specified by the option or auto-detected).  Specifying C<--no-use-index> causes
-C<mk-table-checksum> to omit index hints.
-
 =item --offset
 
 type: string; default: 0
@@ -7549,6 +7537,18 @@ This is useful when you don't care about the trailing space differences between
 MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and 
 later all retain trailing spaces in C<VARCHAR>, while previous versions would 
 remove them.
+
+=item --[no]use-index
+
+default: yes
+
+Add FORCE INDEX hints to SQL statements.
+
+By default C<mk-table-checksum> adds an index hint (C<FORCE INDEX> for MySQL
+v4.0.9 and newer, C<USE INDEX> for older MySQL versions) to each SQL statement
+to coerce MySQL into using the L<"--chunk-index"> (whether the index is
+specified by the option or auto-detected).  Specifying C<--no-use-index> causes
+C<mk-table-checksum> to omit index hints.
 
 =item --user
 
