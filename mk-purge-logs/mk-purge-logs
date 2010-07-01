@@ -2711,10 +2711,7 @@ tools) and those created by bugs.
 
 mk-purge-logs purges (deletes) binary logs on a master based on
 L<"--purge-rules"> when L<"--purge"> is specified.  Specifying the wrong
-L<"--purge-rules"> could delete binary logs that are still needed.  :w
-
-binary logs that are still need by specifying bad L<"--purge-rules">.  Specify
-just L<"--print"> first to see which binary logs would be purged.
+L<"--purge-rules"> could delete binary logs that are still needed.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.
@@ -2728,7 +2725,8 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-purge-logs purges binary logs on a master based on L<"--purge-rules">.
+mk-purge-logs purges binary logs on a master based on L<"--purge-rules">
+by executing C<PURGE BINARY LOGS TO>.
 
 =head1 OPTIONS
 
