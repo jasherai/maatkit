@@ -2793,7 +2793,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6571
+# TableChunker package 6597
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2896,12 +2896,17 @@ sub find_chunk_columns {
 
 sub calculate_chunks {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl tbl_struct chunk_col min max rows_in_range
-                          chunk_size);
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
+   
+   if ( !$args{rows_in_range} ) {
+      MKDEBUG && _d("Empty table");
+      return '1=1';
+   }
+
    my ($dbh, $db, $tbl) = @args{@required_args};
    my $q        = $self->{Quoter};
    my $db_tbl   = $q->quote($db, $tbl);
@@ -3198,12 +3203,15 @@ sub inject_chunks {
 
 sub value_to_number {
    my ( $self, %args ) = @_;
-   my @required_args = qw(value column_type dbh);
+   my @required_args = qw(column_type dbh);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($val, $col_type, $dbh) = @args{@required_args};
+   my $val = $args{value};
+   my ($col_type, $dbh) = @args{@required_args};
    MKDEBUG && _d('Converting MySQL', $col_type, $val);
+
+   return unless defined $val;  # value is NULL
 
    my %mysql_conv_func_for = (
       timestamp => 'UNIX_TIMESTAMP',
@@ -3343,10 +3351,11 @@ sub get_valid_end_points {
          val      => $real_min,
          endpoint => 'min',
       );
-      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+      die sprintf($err_fmt, 'minimum', 'minimum',
+         (defined $real_min ? $real_min : "NULL"))
          unless defined $valid_min;
    }
-   
+
    my $valid_max = $real_max;
    if ( defined $valid_max ) {
       MKDEBUG && _d("Validating max end point:", $real_min);
@@ -3355,7 +3364,8 @@ sub get_valid_end_points {
          val      => $real_max,
          endpoint => 'max',
       );
-      die sprintf($err_fmt, 'maximum', 'maximum', ($real_max || "NULL"))
+      die sprintf($err_fmt, 'maximum', 'maximum',
+         (defined $real_max ? $real_max : "NULL"))
          unless defined $valid_max;
    }
 
