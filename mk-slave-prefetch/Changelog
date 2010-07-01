@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * Relay log file changes could cause tool to wait forever (issue 1075).
+
 2010-06-08: version 1.0.18
 
    * Connections did not preserve server SQL modes (issue 801).
