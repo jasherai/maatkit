@@ -1,9 +1,9 @@
 #!/usr/bin/env perl
 
 BEGIN {
-   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
-      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 };
 
 use strict;
@@ -289,7 +289,7 @@ $timeout = wait_for(
                '--state',  "$dsn,P=12345,t=test.state",
                qw(--run-time 3 --interval 1));
          },
-         $output
+         file => $output,
       ),
    },
    5,
