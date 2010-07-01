@@ -21,18 +21,18 @@ package MaatkitTest;
 
 # These are common subs used in Maatkit test scripts.  Any file
 # arguments (like no_diff() $expected_output) are relative to
-# MAATKIT_TRUNK.  So passing "commont/t/samples/foo" means
-# "MAATKIT_TRUNK/common/t/samples/foo".  Do not BAIL_OUT() because
+# MAATKIT_WORKING_COPY.  So passing "commont/t/samples/foo" means
+# "MAATKIT_WORKING_COPY/common/t/samples/foo".  Do not BAIL_OUT() because
 # this terminates the *entire* test process; die instead.  All
 # subs are exported by default, so is the variable $trunk, so there's
 # no need to import() in the test scripts.
 
 BEGIN {
-   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
-      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 };
-our $trunk = $ENV{MAATKIT_TRUNK};
+our $trunk = $ENV{MAATKIT_WORKING_COPY};
 
 our $sandbox_version = '';
 eval {
@@ -428,7 +428,7 @@ sub test_packet_parser {
 #                         cmd is ran via the shell.  if it's a coderef then
 #                         the code is ran.  the latter is preferred because
 #                         it generates test coverage.
-#   * expected_output     scalar: file name relative to MAATKIT_TRUNK
+#   * expected_output     scalar: file name relative to MAATKIT_WORKING_COPY
 #   * args                hash: (optional) may include
 #       update_sample            overwrite expected_output with cmd/code output
 #       keep_output              keep last cmd/code output file
