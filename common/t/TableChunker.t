@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 71;
+   plan tests => 75;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -952,6 +952,82 @@ is_deeply(
    [ $c->get_first_chunkable_column(tbl_struct=>$t) ],
    [undef, undef],
    "get_first_chunkable_column(), no chunkable columns"
+);
+
+
+# #############################################################################
+# Issue 1082: mk-table-checksum dies on single-row zero-pk table
+# #############################################################################
+sub chunk_it {
+   my ( %args ) = @_;
+   my %params = $c->get_range_statistics(
+      dbh        => $dbh,
+      db         => $args{db},
+      tbl        => $args{tbl},
+      chunk_col  => $args{chunk_col},
+      tbl_struct => $args{tbl_struct},
+   );
+   my @chunks = $c->calculate_chunks(
+      dbh        => $dbh,
+      db         => $args{db},
+      tbl        => $args{tbl},
+      chunk_col  => $args{chunk_col},
+      tbl_struct => $args{tbl_struct},
+      chunk_size => $args{chunk_size} || 100,
+      zero_chunk => $args{zero_chunk},
+      %params,
+   );
+   is_deeply(
+      \@chunks,
+      $args{chunks},
+      $args{msg},
+   );
+}
+
+$dbh->do("alter table test.t1 add unique index (a)");
+my (undef,$output) = $dbh->selectrow_array("show create table test.t1");
+$t = $p->parse($output);
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t) ],
+   [qw(a a)],
+   "test.t1 chunkable col"
+);
+
+$dbh->do('insert into test.t1 values (null)');
+chunk_it(
+   dbh        => $dbh,
+   db         => 'test',
+   tbl        => 't1',
+   chunk_col  => 'a',
+   tbl_struct => $t,
+   zero_chunk => 1,
+   chunks     => [qw(1=1)],
+   msg        => 'Single NULL row'
+);
+
+$dbh->do('insert into test.t1 values (null), (null), (null)');
+chunk_it(
+   dbh        => $dbh,
+   db         => 'test',
+   tbl        => 't1',
+   chunk_col  => 'a',
+   tbl_struct => $t,
+   zero_chunk => 1,
+   chunks     => [qw(1=1)],
+   msg        => 'Several NULL rows'
+);
+
+$dbh->do('truncate table test.t1');
+$dbh->do('insert into test.t1 values (0)');
+chunk_it(
+   dbh        => $dbh,
+   db         => 'test',
+   tbl        => 't1',
+   chunk_col  => 'a',
+   tbl_struct => $t,
+   zero_chunk => 1,
+   chunks     => [qw(1=1)],
+   msg        => 'Single zero row'
 );
 
 # #############################################################################

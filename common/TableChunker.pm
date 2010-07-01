@@ -169,12 +169,17 @@ sub find_chunk_columns {
 # http://code.google.com/p/maatkit/issues/detail?id=1002
 sub calculate_chunks {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl tbl_struct chunk_col min max rows_in_range
-                          chunk_size);
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
+   
+   if ( !$args{rows_in_range} ) {
+      MKDEBUG && _d("Empty table");
+      return '1=1';
+   }
+
    my ($dbh, $db, $tbl) = @args{@required_args};
    my $q        = $self->{Quoter};
    my $db_tbl   = $q->quote($db, $tbl);
@@ -586,12 +591,15 @@ sub inject_chunks {
 # (e.g. date 0000-00-00 is not convertible).
 sub value_to_number {
    my ( $self, %args ) = @_;
-   my @required_args = qw(value column_type dbh);
+   my @required_args = qw(column_type dbh);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($val, $col_type, $dbh) = @args{@required_args};
+   my $val = $args{value};
+   my ($col_type, $dbh) = @args{@required_args};
    MKDEBUG && _d('Converting MySQL', $col_type, $val);
+
+   return unless defined $val;  # value is NULL
 
    # MySQL functions to convert a non-numeric value to a number
    # so we can do basic math on it in Perl.  Right now we just
@@ -783,10 +791,11 @@ sub get_valid_end_points {
          val      => $real_min,
          endpoint => 'min',
       );
-      die sprintf($err_fmt, 'minimum', 'minimum', ($real_min || "NULL"))
+      die sprintf($err_fmt, 'minimum', 'minimum',
+         (defined $real_min ? $real_min : "NULL"))
          unless defined $valid_min;
    }
-   
+
    # Validate max value if it's not NULL.  NULL is valid.
    my $valid_max = $real_max;
    if ( defined $valid_max ) {
@@ -798,7 +807,8 @@ sub get_valid_end_points {
          val      => $real_max,
          endpoint => 'max',
       );
-      die sprintf($err_fmt, 'maximum', 'maximum', ($real_max || "NULL"))
+      die sprintf($err_fmt, 'maximum', 'maximum',
+         (defined $real_max ? $real_max : "NULL"))
          unless defined $valid_max;
    }
 
