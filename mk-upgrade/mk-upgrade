@@ -2349,7 +2349,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6043
+# SlowLogParser package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -2535,7 +2535,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6309
+# EventAggregator package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -3085,7 +3085,8 @@ sub top_events {
       } grep {
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
-   my @chosen;
+   my @chosen;  # top events
+   my @other;   # other events (< top)
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
       if ( 
@@ -3102,12 +3103,19 @@ sub top_events {
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
+         else {
+            push @other, $groupby;
+         }
+      }
+
+      else {
+         push @other, $groupby;
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
       $count++;
    }
-   return @chosen;
+   return \@chosen, \@other;
 }
 
 sub add_new_attributes {
@@ -3798,7 +3806,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6132
+# QueryRewriter package 6535
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -3936,6 +3944,11 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
    return $query;
 }
 
@@ -4347,7 +4360,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 6437
+# ChangeHandler package 6514
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ChangeHandler.pm
@@ -4474,7 +4487,7 @@ sub __queue {
 }
 
 sub process_rows {
-   my ( $self, $queue_level ) = @_;
+   my ( $self, $queue_level, $trace_msg ) = @_;
    my $error_count = 0;
    TRY: {
       if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
@@ -4491,8 +4504,9 @@ sub process_rows {
             $cur_act = $action;
             while ( @$rows ) {
                $row    = shift @$rows;
-               my $dbh = $row->[2] if $row->[2];  # dbh is optional
-               $self->_take_action($self->$func(@$row), $dbh);
+               my $sql = $self->$func(@$row);
+               $sql   .= " /*maatkit $trace_msg*/" if $trace_msg;
+               $self->_take_action($sql, $row->[2]);
             }
          }
          $error_count = 0;
@@ -5841,7 +5855,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6078
+# TableChecksum package 6511
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChecksum.pm
@@ -6153,25 +6167,25 @@ sub make_checksum_query {
 
    if ( $algorithm eq 'BIT_XOR' ) {
       if ( $crc_type =~ m/int$/ ) {
-         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
+         $result = "COALESCE(LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)), 0) AS crc ";
       }
       else {
          my $slices = $self->make_xor_slices( query => $expr, %args );
-         $result = "LOWER(CONCAT($slices)) AS crc ";
+         $result = "COALESCE(LOWER(CONCAT($slices)), 0) AS crc ";
       }
    }
    else {
       if ( $crc_type =~ m/int$/ ) {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
       else {
-         $result = "RIGHT(MAX("
+         $result = "COALESCE(RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
             . "$func(CONCAT(\@crc, $expr)))"
-            . "), $crc_wid) AS crc ";
+            . "), $crc_wid), 0) AS crc ";
       }
    }
    if ( $args{replicate} ) {
@@ -6992,7 +7006,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 6389
+# TableSyncNibble package 6511
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncNibble.pm
@@ -7273,8 +7287,7 @@ sub same_row {
          $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
-   elsif ( $lr->{cnt} != $rr->{cnt} || ($lr->{crc} || 0) ne ($rr->{crc} || 0) ) 
-   {
+   elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
       MKDEBUG && _d('Rows:', Dumper($lr, $rr));
       MKDEBUG && _d('Will examine this nibble before moving to next');
       $self->{state} = 1; # Must examine this nibble row-by-row
@@ -10466,15 +10479,16 @@ sub main {
          count   => $count,
       );
       # The queries that will be reported.
-      my @worst = $meta_ea->top_events(%top_spec);
+      my ($worst, $other) = $meta_ea->top_events(%top_spec);
 
       # ##################################################################
       # Do the report for each query.
       # ##################################################################
       if ( $o->get('reports')->{queries} ) {
+         my $n_worst = scalar @$worst;
          ITEM:
-         foreach my $rank ( 1 .. @worst ) {
-            my $item       = $worst[$rank - 1]->[0];
+         foreach my $rank ( 1..$n_worst ) {
+            my $item       = $worst->[$rank - 1]->[0];
             my $sample     = $meta_ea->results->{samples}->{$item};
             my $samp_query = $sample->{arg} || '';
 

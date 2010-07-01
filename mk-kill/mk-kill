@@ -1816,7 +1816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 6187
+# Processlist package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2125,7 +2125,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TextResultSetParser package 5266
+# TextResultSetParser package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TextResultSetParser.pm

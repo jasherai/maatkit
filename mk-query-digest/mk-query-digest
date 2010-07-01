@@ -2017,7 +2017,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 6187
+# Processlist package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2326,7 +2326,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5818
+# TcpdumpParser package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TcpdumpParser.pm
@@ -4345,7 +4345,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6043
+# SlowLogParser package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -4531,7 +4531,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogWriter package 5266
+# SlowLogWriter package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogWriter.pm
@@ -4618,7 +4618,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6542
+# EventAggregator package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -6685,7 +6685,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventTimeline package 5266
+# EventTimeline package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventTimeline.pm
@@ -8304,7 +8304,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 5810
+# MemcachedProtocolParser package 6590
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MemcachedProtocolParser.pm
