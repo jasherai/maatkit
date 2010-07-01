@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2010-07-01: version 1.2.16
+
    * Changed --no-use-index to --[no]use-index.
    * --schema did not allow --[no]check-replication-filters (issue 1060).
    * --chunk-index is only used if a chunkable column uses it (issue 519).

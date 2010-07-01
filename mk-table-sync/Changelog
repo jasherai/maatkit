@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2010-07-01: version 1.0.29
+
    * Empty result set with MySQL 4.0 could caused a crash (issue 672).
    * Added trace messages to write statements (issue 387).
    * --algorithms was case-sensitive (issue 1065).

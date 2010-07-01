@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2010-07-01: version 1.0.26
+
    * The tool crashed if only empty databases were dumped (issue 1034).
    * Added --[no]zero-chunk (issue 941).
 
