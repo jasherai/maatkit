@@ -11,6 +11,7 @@ mk-loadavg
 mk-log-player
 mk-parallel-dump
 mk-parallel-restore
+mk-purge-logs
 mk-query-digest
 mk-query-profiler
 mk-show-grants
