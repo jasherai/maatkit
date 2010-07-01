@@ -1,10 +1,10 @@
 #!/bin/sh
 
-cd $MAATKIT_TRUNK/common
+cd $MAATKIT_WORKING_COPY/common
 
 for m in *.pm; do
    M=`echo $m | sed 's/.pm//'`
-   grep "# $M package " $MAATKIT_TRUNK/mk-*/mk-* >/dev/null
+   grep "# $M package " $MAATKIT_WORKING_COPY/mk-*/mk-* >/dev/null
    if [ $? -ne 0 ]; then
       echo $M
    fi

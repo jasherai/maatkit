@@ -46,11 +46,11 @@ test_coverage() {
       coverage_file="$summary_dir/$file.pm"
       # Test coveage for just this module, not all modules.
       test_file="$file.t"
-      cd $MAATKIT_TRUNK/common/t
+      cd $MAATKIT_WORKING_COPY/common/t
    else
       summary_dir="$cover_dir"
       coverage_file="$summary_dir/$file"
-      cd $MAATKIT_TRUNK/$file/t
+      cd $MAATKIT_WORKING_COPY/$file/t
    fi
 
    if [ -n "$test_file" ]; then
@@ -74,16 +74,16 @@ fi
 
 file=$1
 
-cover_dir="$MAATKIT_TRUNK/coverage"
+cover_dir="$MAATKIT_WORKING_COPY/coverage"
 cover_db="$cover_dir/cover_db"
 
 # ###########################################################################
 # Test script/module coverage.
 # ###########################################################################
 
-if [ -f "$MAATKIT_TRUNK/common/$file.pm" ]; then
+if [ -f "$MAATKIT_WORKING_COPY/common/$file.pm" ]; then
    type='module'
-elif [ -f "$MAATKIT_TRUNK/$file/$file" ]; then
+elif [ -f "$MAATKIT_WORKING_COPY/$file/$file" ]; then
    type='script'
 elif [ "$file" = "update-summaries" ]; then
    type='module'

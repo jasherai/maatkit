@@ -23,10 +23,10 @@ if count <= 0:
    print 'Count must be > 0.'
    sys.exit(1)
 
-# Make sure MAATKIT_TRUNK is set else tests won't run.
-trunk = os.getenv('MAATKIT_TRUNK')
+# Make sure MAATKIT_WORKING_COPY is set else tests won't run.
+trunk = os.getenv('MAATKIT_WORKING_COPY')
 if trunk is None:
-   print 'The MAATKIT_TRUNK environment variable is not set.'
+   print 'The MAATKIT_WORKING_COPY environment variable is not set.'
    sys.exit(1)
 
 # Run prove over and over again.

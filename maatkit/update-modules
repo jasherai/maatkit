@@ -1,8 +1,8 @@
 #!/bin/sh
 
-trunk=$MAATKIT_TRUNK
+trunk=$MAATKIT_WORKING_COPY
 if [ -z "$trunk" ]; then
-   echo "MAATKIT_TRUNK environment variable is not set."
+   echo "MAATKIT_WORKING_COPY environment variable is not set."
    exit 1
 fi
 

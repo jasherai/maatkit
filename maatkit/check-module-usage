@@ -27,7 +27,7 @@ foreach my $prog ( @progs ) {
    my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
    next unless $program;
 
-   # Arg to load_file is relative to MAATKIT_TRUNK.
+   # Arg to load_file is relative to MAATKIT_WORKING_COPY.
    my $contents = load_file("$base/$program");
 
    my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;

@@ -8,8 +8,8 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-my $trunk = $ENV{MAATKIT_TRUNK};
-die "MAATKIT_TRUNK environment variable is not set." unless $trunk;
+my $trunk = $ENV{MAATKIT_WORKING_COPY};
+die "MAATKIT_WORKING_COPY environment variable is not set." unless $trunk;
 
 $INPUT_RECORD_SEPARATOR = undef;  # slurp tool from STDIN and module from file
 

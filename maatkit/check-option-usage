@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-require "$ENV{MAATKIT_TRUNK}/common/MaatkitTest.pm";
+require "$ENV{MAATKIT_WORKING_COPY}/common/MaatkitTest.pm";
 MaatkitTest->import(qw(load_file));
 
 # If you specify one program, it has to be given like ../mk-find/mk-find
@@ -32,7 +32,7 @@ foreach my $prog ( @progs ) {
    my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
    next unless $program;
 
-   # Arg to load_file is relative to MAATKIT_TRUNK.
+   # Arg to load_file is relative to MAATKIT_WORKING_COPY.
    my $contents;
    eval {
       $contents = load_file("$program/$program");
