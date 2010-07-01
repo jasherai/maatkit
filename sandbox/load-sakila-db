@@ -27,17 +27,17 @@ fi
 # ###########################################################################
 # Sanity check the environment.
 # ###########################################################################
-if [ -z "$MAATKIT_TRUNK" ]; then
-   err "MAATKIT_TRUNK environment variable is not set."
+if [ -z "$MAATKIT_WORKING_COPY" ]; then
+   err "MAATKIT_WORKING_COPY environment variable is not set."
    exit 1
 fi
 
-if [ ! -d "$MAATKIT_TRUNK" ]; then
-   err "Invalid Maakit trunk directory: $MAATKIT_TRUNK"
+if [ ! -d "$MAATKIT_WORKING_COPY" ]; then
+   err "Invalid Maakit trunk directory: $MAATKIT_WORKING_COPY"
    exit 1
 fi
 
-cd $MAATKIT_TRUNK/sandbox
+cd $MAATKIT_WORKING_COPY/sandbox
 
 /tmp/$PORT/use < sakila-db/sakila-schema.sql
 /tmp/$PORT/use < sakila-db/sakila-data.sql

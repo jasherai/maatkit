@@ -16,9 +16,9 @@ err() {
 make_sandbox() {
    # Make the sandbox dir and extract the base files.
    mkdir /tmp/$port >/dev/null 2>&1
-   cp $MAATKIT_TRUNK/sandbox/servers/$version/my.sandbox.cnf /tmp/$port
-   tar xzf $MAATKIT_TRUNK/sandbox/servers/$version/data.tar.gz -C /tmp/$port
-   cp $MAATKIT_TRUNK/sandbox/server-scripts/* /tmp/$port
+   cp $MAATKIT_WORKING_COPY/sandbox/servers/$version/my.sandbox.cnf /tmp/$port
+   tar xzf $MAATKIT_WORKING_COPY/sandbox/servers/$version/data.tar.gz -C /tmp/$port
+   cp $MAATKIT_WORKING_COPY/sandbox/server-scripts/* /tmp/$port
 
    for file in `grep -rl PORT /tmp/$port`; do
       sed -i -e "s/PORT/$port/g" $file
@@ -94,17 +94,17 @@ fi
 # ###########################################################################
 # Sanity check the environment.
 # ###########################################################################
-if [ -z "$MAATKIT_TRUNK" ]; then
-   err "MAATKIT_TRUNK environment variable is not set."
+if [ -z "$MAATKIT_WORKING_COPY" ]; then
+   err "MAATKIT_WORKING_COPY environment variable is not set."
    exit 1
 fi
 
-if [ ! -d "$MAATKIT_TRUNK" ]; then
-   err "Invalid Maakit trunk directory: $MAATKIT_TRUNK"
+if [ ! -d "$MAATKIT_WORKING_COPY" ]; then
+   err "Invalid Maakit trunk directory: $MAATKIT_WORKING_COPY"
    exit 1
 fi
 
-cd $MAATKIT_TRUNK/sandbox
+cd $MAATKIT_WORKING_COPY/sandbox
 
 # This script is usually called by mk-test-env which discovers and
 # sets MAATKIT_SANDBOX_BASEDIR.  If this script is called directly,
@@ -134,8 +134,8 @@ else
    err "Cannot find executable mysqld in $MAATKIT_SANDBOX_BASEDIR/bin, $MAATKIT_SANDBOX_BASEDIR/sbin or $MAATKIT_SANDBOX_BASEDIR/libexec."
 fi
 version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
-if [ ! -d "$MAATKIT_TRUNK/sandbox/servers/$version" ]; then
-   err "$MAATKIT_TRUNK/sandbox/servers/$version does not exist."
+if [ ! -d "$MAATKIT_WORKING_COPY/sandbox/servers/$version" ]; then
+   err "$MAATKIT_WORKING_COPY/sandbox/servers/$version does not exist."
    exit 1
 fi
 

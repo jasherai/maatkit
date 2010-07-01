@@ -3,7 +3,7 @@
 # This script controls the Maatkit test environment.  The mk test env is
 # a master-slave pair on ports 12345 and 12346, running from respective
 # directories in /tmp.  This script attempts to ensure that all environment
-# vars like MAATKIT_TRUNK and MAATKIT_SANDBOX_BASEDIR are correct.  The
+# vars like MAATKIT_WORKING_COPY and MAATKIT_SANDBOX_BASEDIR are correct.  The
 # exit status is 0 on success and 1 on any failure.  There's no option to
 # disable output, so just >/dev/null if you only care about the exit status.
 
@@ -97,14 +97,14 @@ checkconfig() {
    local stat=""
    conf_err=0
 
-   if [ -z "$MAATKIT_TRUNK" ] || [ ! -d "$MAATKIT_TRUNK" ]; then
+   if [ -z "$MAATKIT_WORKING_COPY" ] || [ ! -d "$MAATKIT_WORKING_COPY" ]; then
       conf_err=1
       stat="INVALID"
    else
       stat="ok"
    fi
    if [ $print_conf ]; then
-      echo "MAATKIT_TRUNK=$MAATKIT_TRUNK - $stat"
+      echo "MAATKIT_WORKING_COPY=$MAATKIT_WORKING_COPY - $stat"
    fi
 
    set_mysql_basedir
@@ -306,14 +306,14 @@ fi
 # bin/mysqld -V should print something like:
 #  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
 version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
-if [ ! -d "$MAATKIT_TRUNK/sandbox/servers/$version" ]; then
+if [ ! -d "$MAATKIT_WORKING_COPY/sandbox/servers/$version" ]; then
    err "Maatkit sandbox server version $version does not exists."
    exit 1
 fi
 
 case $opt in
    start)
-      cd $MAATKIT_TRUNK/sandbox
+      cd $MAATKIT_WORKING_COPY/sandbox
       ./start-sandbox master 12345
       exit_status=$?
       if [ $exit_status -eq 0 ]; then
@@ -338,7 +338,7 @@ case $opt in
       print_sandbox_version 1
       ;;
    stop)
-      cd $MAATKIT_TRUNK/sandbox
+      cd $MAATKIT_WORKING_COPY/sandbox
       ./stop-sandbox remove all
       exit_status=$?
       if [ $exit_status -eq 0 ]; then
