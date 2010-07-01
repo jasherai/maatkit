@@ -125,7 +125,7 @@ SKIP: {
          table      => 'test1', 
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
-      . q{COALESCE(LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`) AS UNSIGNED)), 10, 16)) AS }
+      . q{COALESCE(LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`) AS UNSIGNED)), 10, 16)), 0) AS }
       . q{crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (1=1) AND ((foo=1))},
       'First nibble SQL with FNV_64 (with USE INDEX)',
    );
