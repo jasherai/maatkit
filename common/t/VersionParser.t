@@ -32,10 +32,10 @@ SKIP: {
    skip 'Cannot connect to MySQL', 1 unless $dbh;
    ok($vp->version_ge($dbh, '3.23.00'), 'Version is > 3.23');
 
-   is(
+   unlike(
       $vp->innodb_version($dbh),
-      "BUILTIN",
-      "InnoDB version builtin"
+      qr/DISABLED/,
+      "InnoDB version"
    );
 }
 
