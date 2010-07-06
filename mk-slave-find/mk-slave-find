@@ -2254,7 +2254,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 6661
+# VersionParser package 6667
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VersionParser.pm
@@ -2296,17 +2296,27 @@ sub version_ge {
 sub innodb_version {
    my ( $self, $dbh ) = @_;
    return unless $dbh;
-   my $innodb_version = "DISABLED";
+   my $innodb_version = "NO";
 
-   my $engines = $dbh->selectall_arrayref("SHOW ENGINES");
-   if ( $engines
-        && grep { $_->[0] =~ m/InnoDB/i && $_->[1] =~ m/YES|DEFAULT/i }
-           @$engines )
-   {
-      my $vars = $dbh->selectrow_hashref(
-         "SHOW VARIABLES LIKE 'innodb_version'");
-      $innodb_version = !$vars ? "BUILTIN"
-                      :          ($vars->{Value} || $vars->{value});
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
+      }
    }
 
    MKDEBUG && _d("InnoDB version:", $innodb_version);
