@@ -60,19 +60,24 @@ sub innodb_version {
    return unless $dbh;
    my $innodb_version = "NO";
 
-   my $engines = $dbh->selectall_hashref("SHOW ENGINES", "Engine");
-   if ( $engines && exists $engines->{InnoDB} ) {
-      my $innodb_engine  = $engines->{InnoDB};
-      my $innodb_support = $innodb_engine->{Support} || $innodb_engine->{support};
-      MKDEBUG && _d("InnoDB support:", $innodb_support);
-      if ( $innodb_support =~ m/YES|DEFAULT/i ) {
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
          my $vars = $dbh->selectrow_hashref(
             "SHOW VARIABLES LIKE 'innodb_version'");
          $innodb_version = !$vars ? "BUILTIN"
                          :          ($vars->{Value} || $vars->{value});
       }
       else {
-         $innodb_version = $innodb_support;  # probably DISABLED or NO
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
       }
    }
 
