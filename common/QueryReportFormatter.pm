@@ -213,7 +213,11 @@ sub header {
 
    # Column header line
    my ($format, @headers) = $self->make_header('global');
-   push @result, sprintf($format, '', @headers);
+   push @result, sprintf($format, "Item", @headers);
+   # The numbers 7, 7, 7, etc. are the field widths from make_header().
+   # Hard-coded values aren't ideal but this code rarely changes.
+   push @result, sprintf($format,
+      map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7)));
 
    # Each additional line
    my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
@@ -476,7 +480,11 @@ sub event_report {
 
    # Column header line
    my ($format, @headers) = $self->make_header();
-   push @result, sprintf($format, '', @headers);
+   push @result, sprintf($format, "Item", @headers);
+   # The numbers 6, 7, 7, etc. are the field widths from make_header().
+   # Hard-coded values aren't ideal but this code rarely changes.
+   push @result, sprintf($format,
+      map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7)));
 
    # Count line
    push @result, sprintf
