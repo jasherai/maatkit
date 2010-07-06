@@ -2254,7 +2254,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 5266
+# VersionParser package 6661
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VersionParser.pm
@@ -2291,6 +2291,26 @@ sub version_ge {
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
    MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
+}
+
+sub innodb_version {
+   my ( $self, $dbh ) = @_;
+   return unless $dbh;
+   my $innodb_version = "DISABLED";
+
+   my $engines = $dbh->selectall_arrayref("SHOW ENGINES");
+   if ( $engines
+        && grep { $_->[0] =~ m/InnoDB/i && $_->[1] =~ m/YES|DEFAULT/i }
+           @$engines )
+   {
+      my $vars = $dbh->selectrow_hashref(
+         "SHOW VARIABLES LIKE 'innodb_version'");
+      $innodb_version = !$vars ? "BUILTIN"
+                      :          ($vars->{Value} || $vars->{value});
+   }
+
+   MKDEBUG && _d("InnoDB version:", $innodb_version);
+   return $innodb_version;
 }
 
 sub _d {
@@ -2677,9 +2697,10 @@ sub main {
    );
    my $print_node = $print_node_sub_for{lc($o->get('report-format'))};
    print_slaves(
-      node        => $root,
-      print_node  => $print_node,
-      MasterSlave => $ms,
+      node          => $root,
+      print_node    => $print_node,
+      MasterSlave   => $ms,
+      VersionParser => $vp,
    );
 
    return 0;
@@ -2742,7 +2763,8 @@ sub print_node_hostname {
 
 sub print_node_summary {
    my ( %args ) = @_;
-   my ($ms, $node, $level) = @args{qw(MasterSlave node level)};
+   my ($ms, $vp, $node, $level)
+      = @args{qw(MasterSlave VersionParser node level)};
    die "I need a node" unless $node;
    $level ||= 0;
 
@@ -2810,6 +2832,9 @@ sub print_node_summary {
         "increment " . ($vars->{auto_increment_increment}->{value}|| '')
       . ", offset "  . ($vars->{auto_increment_offset}->{value}   || '')
    ];
+
+   my $innodb_version = $vp->innodb_version($dbh);
+   push @lines, ['InnoDB version', $innodb_version];
 
    my $line_fmt = "$indent%-15s %s";
    print join("\n",

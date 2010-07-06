@@ -8,6 +8,7 @@ Binary logging  STATEMENT
 Slave status    
 Slave mode      STRICT
 Auto-increment  increment 1, offset 1
+InnoDB version  BUILTIN
 +- 127.0.0.1:12346
    Version
    Server ID       12346
@@ -18,6 +19,7 @@ Auto-increment  increment 1, offset 1
    Slave status    0 seconds behind, running, no errors
    Slave mode      STRICT
    Auto-increment  increment 1, offset 1
+   InnoDB version  BUILTIN
    +- 127.0.0.1:12347
       Version
       Server ID       12347
@@ -28,3 +30,4 @@ Auto-increment  increment 1, offset 1
       Slave status    0 seconds behind, running, no errors
       Slave mode      STRICT
       Auto-increment  increment 1, offset 1
+      InnoDB version  BUILTIN

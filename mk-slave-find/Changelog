@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * Added "InnoDB version" to summary report format (issue 1079).
+
 2010-06-08: version 1.0.12
 
    * Connections did not preserve server SQL modes (issue 801).
