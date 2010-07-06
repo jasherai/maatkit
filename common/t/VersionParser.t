@@ -9,15 +9,15 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 3;
 
 use VersionParser;
 use MaatkitTest;
 
-my $p = new VersionParser;
+my $vp = new VersionParser;
 
 is(
-   $p->parse('5.0.38-Ubuntu_0ubuntu1.1-log'),
+   $vp->parse('5.0.38-Ubuntu_0ubuntu1.1-log'),
    '005000038',
    'Parser works on ordinary version',
 );
@@ -30,7 +30,13 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {
    skip 'Cannot connect to MySQL', 1 unless $dbh;
-   ok($p->version_ge($dbh, '3.23.00'), 'Version is > 3.23');
+   ok($vp->version_ge($dbh, '3.23.00'), 'Version is > 3.23');
+
+   is(
+      $vp->innodb_version($dbh),
+      "BUILTIN",
+      "InnoDB version builtin"
+   );
 }
 
 # #############################################################################
