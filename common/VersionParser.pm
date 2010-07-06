@@ -53,21 +53,27 @@ sub version_ge {
 
 # Returns DISABLED if InnoDB doesn't appear as YES or DEFAULT in SHOW ENGINES,
 # BUILTIN if there is no innodb_version variable in SHOW VARIABLES, or
-# <value> if there is an innodb_version variable in SHOW VARIABLES.
+# <value> if there is an innodb_version variable in SHOW VARIABLES, or
+# NO if SHOW ENGINES is broken or InnDB doesn't appear in it.
 sub innodb_version {
    my ( $self, $dbh ) = @_;
    return unless $dbh;
-   my $innodb_version = "DISABLED";
+   my $innodb_version = "NO";
 
-   my $engines = $dbh->selectall_arrayref("SHOW ENGINES");
-   if ( $engines
-        && grep { $_->[0] =~ m/InnoDB/i && $_->[1] =~ m/YES|DEFAULT/i }
-           @$engines )
-   {
-      my $vars = $dbh->selectrow_hashref(
-         "SHOW VARIABLES LIKE 'innodb_version'");
-      $innodb_version = !$vars ? "BUILTIN"
-                      :          ($vars->{Value} || $vars->{value});
+   my $engines = $dbh->selectall_hashref("SHOW ENGINES", "Engine");
+   if ( $engines && exists $engines->{InnoDB} ) {
+      my $innodb_engine  = $engines->{InnoDB};
+      my $innodb_support = $innodb_engine->{Support} || $innodb_engine->{support};
+      MKDEBUG && _d("InnoDB support:", $innodb_support);
+      if ( $innodb_support =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb_support;  # probably DISABLED or NO
+      }
    }
 
    MKDEBUG && _d("InnoDB version:", $innodb_version);
