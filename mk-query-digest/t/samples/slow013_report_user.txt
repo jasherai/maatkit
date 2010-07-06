@@ -5,7 +5,8 @@
 
 # Item 1: 2 QPS, 0.15x concurrency, ID 0x4F1658C9B243995F at byte 174 ____
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         40       2
 # Exec time     99   149ms     5us   149ms    75ms   149ms   106ms    75ms
 # Lock time    100    70us       0    70us    35us    70us    49us    35us
@@ -28,7 +29,8 @@ mytopuser
 
 # Item 2: 0 QPS, 0x concurrency, ID 0x8F4C76E92F07EABE at byte 600 _______
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         60       3
 # Exec time      0    97us    15us    67us    32us    66us    24us    14us
 # Lock time      0       0       0       0       0       0       0       0

@@ -2,13 +2,13 @@
 < # Overall: 15 total, 10 unique, 0.00 QPS, 0.00x concurrency ______________
 ---
 > # Overall: 15 total, 4 unique, 0.00 QPS, 0.00x concurrency _______________
-29d28
+31d30
 < # Databases              1     foo
-42,43c41,42
+44,45c43,44
 < #    SHOW TABLE STATUS FROM `foo` LIKE 'a'\G
 < #    SHOW CREATE TABLE `foo`.`a`\G
 ---
 > #    SHOW TABLE STATUS LIKE 'a'\G
 > #    SHOW CREATE TABLE `a`\G
-89d87
+92d90
 < # MISC 0xMISC                 0.0361  1.3%    13   0.0028 <8 ITEMS>

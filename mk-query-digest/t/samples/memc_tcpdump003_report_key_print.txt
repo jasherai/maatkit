@@ -5,7 +5,8 @@
 
 # Item 1: 4.47k QPS, 0.32x concurrency, ID 0x8228B9A98CA1531D at byte 0 __
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       2
 # Exec time    100   141us    68us    73us    70us    73us     3us    70us
 # Hosts                  1 127.0.0.1

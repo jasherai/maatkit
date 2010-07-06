@@ -39,7 +39,7 @@ is(
 < # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
 ---
 > # Overall: 8 total, 1 unique, 0 QPS, 0x concurrency ______________________
-60d59
+62d61
 < # MISC 0xMISC                 0.0360  4.7%     7   0.0051 <6 ITEMS>
 ",
    "slow002.txt default results"
@@ -58,7 +58,7 @@ is(
 < # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
 ---
 > # Overall: 8 total, 3 unique, 0 QPS, 0x concurrency ______________________
-139d138
+143d142
 < # MISC 0xMISC                 0.0016  0.2%     4   0.0004 <4 ITEMS>
 ",
    "slow002.txt --limit 3 results"

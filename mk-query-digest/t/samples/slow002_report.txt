@@ -1,6 +1,7 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x66825DDC008FFA89 at byte 332 ______
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time     95   726ms   726ms   726ms   726ms   726ms       0   726ms
 # Lock time     29    91us    91us    91us    91us    91us       0    91us
@@ -36,7 +37,8 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
       inner join db1.gonzo a using(gonzo) \G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x0FFE94ABA6A2A9E8 at byte 1316 _____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time      4    33ms    33ms    33ms    33ms    33ms       0    33ms
 # Lock time      9    28us    28us    28us    28us    28us       0    28us
@@ -74,7 +76,8 @@ WHERE  vab3concept1upload='6994465'\G
 select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   vab3concept1upload='6994465'\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xB211BA2B8D6D065C at byte 3332 _____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         25       2
 # Exec time      0     1ms   530us   530us   530us   530us       0   530us
 # Lock time     17    54us    27us    27us    27us    27us       0    27us
@@ -111,7 +114,8 @@ SET    biz = '91848182522'\G
 select     biz = '91848182522' from foo.bar \G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0x6969975466519B81 at byte 2825 _____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time      0   530us   530us   530us   530us   530us       0   530us
 # Lock time      8    27us    27us    27us    27us    27us       0    27us
@@ -149,7 +153,8 @@ WHERE  fillze='899'\G
 select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0xC22D235B07D1D774 at byte 1840 _____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time      0   530us   530us   530us   530us   530us       0   530us
 # Lock time      8    27us    27us    27us    27us    27us       0    27us
@@ -183,7 +188,8 @@ INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18')\G
 
 # Query 6: 0 QPS, 0x concurrency, ID 0x7546F89214254F2F at byte 803 ______
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time      0   512us   512us   512us   512us   512us       0   512us
 # Lock time     25    77us    77us    77us    77us    77us       0    77us
@@ -217,7 +223,8 @@ INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact')\G
 
 # Query 7: 0 QPS, 0x concurrency, ID 0x85FFF5AA78E5FF6A at byte 0 ________
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         12       1
 # Exec time      0    12us    12us    12us    12us    12us       0    12us
 # Lock time      0       0       0       0       0       0       0       0

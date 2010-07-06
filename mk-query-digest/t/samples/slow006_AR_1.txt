@@ -1,7 +1,8 @@
 
 # Query 1: 0.05 QPS, 0.00x concurrency, ID 0xA20C29AF174CE545 at byte 1803
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       3
 # Exec time     50    36us    12us    12us    12us    12us       0    12us
 # Lock time      0       0       0       0       0       0       0       0
@@ -36,7 +37,8 @@ SELECT col FROM foo_tbl\G
 
 # Query 2: 0.30 QPS, 0.00x concurrency, ID 0xD4CD74934382A184 at byte 1445
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       3
 # Exec time     50    36us    12us    12us    12us    12us       0    12us
 # Lock time      0       0       0       0       0       0       0       0

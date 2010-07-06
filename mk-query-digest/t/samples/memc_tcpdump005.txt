@@ -1,7 +1,8 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x26193ADA9E14A97E at byte 764 ______
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100     4ms     4ms     4ms     4ms     4ms       0     4ms
 # Hosts                  1 127.0.0.1

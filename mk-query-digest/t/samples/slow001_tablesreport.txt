@@ -5,7 +5,8 @@
 
 # Item 1: 0.03 QPS, 0.05x concurrency, ID 0x1161D7068EB79526 at byte 0 ___
 # This item is included in the report because it matches --limit.
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       2
 # Exec time    100      4s      2s      2s      2s      2s       0      2s
 # Lock time      0       0       0       0       0       0       0       0

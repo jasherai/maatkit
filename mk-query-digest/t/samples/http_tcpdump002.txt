@@ -1,6 +1,7 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0xFB0C089DD4451762 at byte 59213 ____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     11    74ms    74ms    74ms    74ms    74ms       0    74ms
 # Hosts                  1 10.112.2.144
@@ -21,7 +22,8 @@
 get www.percona.com/images/menu_our-vision.gif\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x7C3AA9143C98C14A at byte 206 ______
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    70ms    70ms    70ms    70ms    70ms       0    70ms
 # Hosts                  1 10.112.2.144
@@ -42,7 +44,8 @@ get www.percona.com/images/menu_our-vision.gif\G
 get www.percona.com/about-us.html\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0x7CC09CE55CB7750C at byte 16362 ____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    69ms    69ms    69ms    69ms    69ms       0    69ms
 # Hosts                  1 10.112.2.144
@@ -63,7 +66,8 @@ get www.percona.com/about-us.html\G
 get www.percona.com/js/jquery.js\G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0x44C0C94594575296 at byte 65644 ____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    68ms    68ms    68ms    68ms    68ms       0    68ms
 # Hosts                  1 10.112.2.144
@@ -84,7 +88,8 @@ get www.percona.com/js/jquery.js\G
 get www.percona.com/images/bg-gray-corner-top.gif\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0x08207FBDE8A42C36 at byte 67956 ____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    67ms    67ms    67ms    67ms    67ms       0    67ms
 # Hosts                  1 10.112.2.144
@@ -105,7 +110,8 @@ get www.percona.com/images/bg-gray-corner-top.gif\G
 get www.percona.com/images/handshake.jpg\G
 
 # Query 6: 0 QPS, 0x concurrency, ID 0x4F1E2B5E822F55B8 at byte 53100 ____
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    67ms    67ms    67ms    67ms    67ms       0    67ms
 # Hosts                  1 10.112.2.144
@@ -126,7 +132,8 @@ get www.percona.com/images/handshake.jpg\G
 get www.percona.com/images/menu_team.gif\G
 
 # Query 7: 0 QPS, 0x concurrency, ID 0x7FB624EE10D71E1F at byte 170117 ___
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    62ms    62ms    62ms    62ms    62ms       0    62ms
 # Hosts                  1 10.112.2.144
@@ -147,7 +154,8 @@ get www.percona.com/images/menu_team.gif\G
 get hit.clickaider.com/s/forms.js\G
 
 # Query 8: 0 QPS, 0x concurrency, ID 0x1279DE4968C95A8D at byte 147447 ___
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    62ms    62ms    62ms    62ms    62ms       0    62ms
 # Hosts                  1 10.112.2.144
@@ -168,7 +176,8 @@ get hit.clickaider.com/s/forms.js\G
 get hit.clickaider.com/clickaider.js\G
 
 # Query 9: 0 QPS, 0x concurrency, ID 0x590BE2A84B8F0D5B at byte 167245 ___
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    60ms    60ms    60ms    60ms    60ms       0    60ms
 # Hosts                  1 10.112.2.144
@@ -189,7 +198,8 @@ get hit.clickaider.com/clickaider.js\G
 get hit.clickaider.com/pv?lng=140&&lnks=&t=About%20Percona&c=73a41b95-2926&r=http%3A%2F%2Fwww.percona.com%2F&tz=-420&loc=http%3A%2F%2Fwww.percona.com%2Fabout-us.html&rnd=3688\G
 
 # Query 10: 0 QPS, 0x concurrency, ID 0xFC5C4A690D695F35 at byte 55942 ___
-#              pct   total     min     max     avg     95%  stddev  median
+# Item         pct   total     min     max     avg     95%  stddev  median
+# ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      7    45ms    45ms    45ms    45ms    45ms       0    45ms
 # Hosts                  1 10.112.2.144
