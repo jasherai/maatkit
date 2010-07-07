@@ -141,7 +141,7 @@ $events = [
 # They are, without a doubt, correct.
 $expected = <<EOF;
 # Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency __________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 # Lock time          455us   109us   201us   151us   194us    35us   144us
@@ -166,7 +166,7 @@ is($result, $expected, 'Global (header) report');
 $expected = <<EOF;
 # Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         66       2
 # Exec time     89      9s      1s      8s      5s      8s      5s      5s
@@ -216,7 +216,7 @@ $qrf = new QueryReportFormatter(label_width => 15);
 $expected = <<EOF;
 # Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 ___________
 # This item is included in the report because it matches --limit.
-# Item               pct   total     min     max     avg     95%  stddev  median
+# Attribute          pct   total     min     max     avg     95%  stddev  median
 # =============== ====== ======= ======= ======= ======= ======= ======= =======
 # Count               66       2
 # Exec time           89      9s      1s      8s      5s      8s      5s      5s
@@ -289,7 +289,7 @@ foreach my $event (@$events) {
 $ea->calculate_statistical_metrics();
 $expected = <<EOF;
 # Overall: 1 total, 1 unique, 0 QPS, 0x concurrency ______________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time              0       0       0       0       0       0       0
 # Time range        2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
@@ -306,7 +306,7 @@ is($result, $expected, 'Global report with all zeroes');
 $expected = <<EOF;
 # Query 1: 0 QPS, 0x concurrency, ID 0x5D51E5F01B88B79E at byte 0 ________
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time      0       0       0       0       0       0       0       0
@@ -384,7 +384,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 # Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
@@ -464,7 +464,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 # Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
@@ -580,7 +580,7 @@ $events = [
 $expected = <<EOF;
 # Query 1: 0 QPS, 0x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100      1s      1s      1s      1s      1s       0      1s
@@ -624,7 +624,7 @@ push @$events,
 $expected = <<EOF;
 # Query 1: 0.67 QPS, 1x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       2
 # Exec time    100      3s      1s      2s      2s      2s   707ms      2s
@@ -662,7 +662,7 @@ push @$events,
 $expected = <<EOF;
 # Query 1: 1 QPS, 2x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       3
 # Exec time    100      6s      1s      3s      2s      3s   780ms      2s
@@ -715,7 +715,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Overall: 3 total, 1 unique, 0 QPS, 0x concurrency ______________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 EOF
@@ -759,7 +759,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       2
 # Exec time    100     16s      8s      8s      8s      8s       0      8s
@@ -806,7 +806,7 @@ $result = $qrf->event_report(
 
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       3
 # Exec time    100     24s      8s      8s      8s      8s       0      8s
@@ -827,7 +827,7 @@ $result = $qrf->event_report(
 
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       3
 # Exec time    100     24s      8s      8s      8s      8s       0      8s
@@ -852,7 +852,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100      8s      8s      8s      8s      8s       0      8s

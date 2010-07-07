@@ -213,7 +213,7 @@ sub header {
 
    # Column header line
    my ($format, @headers) = $self->make_header('global');
-   push @result, sprintf($format, "Item", @headers);
+   push @result, sprintf($format, "Attribute", @headers);
    # The numbers 7, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @result, sprintf($format,
@@ -480,7 +480,7 @@ sub event_report {
 
    # Column header line
    my ($format, @headers) = $self->make_header();
-   push @result, sprintf($format, "Item", @headers);
+   push @result, sprintf($format, "Attribute", @headers);
    # The numbers 6, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @result, sprintf($format,
