@@ -1,6 +1,6 @@
 
 # Overall: 4 total, 1 unique, 2.13 QPS, 0.36x concurrency ________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time          670ms   265us   450ms   167ms   433ms   179ms   326ms
 # Time range        2009-04-12 11:00:13.118643 to 2009-04-12 11:00:14.999999
@@ -10,7 +10,7 @@
 
 # Query 1: 2.13 QPS, 0.36x concurrency, ID 0xE3A3649C5FAC418D at byte 2548
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       4
 # Exec time     99   670ms   265us   450ms   167ms   433ms   179ms   326ms

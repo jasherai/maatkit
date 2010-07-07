@@ -1,6 +1,6 @@
 
 # Overall: 5 total, 4 unique, 5 QPS, 0.15x concurrency ___________________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time          150ms     5us   149ms    30ms   148ms    59ms    14us
 # Lock time           70us       0    70us    14us    69us    27us       0
@@ -15,7 +15,7 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x31DA25F95494CA95 at byte 174 ______
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         20       1
 # Exec time     99   149ms   149ms   149ms   149ms   149ms       0   149ms
@@ -44,7 +44,7 @@ SHOW STATUS\G
 
 # Item 1: 2 QPS, 0.15x concurrency, ID 0x4F1658C9B243995F at byte 174 ____
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         40       2
 # Exec time     99   149ms     5us   149ms    75ms   149ms   106ms    75ms

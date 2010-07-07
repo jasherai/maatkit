@@ -3225,7 +3225,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6664
+# QueryReportFormatter package 6669
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3385,7 +3385,7 @@ sub header {
    push @result, $line;
 
    my ($format, @headers) = $self->make_header('global');
-   push @result, sprintf($format, "Item", @headers);
+   push @result, sprintf($format, "Attribute", @headers);
    push @result, sprintf($format,
       map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7)));
 
@@ -3604,7 +3604,7 @@ sub event_report {
    }
 
    my ($format, @headers) = $self->make_header();
-   push @result, sprintf($format, "Item", @headers);
+   push @result, sprintf($format, "Attribute", @headers);
    push @result, sprintf($format,
       map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7)));
 

@@ -1,6 +1,6 @@
 
 # Overall: 15 total, 3 unique, 3.51k QPS, 0.42x concurrency ______________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            2ms       0   247us   119us   236us    70us   125us
 # Time range        2009-12-18 08:44:07.234727 to 2009-12-18 08:44:07.238999
@@ -11,7 +11,7 @@
 
 # Query 1: 2.03k QPS, 0.28x concurrency, ID 0x6EE88728F6F29C72 at byte 800
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         46       7
 # Exec time     54   975us   119us   170us   139us   167us    16us   131us
@@ -42,7 +42,7 @@ select * from d.t where name="adam"\G
 
 # Query 2: 1.17k QPS, 0.19x concurrency, ID 0xECBCD0412B5E497A at byte 9215
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         33       5
 # Exec time     45   817us   103us   247us   163us   236us    64us   113us
@@ -72,7 +72,7 @@ select * from d.t where name="daniel"\G
 
 # Query 3: 1.70k QPS, 0x concurrency, ID 0x559914DA8A7B7F28 at byte 8202 _
 # This item is included in the report because it matches --limit.
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         20       3
 # Exec time      0       0       0       0       0       0       0       0

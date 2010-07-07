@@ -1,6 +1,6 @@
 
 # Overall: 6 total, 8 unique, 0.13 QPS, 2.70kx concurrency _______________
-# Item               total     min     max     avg     95%  stddev  median
+# Attribute          total     min     max     avg     95%  stddev  median
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time        124029s  20661s  20704s  20672s  19861s       0  19861s
 # Time range        2007-12-07 12:02:07 to 2007-12-07 12:02:53
@@ -15,7 +15,7 @@
 # error cod              0       0       0       0       0       0       0
 
 # Query 1: 0 QPS, 0x concurrency, ID 0xCD948EAF18BC614E at byte 953 ______
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20704s  20704s  20704s  20704s  20704s       0  20704s
@@ -49,7 +49,7 @@ replace into test4.tbl9(tbl5, day, todo, comment)
          and o.col3 >= date_sub(current_date, interval 30 day)\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0xC356FD9EFD7D799E at byte 605 ______
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20675s  20675s  20675s  20675s  20675s       0  20675s
@@ -83,7 +83,7 @@ select  e.tblo = o.tblo,
          inner join test3.tbl2 as e on o.animal = e.animal and o.oid = e.oid where  e.tblo is null\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xB5E55291C7DE1096 at byte 1469 _____
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20664s  20664s  20664s  20664s  20664s       0  20664s
@@ -117,7 +117,7 @@ select  o.tbl2 = e.tbl2,
  on o.animal = e.animal and o.oid = e.oid where  o.tbl2 is null\G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0x85FFF5AA78E5FF6A at byte 146 ______
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20664s  20664s  20664s  20664s  20664s       0  20664s
@@ -144,7 +144,7 @@ select  o.tbl2 = e.tbl2,
 BEGIN\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0xED69B13F3D0161D0 at byte 2479 _____
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20661s  20661s  20661s  20661s  20661s       0  20661s
@@ -176,7 +176,7 @@ select  last2metric1 = last1metric1, last2time = last1time,
          last0metric1 = ondeckmetric1, last0time = now() from test2.tbl8 where  tbl8 in (10800712)\G
 
 # Query 6: 0 QPS, 0x concurrency, ID 0x79BFEA84D0CED05F at byte 1889 _____
-# Item         pct   total     min     max     avg     95%  stddev  median
+# Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         16       1
 # Exec time     16  20661s  20661s  20661s  20661s  20661s       0  20661s
