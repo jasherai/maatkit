@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * --outliers did not work (issue 1087).
+   * Profile did not show actual query ranks (issue 1087).
    * Made header and query_report outputs easier to read (issue 699).
 
 2010-07-01: version 0.9.19

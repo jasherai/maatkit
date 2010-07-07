@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 39;
+use Test::More tests => 38;
 
 use MaatkitTest;
 
@@ -190,15 +190,6 @@ ok(
       "mk-query-digest/t/samples/slow013_report_profile.txt"
    ),
    'Analysis for slow013 with profile',
-);
-
-ok(
-   no_diff(
-      sub { mk_query_digest::main(@args, $sample.'slow013.txt',
-            qw(--group-by user --outliers Query_time:.0000001:1)) },
-      "mk-query-digest/t/samples/slow013_report_outliers.txt"
-   ),
-   'Analysis for slow013 with --outliers'
 );
 
 ok(

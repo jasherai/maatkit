@@ -4618,7 +4618,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6590
+# EventAggregator package 6671
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -5176,7 +5176,7 @@ sub top_events {
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, [$groupby, 'top'];
+         push @chosen, [$groupby, 'top', $count+1];
       }
 
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
@@ -5184,15 +5184,15 @@ sub top_events {
       ) {
          my $stats = $self->{class_metrics}->{$groupby}->{$args{ol_attrib}};
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
-            push @chosen, [$groupby, 'outlier'];
+            push @chosen, [$groupby, 'outlier', $count+1];
          }
          else {
-            push @other, $groupby;
+            push @other, [$groupby, 'misc', $count+1];
          }
       }
 
       else {
-         push @other, $groupby;
+         push @other, [$groupby, 'misc', $count+1];
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
@@ -5830,7 +5830,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6669
+# QueryReportFormatter package 6672
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -6049,7 +6049,6 @@ sub query_report {
    my $ea      = $args{ea};
    my $groupby = $args{groupby};
    my $worst   = $args{worst};
-   my $n_worst = scalar @$worst;
 
    my $o   = $self->{OptionParser};
    my $q   = $self->{Quoter};
@@ -6065,12 +6064,13 @@ sub query_report {
    }
 
    ITEM:
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $reason     = $args{explain_why} ? $top_event->[1] : '';
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
-      my $reason     = $args{explain_why} ? $worst->[$rank - 1]->[1] : '';
 
       my $review_vals;
       if ( $qv ) {
@@ -6328,7 +6328,6 @@ sub profile {
    my $worst   = $args{worst};
    my $other   = $args{other};
    my $groupby = $args{groupby};
-   my $n_worst = scalar @$worst;
 
    my $qr  = $self->{QueryRewriter};
 
@@ -6336,8 +6335,9 @@ sub profile {
    my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
 
    my @profiles;
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
@@ -6386,7 +6386,8 @@ sub profile {
             r   => 0,
             cnt => 0,
       };
-      foreach my $item ( @$other ) {
+      foreach my $other_event ( @$other ) {
+         my $item      = $other_event->[0];
          my $stats     = $ea->results->{classes}->{$item};
          $misc->{r}   += $stats->{Query_time}->{sum};
          $misc->{cnt} += $stats->{Query_time}->{cnt};
@@ -6415,7 +6416,6 @@ sub prepared {
    my $ea      = $args{ea};
    my $worst   = $args{worst};
    my $groupby = $args{groupby};
-   my $n_worst = scalar @$worst;
 
    my $qr = $self->{QueryRewriter};
 
@@ -6423,8 +6423,9 @@ sub prepared {
    my %seen_prepared;  # report each PREP-EXEC pair once
    my $total_r = 0;
 
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
@@ -11792,7 +11793,7 @@ sub main {
                orderby_attrib => $orderby_attrib,
                orderby_func   => $orderby_func,
                limit          => $o->get('limit')->[$i] || '95%:20',
-               outlier        => $o->get('outliers')->[$i],
+               outliers       => $o->get('outliers')->[$i],
             );
 
             if ( $o->get('report') ) {
