@@ -16,7 +16,7 @@ shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 require "$trunk/mk-query-digest/mk-query-digest";
 
-my @args   = qw(--report-format=query_report --limit 10);
+my @args   = qw(--report-format=query_report);
 my $sample = "$trunk/common/t/samples/";
 
 ok(

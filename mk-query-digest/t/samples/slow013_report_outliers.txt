@@ -28,7 +28,7 @@
 mytopuser
 
 # Item 2: 0 QPS, 0x concurrency, ID 0x8F4C76E92F07EABE at byte 600 _______
-# This item is included in the report because it matches --limit.
+# This item is included in the report because it matches --outliers.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         60       3
