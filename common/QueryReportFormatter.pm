@@ -284,7 +284,6 @@ sub query_report {
    my $ea      = $args{ea};
    my $groupby = $args{groupby};
    my $worst   = $args{worst};
-   my $n_worst = scalar @$worst;
 
    my $o   = $self->{OptionParser};
    my $q   = $self->{Quoter};
@@ -304,12 +303,13 @@ sub query_report {
    # Items are usually unique queries/fingerprints--depends on how
    # the events were grouped.
    ITEM:
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $reason     = $args{explain_why} ? $top_event->[1] : '';
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
-      my $reason     = $args{explain_why} ? $worst->[$rank - 1]->[1] : '';
 
       # ###############################################################
       # Possibly skip item for --review.
@@ -626,7 +626,6 @@ sub profile {
    my $worst   = $args{worst};
    my $other   = $args{other};
    my $groupby = $args{groupby};
-   my $n_worst = scalar @$worst;
 
    my $qr  = $self->{QueryRewriter};
 
@@ -635,8 +634,9 @@ sub profile {
    my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
 
    my @profiles;
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
@@ -687,7 +687,8 @@ sub profile {
             r   => 0,
             cnt => 0,
       };
-      foreach my $item ( @$other ) {
+      foreach my $other_event ( @$other ) {
+         my $item      = $other_event->[0];
          my $stats     = $ea->results->{classes}->{$item};
          $misc->{r}   += $stats->{Query_time}->{sum};
          $misc->{cnt} += $stats->{Query_time}->{cnt};
@@ -724,7 +725,6 @@ sub prepared {
    my $ea      = $args{ea};
    my $worst   = $args{worst};
    my $groupby = $args{groupby};
-   my $n_worst = scalar @$worst;
 
    my $qr = $self->{QueryRewriter};
 
@@ -732,8 +732,9 @@ sub prepared {
    my %seen_prepared;  # report each PREP-EXEC pair once
    my $total_r = 0;
 
-   foreach my $rank ( 1..$n_worst ) {
-      my $item       = $worst->[$rank - 1]->[0];
+   foreach my $top_event ( @$worst ) {
+      my $item       = $top_event->[0];
+      my $rank       = $top_event->[2];
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';

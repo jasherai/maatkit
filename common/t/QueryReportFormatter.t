@@ -922,7 +922,7 @@ ok(
       sub { $qrf->print_reports(
          reports => [qw(header query_report profile)],
          ea      => $ea,
-         worst   => [['select col from tbl where id=?','top']],
+         worst   => [['select col from tbl where id=?','top',1]],
          other   => [],
          orderby => 'Query_time',
          groupby => 'fingerprint',
@@ -940,7 +940,7 @@ ok(
       sub { $qrf->print_reports(
          reports => [qw(profile query_report header)],
          ea      => $ea,
-         worst   => [['select col from tbl where id=?','top']],
+         worst   => [['select col from tbl where id=?','top',1]],
          orderby => 'Query_time',
          groupby => 'fingerprint',
          ReportFormatter => $report,
@@ -996,8 +996,8 @@ ok(
             reports => ['query_report','prepared'],
             ea      => $ea,
             worst   => [
-               ['execute select i from d.t where i=?', 'top'],
-               ['prepare select i from d.t where i=?', 'top'],
+               ['execute select i from d.t where i=?', 'top',1],
+               ['prepare select i from d.t where i=?', 'top',2],
             ],
             orderby => 'Query_time',
             groupby => 'fingerprint',
@@ -1040,11 +1040,11 @@ ok(
             reports => ['profile'],
             ea      => $ea,
             worst   => [
-               ['update foo set col=? where ?', 'top']
+               ['update foo set col=? where ?', 'top',1]
             ],
             other => [
-               'execute select i from d.t where i=?',
-               'prepare select i from d.t where i=?',
+               ['execute select i from d.t where i=?','misc',2],
+               ['prepare select i from d.t where i=?','misc',3],
             ],
             orderby => 'Query_time',
             groupby => 'fingerprint',
@@ -1146,7 +1146,7 @@ my $output = output(
    sub { $qrf->print_reports(
       reports => [qw(rusage date files header query_report profile)],
       ea      => $ea,
-      worst   => [['select col from tbl where id=?','top']],
+      worst   => [['select col from tbl where id=?','top',1]],
       orderby => 'Query_time',
       groupby => 'fingerprint',
       files   => [qw(foo bar)],
