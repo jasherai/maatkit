@@ -889,16 +889,19 @@ my $other;
 is_deeply(
    $chosen,
    [
-      [qw(event2 top)],
-      [qw(event3 top)],
-      [qw(event1 outlier)],
+      [qw(event2 top 1)],
+      [qw(event3 top 2)],
+      [qw(event1 outlier 4)],
    ],
    'Got top events'
 );
 
 is_deeply(
    $other,
-   [qw(event4 event0)],
+   [
+      [qw(event4 misc 3)],
+      [qw(event0 misc 5)],
+   ],
    "Got other, non-top events"
 );
 
@@ -917,10 +920,10 @@ is_deeply(
 is_deeply(
    $chosen,
    [
-      [qw(event2 top)],
-      [qw(event3 top)],
-      [qw(event1 outlier)],
-      [qw(event0 outlier)],
+      [qw(event2 top 1)],
+      [qw(event3 top 2)],
+      [qw(event1 outlier 4)],
+      [qw(event0 outlier 5)],
    ],
    'Got top events with outlier' );
 

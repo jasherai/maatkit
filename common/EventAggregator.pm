@@ -756,7 +756,7 @@ sub top_events {
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, [$groupby, 'top'];
+         push @chosen, [$groupby, 'top', $count+1];
       }
 
       # Events that are notable outliers
@@ -765,16 +765,16 @@ sub top_events {
       ) {
          my $stats = $self->{class_metrics}->{$groupby}->{$args{ol_attrib}};
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
-            push @chosen, [$groupby, 'outlier'];
+            push @chosen, [$groupby, 'outlier', $count+1];
          }
          else {
-            push @other, $groupby;
+            push @other, [$groupby, 'misc', $count+1];
          }
       }
 
       # Events not in the top criterion
       else {
-         push @other, $groupby;
+         push @other, [$groupby, 'misc', $count+1];
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
