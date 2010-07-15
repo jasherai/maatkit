@@ -213,7 +213,7 @@ sub close_relay_log {
    if ( !$pid ) {
       my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
       my $cmd   = $self->{cmd};
-      MKDEBUG && _d($procs);
+      MKDEBUG && _d("mysqlbinlog procs in ps:", $procs);
       if ( $procs ) {
          if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
             chomp $line;
@@ -221,18 +221,10 @@ sub close_relay_log {
             ($pid) = $line =~ m/(\d+)/;
          }
       }
-      else {
-         warn "Cannot find mysqlbinlog process in ps";
-      }
    }
 
-   if ( $pid ) {
-      MKDEBUG && _d('Killing mysqlbinlog pid:', $pid);
-      kill(15, $pid);
-   }
-   else {
-      warn "Cannot determine mysqlbinlog PID";
-   }
+   MKDEBUG && _d("mysqlbinlog pid:", $pid);
+   kill(15, $pid) if $pid;
 
    close $fh;
    MKDEBUG && _d('mysqlbinlog exit status:', $CHILD_ERROR >> 8);
