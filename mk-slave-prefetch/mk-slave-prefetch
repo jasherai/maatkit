@@ -983,7 +983,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 5266
+# VersionParser package 6667
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VersionParser.pm
@@ -1020,6 +1020,36 @@ sub version_ge {
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
    MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
+}
+
+sub innodb_version {
+   my ( $self, $dbh ) = @_;
+   return unless $dbh;
+   my $innodb_version = "NO";
+
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
+      }
+   }
+
+   MKDEBUG && _d("InnoDB version:", $innodb_version);
+   return $innodb_version;
 }
 
 sub _d {
@@ -3323,7 +3353,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 6500
+# SlavePrefetch package 6725
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3456,23 +3486,24 @@ sub open_relay_log {
 
    my $cmd = $self->_mysqlbinlog_cmd(%args);
 
-   open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
-   if ( $CHILD_ERROR ) {
+   my $mysqlbinlog_pid = open my $fh, "$cmd |"
+      or die $OS_ERROR; # succeeds even on error
+   if ( $CHILD_ERROR >> 8 ) {
       die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
          . '.  Try running the command manually or using MKDEBUG=1' ;
    }
-   $self->{cmd} = $cmd;
+   MKDEBUG && _d("mysqlbinlog pid:", $mysqlbinlog_pid);
+   $self->{mysqlbinlog_pid} = $mysqlbinlog_pid;
    $self->{stats}->{mysqlbinlog}++;
    return $fh;
 }
 
 sub _mysqlbinlog_cmd {
    my ( $self, %args ) = @_;
-   my $cmd = $self->{mysqlbinlog}
-           . ($args{tmpdir}    ? " --local-load=$args{tmpdir} "   : '')
-           . ($args{start_pos} ? " --start-pos=$args{start_pos} " : '')
-           . $args{relay_log}
-           . (MKDEBUG ? ' 2>/dev/null' : '');
+   my $cmd = "$self->{mysqlbinlog} "
+           . ($args{tmpdir}    ? "--local-load=$args{tmpdir} "   : '')
+           . ($args{start_pos} ? "--start-pos=$args{start_pos} " : '')
+           . $args{relay_log};
    MKDEBUG && _d($cmd);
    return $cmd;
 }
@@ -3480,28 +3511,19 @@ sub _mysqlbinlog_cmd {
 sub close_relay_log {
    my ( $self, $fh ) = @_;
    MKDEBUG && _d('Closing relay log');
-   my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
-   my $cmd   = $self->{cmd};
-   MKDEBUG && _d($procs);
-   if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
-      chomp $line;
-      MKDEBUG && _d($line);
-      if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
-         MKDEBUG && _d('Will kill process', $proc);
-         kill(15, $proc);
-      }
+
+   if ( my $pid = $self->{mysqlbinlog_pid} ) {
+      MKDEBUG && _d("Killing mysqlbinlog pid:", $pid);
+      kill(15, $pid) if $pid;
+      $self->{mysqlbinlog_pid} = undef;
    }
    else {
-      warn "Cannot find mysqlbinlog command in ps";
+      MKDEBUG && _d("No mysqlbinlog pid to kill");
    }
-   if ( !close($fh) ) {
-      if ( $OS_ERROR ) {
-         warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
-      }
-      else {
-         MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
-      }
-   }
+
+   close $fh or warn "Error closing mysqlbinlog pipe: $OS_ERROR";
+   MKDEBUG && _d('mysqlbinlog exit status:', $CHILD_ERROR >> 8);
+
    return;
 }
 
@@ -4421,8 +4443,7 @@ sub main {
             # slave to do.  So wait a second to see if the slave receives
             # more replicated statements.
             MKDEBUG && _d('No more events');
-            close $fh if $fh;
-            $fh = undef;
+            $fh = $spf->close_relay_log($fh);
             sleep $o->get('sleep');
          }
       };
@@ -4430,7 +4451,7 @@ sub main {
          warn $EVAL_ERROR;
          _d($EVAL_ERROR);
          next EVENT if $o->get('continue-on-error');
-         close $fh if $fh;
+         $fh = $spf->close_relay_log($fh);
          last EVENT;
       }
    }  # EVENT
