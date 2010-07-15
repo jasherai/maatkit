@@ -104,7 +104,7 @@ is(
       relay_log => "$trunk/common/t/samples/relay-binlog001",
       start_pos => 1708,
    ),
-   "mysqlbinlog --local-load=/dev/null  --start-pos=1708 $trunk/common/t/samples/relay-binlog001",
+   "mysqlbinlog --local-load=/dev/null --start-pos=1708 $trunk/common/t/samples/relay-binlog001",
    'mysqlbinlog cmd'
 );
 

@@ -191,11 +191,10 @@ sub open_relay_log {
 
 sub _mysqlbinlog_cmd {
    my ( $self, %args ) = @_;
-   my $cmd = $self->{mysqlbinlog}
-           . ($args{tmpdir}    ? " --local-load=$args{tmpdir} "   : '')
-           . ($args{start_pos} ? " --start-pos=$args{start_pos} " : '')
-           . $args{relay_log}
-           . (MKDEBUG ? ' 2>/dev/null' : '');
+   my $cmd = "$self->{mysqlbinlog} "
+           . ($args{tmpdir}    ? "--local-load=$args{tmpdir} "   : '')
+           . ($args{start_pos} ? "--start-pos=$args{start_pos} " : '')
+           . $args{relay_log};
    MKDEBUG && _d($cmd);
    return $cmd;
 }
