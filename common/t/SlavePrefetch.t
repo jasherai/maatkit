@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 71;
+use Test::More tests => 72;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -121,16 +121,14 @@ SKIP: {
    diag(`rm -rf $tmp_file 2>/dev/null`);
 };
 
-# This doesn't work because mysqlbinlog is run in a shell so ps
-# show "[sh]" instead of "mysqlbinlog".
-#eval {
-#   $spf->close_relay_log($fh);
-#};
-#is(
-#   $EVAL_ERROR,
-#   '',
-#   'No error closing relay binlog'
-#);
+eval {
+   $spf->close_relay_log($fh);
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'No error closing relay binlog'
+);
 
 # ###########################################################################
 # Test that we can fake SHOW SLAVE STATUS with a callback.

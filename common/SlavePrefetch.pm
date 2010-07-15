@@ -179,12 +179,14 @@ sub open_relay_log {
 
    my $cmd = $self->_mysqlbinlog_cmd(%args);
 
-   open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
+   my $mysqlbinlog_pid = open my $fh, "$cmd |"
+      or die $OS_ERROR; # succeeds even on error
    if ( $CHILD_ERROR >> 8 ) {
       die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
          . '.  Try running the command manually or using MKDEBUG=1' ;
    }
-   $self->{cmd} = $cmd;
+   MKDEBUG && _d("mysqlbinlog pid:", $mysqlbinlog_pid);
+   $self->{mysqlbinlog_pid} = $mysqlbinlog_pid;
    $self->{stats}->{mysqlbinlog}++;
    return $fh;
 }
@@ -199,35 +201,25 @@ sub _mysqlbinlog_cmd {
    return $cmd;
 }
 
-# The $pid arg is in hopes that some day I can test this.
-# See SlavePrefetch.t for why it's not testable right now.
 sub close_relay_log {
-   my ( $self, $fh, $pid ) = @_;
+   my ( $self, $fh ) = @_;
    MKDEBUG && _d('Closing relay log');
 
    # Unfortunately, mysqlbinlog does NOT like me to close the pipe
    # before reading all data from it.  It hangs and prints angry
    # messages about a closed file.  So I'll find the mysqlbinlog
    # process created by the open() and kill it.
-   if ( !$pid ) {
-      my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
-      my $cmd   = $self->{cmd};
-      MKDEBUG && _d("mysqlbinlog procs in ps:", $procs);
-      if ( $procs ) {
-         if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
-            chomp $line;
-            MKDEBUG && _d("mysqlbinlog process:", $line);
-            ($pid) = $line =~ m/(\d+)/;
-         }
-      }
+   if ( my $pid = $self->{mysqlbinlog_pid} ) {
+      MKDEBUG && _d("Killing mysqlbinlog pid:", $pid);
+      kill(15, $pid) if $pid;
+      $self->{mysqlbinlog_pid} = undef;
+   }
+   else {
+      MKDEBUG && _d("No mysqlbinlog pid to kill");
    }
 
-   MKDEBUG && _d("mysqlbinlog pid:", $pid);
-   kill(15, $pid) if $pid;
-
-   close $fh;
+   close $fh or warn "Error closing mysqlbinlog pipe: $OS_ERROR";
    MKDEBUG && _d('mysqlbinlog exit status:', $CHILD_ERROR >> 8);
-   warn "Error closing mysqlbinlog pipe: $OS_ERROR" if $OS_ERROR;
 
    return;
 }
