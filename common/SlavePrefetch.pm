@@ -180,7 +180,7 @@ sub open_relay_log {
    my $cmd = $self->_mysqlbinlog_cmd(%args);
 
    open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
-   if ( $CHILD_ERROR ) {
+   if ( $CHILD_ERROR >> 8 ) {
       die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
          . '.  Try running the command manually or using MKDEBUG=1' ;
    }
@@ -200,35 +200,44 @@ sub _mysqlbinlog_cmd {
    return $cmd;
 }
 
+# The $pid arg is in hopes that some day I can test this.
+# See SlavePrefetch.t for why it's not testable right now.
 sub close_relay_log {
-   my ( $self, $fh ) = @_;
+   my ( $self, $fh, $pid ) = @_;
    MKDEBUG && _d('Closing relay log');
+
    # Unfortunately, mysqlbinlog does NOT like me to close the pipe
    # before reading all data from it.  It hangs and prints angry
    # messages about a closed file.  So I'll find the mysqlbinlog
    # process created by the open() and kill it.
-   my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
-   my $cmd   = $self->{cmd};
-   MKDEBUG && _d($procs);
-   if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
-      chomp $line;
-      MKDEBUG && _d($line);
-      if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
-         MKDEBUG && _d('Will kill process', $proc);
-         kill(15, $proc);
-      }
-   }
-   else {
-      warn "Cannot find mysqlbinlog command in ps";
-   }
-   if ( !close($fh) ) {
-      if ( $OS_ERROR ) {
-         warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
+   if ( !$pid ) {
+      my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
+      my $cmd   = $self->{cmd};
+      MKDEBUG && _d($procs);
+      if ( $procs ) {
+         if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
+            chomp $line;
+            MKDEBUG && _d("mysqlbinlog process:", $line);
+            ($pid) = $line =~ m/(\d+)/;
+         }
       }
       else {
-         MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
+         warn "Cannot find mysqlbinlog process in ps";
       }
    }
+
+   if ( $pid ) {
+      MKDEBUG && _d('Killing mysqlbinlog pid:', $pid);
+      kill(15, $pid);
+   }
+   else {
+      warn "Cannot determine mysqlbinlog PID";
+   }
+
+   close $fh;
+   MKDEBUG && _d('mysqlbinlog exit status:', $CHILD_ERROR >> 8);
+   warn "Error closing mysqlbinlog pipe: $OS_ERROR" if $OS_ERROR;
+
    return;
 }
 
