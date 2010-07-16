@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 75;
+   plan tests => 76;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -143,7 +143,7 @@ SKIP: {
       chunk_size    => 30,
       dbh           => $dbh,
       db            => 'sakila',
-      tbl           => 'film_id',
+      tbl           => 'film',
    );
    is_deeply(
       \@chunks,
@@ -524,6 +524,28 @@ SKIP: {
    ok(
       $size == 5 && ($avg >= 173 && $avg <= 206),
       'size_to_rows() gets avg row length if asked'
+   );
+
+
+   # #########################################################################
+   # Issue 1084: Don't try to chunk small tables
+   # #########################################################################
+   $t = $p->parse( $du->get_create_table($dbh, $q, 'sakila', 'country') );
+   @chunks = $c->calculate_chunks(
+      tbl_struct    => $t,
+      chunk_col     => 'country_id',
+      min           => '1',
+      max           => '109',
+      rows_in_range => 109,
+      chunk_size    => 110,
+      dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'country',
+   );
+   is_deeply(
+      \@chunks,
+      ["1=1"],
+      "Doesn't chunk if chunk size > total rows"
    );
 };
 

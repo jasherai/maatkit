@@ -180,6 +180,12 @@ sub calculate_chunks {
       return '1=1';
    }
 
+   # http://code.google.com/p/maatkit/issues/detail?id=1084
+   if ( $args{rows_in_range} < $args{chunk_size} ) {
+      MKDEBUG && _d("Chunk size larger than rows in range");
+      return '1=1';
+   }
+
    my ($dbh, $db, $tbl) = @args{@required_args};
    my $q        = $self->{Quoter};
    my $db_tbl   = $q->quote($db, $tbl);
