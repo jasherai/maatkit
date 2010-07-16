@@ -173,8 +173,11 @@ sub calculate_chunks {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
-   
+   MKDEBUG && _d('Calculate chunks for',
+      join(", ", map {"$_=".(defined $args{$_} ? $args{$_} : "undef")}
+         qw(db tbl chunk_col min max rows_in_range chunk_size zero_chunk exact)
+      ));
+
    if ( !$args{rows_in_range} ) {
       MKDEBUG && _d("Empty table");
       return '1=1';
