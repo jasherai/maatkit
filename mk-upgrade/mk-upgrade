@@ -4867,7 +4867,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6597
+# TableChunker package 6732
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -4974,10 +4974,18 @@ sub calculate_chunks {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
-   
+   MKDEBUG && _d('Calculate chunks for',
+      join(", ", map {"$_=".(defined $args{$_} ? $args{$_} : "undef")}
+         qw(db tbl chunk_col min max rows_in_range chunk_size zero_chunk exact)
+      ));
+
    if ( !$args{rows_in_range} ) {
       MKDEBUG && _d("Empty table");
+      return '1=1';
+   }
+
+   if ( $args{rows_in_range} < $args{chunk_size} ) {
+      MKDEBUG && _d("Chunk size larger than rows in range");
       return '1=1';
    }
 

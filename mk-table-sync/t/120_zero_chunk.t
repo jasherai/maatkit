@@ -31,7 +31,7 @@ else {
 }
 
 my $output;
-my @args = ('h=127.0.0.1,P=12346,u=msandbox,p=msandbox', qw(--sync-to-master -t sakila.actor -v -v --print));
+my @args = ('h=127.0.0.1,P=12346,u=msandbox,p=msandbox', qw(--sync-to-master -t sakila.actor -v -v --print --chunk-size 100));
 
 $output = output(
    sub { mk_table_sync::main(@args) },
