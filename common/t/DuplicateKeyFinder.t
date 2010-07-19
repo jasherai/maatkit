@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 36;
 
 use DuplicateKeyFinder;
 use Quoter;
@@ -678,6 +678,26 @@ is_deeply(
    $dupes,
    [],
    'Clustered key with multiple columns (issue 904 2)'
+);
+
+# #############################################################################
+# Issue 1004: mk-dupe-key-checker recommends dropping and re-adding same index
+# #############################################################################
+$ddl   = load_file("$sample/issue-1004.txt");
+$dupes = [];
+($keys, $ck) = $tp->get_keys($ddl, $opt);
+$dk->get_duplicate_keys(
+   $keys,
+   clustered_key => $ck,
+   clustered     => 1,
+   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
+   callback      => $callback
+);
+
+is_deeply(
+   $dupes,
+   [],
+   'Issue 1004'
 );
 
 # #############################################################################
