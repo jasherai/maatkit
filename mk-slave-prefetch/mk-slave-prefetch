@@ -4450,8 +4450,8 @@ sub main {
       if ( $EVAL_ERROR ) {
          warn $EVAL_ERROR;
          _d($EVAL_ERROR);
-         next EVENT if $o->get('continue-on-error');
          $fh = $spf->close_relay_log($fh);
+         next EVENT if $o->get('continue-on-error');
          last EVENT;
       }
    }  # EVENT
