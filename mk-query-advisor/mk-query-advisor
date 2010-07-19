@@ -25,7 +25,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 6322
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -642,7 +647,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -973,7 +978,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6043
+# SlowLogParser package 6590
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SlowLogParser.pm
+#   trunk/common/t/SlowLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SlowLogParser;
 
@@ -1306,7 +1316,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 6148
+# QueryParser package 6262
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryParser.pm
@@ -1409,13 +1419,18 @@ sub has_derived_table {
 
 sub get_aliases {
    my ( $self, $query, $list ) = @_;
-   return unless $query;
-   my $aliases;
+
+   my $result = {
+      DATABASE => {},
+      TABLE    => {},
+   };
+   return $result unless $query;
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
+   my @tbl_refs;
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -1425,51 +1440,55 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   if ( !$tbl_refs ) {
-      MKDEBUG && _d("No tables ref in", $query);
-      return $list ? [] : {};
-   }
+   if ( $tbl_refs ) {
 
-   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
-      $tbl_refs =~ s/\([^\)]+\)\s*//;
-   }
-
-   MKDEBUG && _d('tbl refs:', $tbl_refs);
-
-   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
-
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
-
-   $tbl_refs =~ s/ = /=/g;
-
-   while (
-      $tbl_refs =~ m{
-         $before_tbl\b\s*
-            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
-         \s*$after_tbl
-      }xgio )
-   {
-      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d('Match table:', $tbl_ref);
-
-      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef unless $list;
-         next;
+      if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+         $tbl_refs =~ s/\([^\)]+\)\s*//;
       }
 
-      if ( $list ) {
-         $tbl_ref =~ s/^\s+//g;
-         $tbl_ref =~ s/\s+$//g;
-         push @$aliases, $tbl_ref;
-      }
-      else {
+      MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+      my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+      my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+      $tbl_refs =~ s/ = /=/g;
+
+      while (
+         $tbl_refs =~ m{
+            $before_tbl\b\s*
+               ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+            \s*$after_tbl
+         }xgio )
+      {
+         my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+         MKDEBUG && _d('Match table:', $tbl_ref);
+         push @tbl_refs, $tbl_ref;
+         $alias = $self->trim_identifier($alias);
+
+         if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+            MKDEBUG && _d('Subquery', $tbl_ref);
+            $result->{TABLE}->{$alias} = undef;
+            next;
+         }
+
          my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-         $aliases->{$alias || $tbl} = $tbl;
-         $aliases->{DATABASE}->{$tbl} = $db if $db;
+         $db  = $self->trim_identifier($db);
+         $tbl = $self->trim_identifier($tbl);
+         $result->{TABLE}->{$alias || $tbl} = $tbl;
+         $result->{DATABASE}->{$tbl}        = $db if $db;
       }
    }
-   return $aliases;
+   else {
+      MKDEBUG && _d("No tables ref in", $query);
+   }
+
+   if ( $list ) {
+      return \@tbl_refs;
+   }
+   else {
+      return $result;
+   }
 }
 
 sub split {
@@ -1676,6 +1695,15 @@ sub extract_tables {
    return @tables;
 }
 
+sub trim_identifier {
+   my ($self, $str) = @_;
+   return unless defined $str;
+   $str =~ s/`//g;
+   $str =~ s/^\s+//;
+   $str =~ s/\s+$//;
+   return $str;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1691,7 +1719,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6132
+# QueryRewriter package 6535
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -1829,6 +1857,11 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
    return $query;
 }
 
@@ -2053,7 +2086,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5715
+# Transformers package 6387
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -2210,7 +2248,7 @@ sub parse_timestamp {
          = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
+                     . (defined $f ? '%09.6f' : '%02d'),
                      $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
@@ -2288,7 +2326,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 5266
+# Daemon package 6255
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -2329,7 +2372,8 @@ sub daemonize {
       exit;
    }
 
-   $self->{child} = 1;
+   $self->{PID_owner} = $PID;
+   $self->{child}     = 1;
 
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
@@ -2407,7 +2451,7 @@ sub make_PID_file {
       die "Do not call Daemon::make_PID_file() for daemonized scripts";
    }
    $self->_make_PID_file();
-   $self->{rm_PID_file} = 1;
+   $self->{PID_owner} = $PID;
    return;
 }
 
@@ -2448,7 +2492,9 @@ sub _remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+
+   $self->_remove_PID_file() if ($self->{PID_owner} || 0) == $PID;
+
    return;
 }
 
@@ -2467,7 +2513,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 6086
+# QueryAdvisorRules package 6734
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryAdvisorRules.pm
+#   trunk/common/t/QueryAdvisorRules.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2733,6 +2784,20 @@ sub get_rules {
          my ( $event ) = @_;
          if ( $event->{arg} =~ m/\bIN\s*\(\s*SELECT\b/gi ) {
             return pos $event->{arg};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'JOI.002',      # same table joined more than once
+      code => sub {
+         my ( $event ) = @_;
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my %tbl_cnt;
+         foreach my $tbl ( @$tbls ) {
+            return 0 if ++$tbl_cnt{lc $tbl->{name}} > 1;
          }
          return;
       },
@@ -4215,6 +4280,13 @@ severity: crit
 Mixing comma and ANSI joins.  Mixing comma joins and ANSI joins
 is confusing to humans, and the behavior differs between some
 MySQL versions.
+
+=item JOI.002
+
+severity: crit
+
+A table is joined twice.  The same table appears at least twice in the
+FROM clause.
 
 =item RES.001
 

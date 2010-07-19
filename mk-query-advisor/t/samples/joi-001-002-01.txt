@@ -1,0 +1,17 @@
+
+# Query ID 0x95718954DB8B7620 at byte 0
+# NOTE COL.001 SELECT *.
+# CRIT JOI.001 Mixing comma and ANSI joins.
+# CRIT JOI.002 A table is joined twice.
+SELECT * FROM   `wibble_chapter`
+   INNER JOIN `wibble_series` AS `wibble_chapter__series`
+   ON `wibble_chapter`.`series_id` = `wibble_chapter__series`.`id`,
+   `wibble_series`,
+   `auth_user`
+   WHERE  ( `wibble_chapter`.`chapnum` = 63.0
+      AND `wibble_chapter`.`status` = 1
+      AND `wibble_chapter__series`.`title` = 'bibble' )
+      AND `wibble_chapter`.`series_id` = `wibble_series`.`id`
+      AND `wibble_series`.`poster_id` = `auth_user`.`id`
+      ORDER  BY `wibble_chapter`.`create_time` DESC
+      LIMIT  1
