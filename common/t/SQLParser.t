@@ -9,11 +9,16 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 86;
+use Test::More tests => 87;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
 use SQLParser;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 my $sp = new SQLParser();
 
@@ -1370,6 +1375,59 @@ my @cases = (
          ],
       },
    },
+   {  name   => 'Table joined twice',
+      query  => "SELECT *
+                 FROM   `w_chapter`
+                 INNER JOIN `w_series` AS `w_chapter__series`
+                 ON `w_chapter`.`series_id` = `w_chapter__series`.`id`,
+                 `w_series`,
+                 `auth_user`
+                 WHERE `w_chapter`.`status` = 1",
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns => "* ",
+            from    => "`w_chapter` INNER JOIN `w_series` AS `w_chapter__series` ON `w_chapter`.`series_id` = `w_chapter__series`.`id`, `w_series`, `auth_user` ",
+            where   => "`w_chapter`.`status` = 1",
+         },
+         columns => [{name => '*'}],
+         from    => [
+          {
+            name => 'w_chapter'
+          },
+          {
+            alias => 'w_chapter__series',
+            explicit_alias => 1,
+            join => {
+              ansi => 1,
+              condition => 'on',
+              predicates => '`w_chapter`.`series_id` = `w_chapter__series`.`id` ',
+              to => 'w_chapter',
+              type => 'inner'
+            },
+            name => 'w_series'
+          },
+          {
+            join => {
+              ansi => 0,
+              to => 'w_series',
+              type => 'inner'
+            },
+            name => 'w_series'
+          },
+          {
+            join => {
+              ansi => 0,
+              to => 'w_series',
+              type => 'inner'
+            },
+            name => 'auth_user'
+          }
+         ],
+         where   => '`w_chapter`.`status` = 1',
+         unknown => undef,
+      },
+   },
 
    # ########################################################################
    # UPDATE
@@ -1414,7 +1472,7 @@ foreach my $test ( @cases ) {
       $struct,
       $test->{struct},
       $test->{name},
-   );
+   ) or print Dumper($struct);
 }
 
 # #############################################################################

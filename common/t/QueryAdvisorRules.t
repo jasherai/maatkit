@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 58;
+use Test::More tests => 59;
 
 use MaatkitTest;
 use PodParser;
@@ -320,7 +320,10 @@ my @cases = (
       advice => [qw(SUB.001)],
       pos    => [33],
    },
-   
+   {  name   => "JOI.002",
+      query  => "select c from `w_series` INNER JOIN `w_series` AS `w_chapter__series` ON `w_chapter`.`series_id` = `w_chapter__series`.`id`, `w_series`, `auth_user` where id=1",
+      advice => [qw(JOI.001 JOI.002)],
+   },
 );
 
 # Run the test cases.

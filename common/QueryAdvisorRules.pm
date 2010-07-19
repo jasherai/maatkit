@@ -300,6 +300,20 @@ sub get_rules {
          return;
       },
    },
+   {
+      id   => 'JOI.002',      # same table joined more than once
+      code => sub {
+         my ( $event ) = @_;
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my %tbl_cnt;
+         foreach my $tbl ( @$tbls ) {
+            return 0 if ++$tbl_cnt{lc $tbl->{name}} > 1;
+         }
+         return;
+      },
+   },
 };
 
 # Arguments:
