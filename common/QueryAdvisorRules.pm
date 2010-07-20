@@ -301,15 +301,38 @@ sub get_rules {
       },
    },
    {
-      id   => 'JOI.002',      # same table joined more than once
+      id   => 'JOI.002',      # table joined more than once, but not self-join
       code => sub {
          my ( $event ) = @_;
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          my %tbl_cnt;
-         foreach my $tbl ( @$tbls ) {
-            return 0 if ++$tbl_cnt{lc $tbl->{name}} > 1;
+         my $n_tbls = scalar @$tbls;
+
+         # To detect this rule we look for tables joined more than once
+         # (if cnt > 1) and via both an ansi and comma join.  This captures
+         # "t AS a JOIN t AS b a.foo=b.bar, t" but not the simple self-join
+         # "t AS a JOIN t AS b a.foo=b.bar" or cases where a table is joined
+         # to many other tables all via ansi joins or the implicit self-join
+         # (which we really can't detect) "t AS a, t AS b WHERE a.foo=b.bar".
+         # When a table shows up multiple times in ansi joins and then again
+         # in a comma join, the comma join is usually culprit of this rule.
+         for my $i ( 0..($n_tbls-1) ) {
+            my $tbl      = $tbls->[$i];
+            my $tbl_name = lc $tbl->{name};
+
+            $tbl_cnt{$tbl_name}->{cnt}++;
+            $tbl_cnt{$tbl_name}->{ansi_join}++
+               if $tbl->{join} && $tbl->{join}->{ansi};
+            $tbl_cnt{$tbl_name}->{comma_join}++
+               if $tbl->{join} && !$tbl->{join}->{ansi};
+
+            if ( $tbl_cnt{$tbl_name}->{cnt} > 1 ) {
+               return 0
+                  if    $tbl_cnt{$tbl_name}->{ansi_join}
+                     && $tbl_cnt{$tbl_name}->{comma_join};
+            }
          }
          return;
       },

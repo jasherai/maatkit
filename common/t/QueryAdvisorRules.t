@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 59;
+use Test::More tests => 62;
 
 use MaatkitTest;
 use PodParser;
@@ -321,8 +321,20 @@ my @cases = (
       pos    => [33],
    },
    {  name   => "JOI.002",
-      query  => "select c from `w_series` INNER JOIN `w_series` AS `w_chapter__series` ON `w_chapter`.`series_id` = `w_chapter__series`.`id`, `w_series`, `auth_user` where id=1",
+      query  => "select c from `w_chapter` INNER JOIN `w_series` AS `w_chapter__series` ON `w_chapter`.`series_id` = `w_chapter__series`.`id`, `w_series`, `auth_user` where id=1",
       advice => [qw(JOI.001 JOI.002)],
+   },
+   {  name   => "JOI.002 ansi self-join ok",
+      query  => "select c from employees as e join employees as s on e.supervisor = s.id where foo='bar'",
+      advice => [],
+   },
+   {  name   => "JOI.002 ansi self-join with other joins ok",
+      query  => "select c from employees as e join employees as s on e.supervisor = s.id join employees as r on s.id = r.foo where foo='bar'",
+      advice => [],
+   },
+   {  name   => "JOI.002 comma self-join ok",
+      query  => "select c from employees as e, employees as s where e.supervisor = s.id",
+      advice => [],
    },
 );
 
