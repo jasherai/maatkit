@@ -2513,7 +2513,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 6734
+# QueryAdvisorRules package 6746
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryAdvisorRules.pm
@@ -2789,15 +2789,30 @@ sub get_rules {
       },
    },
    {
-      id   => 'JOI.002',      # same table joined more than once
+      id   => 'JOI.002',      # table joined more than once, but not self-join
       code => sub {
          my ( $event ) = @_;
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          my %tbl_cnt;
-         foreach my $tbl ( @$tbls ) {
-            return 0 if ++$tbl_cnt{lc $tbl->{name}} > 1;
+         my $n_tbls = scalar @$tbls;
+
+         for my $i ( 0..($n_tbls-1) ) {
+            my $tbl      = $tbls->[$i];
+            my $tbl_name = lc $tbl->{name};
+
+            $tbl_cnt{$tbl_name}->{cnt}++;
+            $tbl_cnt{$tbl_name}->{ansi_join}++
+               if $tbl->{join} && $tbl->{join}->{ansi};
+            $tbl_cnt{$tbl_name}->{comma_join}++
+               if $tbl->{join} && !$tbl->{join}->{ansi};
+
+            if ( $tbl_cnt{$tbl_name}->{cnt} > 1 ) {
+               return 0
+                  if    $tbl_cnt{$tbl_name}->{ansi_join}
+                     && $tbl_cnt{$tbl_name}->{comma_join};
+            }
          }
          return;
       },
