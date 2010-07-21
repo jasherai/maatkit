@@ -25,6 +25,361 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
+# DSNParser package 6366
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package DSNParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+
+eval {
+   require DBI;
+};
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(opts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      opts => {}  # h, P, u, etc.  Should come from DSN OPTIONS section in POD.
+   };
+   foreach my $opt ( @{$args{opts}} ) {
+      if ( !$opt->{key} || !$opt->{desc} ) {
+         die "Invalid DSN option: ", Dumper($opt);
+      }
+      MKDEBUG && _d('DSN option:',
+         join(', ',
+            map { "$_=" . (defined $opt->{$_} ? ($opt->{$_} || '') : 'undef') }
+               keys %$opt
+         )
+      );
+      $self->{opts}->{$opt->{key}} = {
+         dsn  => $opt->{dsn},
+         desc => $opt->{desc},
+         copy => $opt->{copy} || 0,
+      };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      MKDEBUG && _d('Setting', $prop, 'property');
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   if ( !$dsn ) {
+      MKDEBUG && _d('No DSN to parse');
+      return;
+   }
+   MKDEBUG && _d('Parsing', $dsn);
+   $prev     ||= {};
+   $defaults ||= {};
+   my %given_props;
+   my %final_props;
+   my $opts = $self->{opts};
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      else {
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
+         $given_props{h} = $dsn_part;
+      }
+   }
+
+   foreach my $key ( keys %$opts ) {
+      MKDEBUG && _d('Finding value for', $key);
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts->{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
+      }
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
+      }
+   }
+
+   foreach my $key ( keys %given_props ) {
+      die "Unknown DSN option '$key' in '$dsn'.  For more details, "
+            . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+            . "for complete documentation."
+         unless exists $opts->{$key};
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing required DSN option '$key' in '$dsn'.  For more details, "
+               . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+               . "for complete documentation."
+            unless $final_props{$key};
+      }
+   }
+
+   return \%final_props;
+}
+
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
+}
+
+sub as_string {
+   my ( $self, $dsn, $props ) = @_;
+   return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
+      sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S A))
+         . ';mysql_read_default_group=client';
+   }
+   MKDEBUG && _d($dsn);
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit         => 0,
+      RaiseError         => 1,
+      PrintError         => 0,
+      ShowErrorStatement => 1,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
+   if ( !$have_dbi ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.  If DBI is not installed, try:\n"
+         . "  Debian/Ubuntu  apt-get install libdbi-perl\n"
+         . "  RHEL/CentOS    yum install perl-DBI\n"
+         . "  OpenSolaris    pgk install pkg:/SUNWpmdbi\n";
+
+   }
+
+   my $dbh;
+   my $tries = 2;
+   while ( !$dbh && $tries-- ) {
+      MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+         join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+
+      eval {
+         $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+
+         if ( $cxn_string =~ m/mysql/i ) {
+            my $sql;
+
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
+            $dbh->do($sql);
+
+            if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+               $sql = "/*!40101 SET NAMES $charset*/";
+               MKDEBUG && _d($dbh, ':', $sql);
+               $dbh->do($sql);
+               MKDEBUG && _d('Enabling charset for STDOUT');
+               if ( $charset eq 'utf8' ) {
+                  binmode(STDOUT, ':utf8')
+                     or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+               }
+               else {
+                  binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+               }
+            }
+
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
+               MKDEBUG && _d($dbh, ':', $sql);
+               $dbh->do($sql);
+            }
+         }
+      };
+      if ( !$dbh && $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
+            MKDEBUG && _d('Going to try again without utf8 support');
+            delete $defaults->{mysql_enable_utf8};
+         }
+         elsif ( $EVAL_ERROR =~ m/locate DBD\/mysql/i ) {
+            die "Cannot connect to MySQL because the Perl DBD::mysql module is "
+               . "not installed or not found.  Run 'perl -MDBD::mysql' to see "
+               . "the directories that Perl searches for DBD::mysql.  If "
+               . "DBD::mysql is not installed, try:\n"
+               . "  Debian/Ubuntu  apt-get install libdbd-mysql-perl\n"
+               . "  RHEL/CentOS    yum install perl-DBD-MySQL\n"
+               . "  OpenSolaris    pgk install pkg:/SUNWapu13dbd-mysql\n";
+         }
+         if ( !$tries ) {
+            die $EVAL_ERROR;
+         }
+      }
+   }
+
+   MKDEBUG && _d('DBH info: ',
+      $dbh,
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
+   );
+
+   return $dbh;
+}
+
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   MKDEBUG && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles( $handle, $level + 1 );
+   }
+}
+
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
 # OptionParser package 6322
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
@@ -975,6 +1330,83 @@ sub _d {
 
 # ###########################################################################
 # End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# Quoter package 6549
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package Quoter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class ) = @_;
+   return bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, $val ) = @_;
+
+   return 'NULL' unless defined $val;          # undef = NULL
+   return "''" if $val eq '';                  # blank string = ''
+   return $val if $val =~ m/0x[0-9a-fA-F]+$/;  # hex data
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
+}
+
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
 # ###########################################################################
 
 # ###########################################################################
@@ -3770,13 +4202,28 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
+   my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] FILE',
-      description => q{analyzes queries and advises on possible problems.},
+      prompt      => '[OPTION...] [FILE]',
+      description => q{analyzes queries and advises on possible problems.  }
+                   . q{Queries are given either by specifying slowlog files, }
+                   . q{--query, or --review.},
    );
    $o->get_specs();
    $o->get_opts();
+
+   my $dp = $o->DSNParser();
+   $dp->prop('set-vars', $o->get('set-vars'));
+
+   my $review_dsn = $o->get('review');
+
+   if ( !$o->get('help') ) {
+      if ( $review_dsn
+           && (!defined $review_dsn->{D} || !defined $review_dsn->{t}) ) {
+         $o->save_error('The --review DSN requires a D (database) and t'
+            . ' (table) part specifying the query review table');
+      }
+   }
 
    $o->usage_or_errors();
 
@@ -3801,15 +4248,30 @@ sub main {
    # #########################################################################
    # Make common modules.
    # #########################################################################
+   my $q  = new Quoter();
    my $qp = new QueryParser();
    my $qr = new QueryRewriter( QueryParser => $qp );
    my $sp = new SQLParser();
    my %common_modules = (
+      DSNParser     => $dp,
+      Quoter        => $q,
       OptionParser  => $o,
       QueryParser   => $qp,
       QueryRewriter => $qr,
       SQLParser     => $sp,
    );
+
+   # #########################################################################
+   # Connect to review table if necessary.
+   # #########################################################################
+   my $review_dbh;
+   if ( $review_dsn ) {
+      $review_dbh = get_cxn(
+         dsn  => $review_dsn,
+         opts => { AutoCommit => 1 },
+         %common_modules,
+      );
+   }
 
    # #########################################################################
    # Make pipeline.
@@ -3825,6 +4287,29 @@ sub main {
             cmd        => 'Query',
             arg        => $query,
             pos_in_log => 0,  # for compatibility
+         };
+      };
+   }
+   elsif ( $review_dbh ) {
+      my $where = $o->get('where');
+      my $sql   = "SELECT sample FROM "
+                . $q->quote($review_dsn->{D}, $review_dsn->{t})
+                . ($where ? " WHERE $where" : "");
+      MKDEBUG && _d($review_dbh, $sql);
+      my $queries = $review_dbh->selectall_arrayref($sql);
+
+      push @pipeline, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: review');
+         my $query = shift @$queries;
+         if ( !$query ) {
+            $args{oktorun}->(0) if $args{oktorun};
+            return;
+         }
+         return {
+            cmd        => 'Query',
+            arg        => $query->[0],
+            pos_in_log => 0,
          };
       };
    }
@@ -4079,6 +4564,25 @@ sub print_advice {
 
    return;
 }
+
+sub get_cxn {
+   my ( %args ) = @_;
+   my @required_args = qw(dsn OptionParser DSNParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dsn, $o, $dp) = @args{@required_args};
+
+   if ( $o->get('ask-pass') ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password: ");
+   }
+
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $args{opts});
+   $dbh->{FetchHashKeyName} = 'NAME_lc';
+   MKDEBUG && _d('Connected dbh', $dbh);
+   return $dbh;
+}
+
 
 # Catches signals so we can exit gracefully.
 sub sig_int {
@@ -4338,6 +4842,8 @@ LEFT OUTER JOIN, respectively.
 
 =head1 OPTIONS
 
+L<"--query"> and L<"--review"> are mutually exclusive.
+
 =over
 
 =item --ask-pass
@@ -4441,6 +4947,12 @@ report contains the description of the rules it matched, even if this
 information was previously displayed.  In compact mode, the repeated
 information is suppressed, and only the rule ID is displayed.
 
+=item --review
+
+type: DSN
+
+Analyze queries from this mk-query-digest query review table.
+
 =item --sample
 
 type: int; default: 1
@@ -4467,7 +4979,6 @@ type: Array
 The type of input to parse (default slowlog).  The permitted types are
 slowlog and genlog.
 
-
 =item --user
 
 short form: -u; type: string
@@ -4486,6 +4997,76 @@ L<"--report-format">.
 =item --version
 
 Show version and exit.
+
+=item --where
+
+type: string
+
+Apply this WHERE clause to the SELECT query on the L<"--review"> table.
+
+=back
+
+=head1 DSN OPTIONS
+
+These DSN options are used to create a DSN.  Each option is given like
+C<option=value>.  The options are case-sensitive, so P and p are not the
+same option.  There cannot be whitespace before or after the C<=> and
+if the value contains whitespace it must be quoted.  DSN options are
+comma-separated.  See the L<maatkit> manpage for full details.
+
+=over
+
+=item * A
+
+dsn: charset; copy: yes
+
+Default character set.
+
+=item * D
+
+dsn: database; copy: yes
+
+Database that contains the query review table.
+
+=item * F
+
+dsn: mysql_read_default_file; copy: yes
+
+Only read default options from the given file
+
+=item * h
+
+dsn: host; copy: yes
+
+Connect to host.
+
+=item * p
+
+dsn: password; copy: yes
+
+Password to use when connecting.
+
+=item * P
+
+dsn: port; copy: yes
+
+Port number to use for connection.
+
+=item * S
+
+dsn: mysql_socket; copy: yes
+
+Socket file to use for connection.
+
+=item * t
+
+Table to use as the query review table.
+
+=item * u
+
+dsn: user; copy: yes
+
+User for login if not current user.
 
 =back
 

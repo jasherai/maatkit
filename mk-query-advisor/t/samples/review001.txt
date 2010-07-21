@@ -1,0 +1,4 @@
+
+# Query ID 0x3ABB67240C860825 at byte 0
+# NOTE COL.001 SELECT *.
+select * from tbl where id=42 order by col
