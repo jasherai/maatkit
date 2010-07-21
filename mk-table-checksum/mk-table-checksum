@@ -5005,6 +5005,21 @@ sub save_tbl_to_checksum {
       my $create = $du->get_create_table($dbh, $q, $db, $tbl);
       my $struct = $tp->parse($create);
 
+      # If there's a --where clause and the user didn't specify a chunk index
+      # a chunk they want, then get MySQL's chosen index for the where clause
+      # and make it the preferred index.
+      # http://code.google.com/p/maatkit/issues/detail?id=378
+      if ( $final_o->get('where')
+           && !$final_o->get('chunk-column') && !$final_o->get('chunk-index') ) 
+      {
+         my ($mysql_chosen_index) = $tp->find_possible_keys(
+            $dbh, $db, $tbl, $q, $final_o->get('where'));
+         MKDEBUG && _d("Index chosen by MySQL for --where:",
+            $mysql_chosen_index);
+         $final_o->set('chunk-index', $mysql_chosen_index)
+            if $mysql_chosen_index;
+      }
+
       # Get the first chunkable column and index, taking into account
       # --chunk-column and --chunk-index.  If either of those options
       # is specified, get_first_chunkable_column() will try to satisfy

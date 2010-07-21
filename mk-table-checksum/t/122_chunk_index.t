@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 5;
+   plan tests => 6;
 }
 
 my $output;
@@ -109,6 +109,32 @@ issue_519 t     `y` >= '2006' AND `y` < '2009'
 issue_519 t     `y` >= '2009'
 ",
    "No index hint with --no-use-index"
+);
+
+
+# #############################################################################
+# Issue 378: Make mk-table-checksum try to use the index preferred by the
+# optimizer
+# #############################################################################
+
+# This issue affect --chunk-index.  Tool should auto-choose chunk-index
+# when --where is given but no explicit --chunk-index|column is given.
+# Given the --where clause, MySQL will prefer the y index.
+
+$output = output(
+   sub { mk_table_checksum::main(@args, "--where", "y > 2009") },
+);
+
+is(
+   $output,
+"issue_519 t     SELECT /*issue_519.t:1/5*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `i`, `y`, `t`, CONCAT(ISNULL(`t`)))) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_519`.`t` FORCE INDEX (`y`) WHERE (`y` = 0) AND ((y > 2009))
+issue_519 t     `y` = 0
+issue_519 t     `y` > 0 AND `y` < '2003'
+issue_519 t     `y` >= '2003' AND `y` < '2006'
+issue_519 t     `y` >= '2006' AND `y` < '2009'
+issue_519 t     `y` >= '2009'
+",
+   "Auto-chosen --chunk-index for --where (issue 378)"
 );
 
 # #############################################################################
