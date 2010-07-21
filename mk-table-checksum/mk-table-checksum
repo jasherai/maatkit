@@ -5026,39 +5026,34 @@ sub save_tbl_to_checksum {
 
       my @chunks = '1=1'; # Default.
       my $maxval = undef;
-      if ( $args{given_chunks} ) {
-         @chunks = @{$args{given_chunks}};
-      }
-      else {      
-         if ( $final_o->get('chunk-size') && $chunk_col ) {
-            my ($rows_per_chunk) = $ch->size_to_rows(
-               dbh        => $dbh,
-               db         => $db,
-               tbl        => $tbl,
-               chunk_size => $final_o->get('chunk-size'),
-            );
+      if ( $final_o->get('chunk-size') && $chunk_col ) {
+         my ($rows_per_chunk) = $ch->size_to_rows(
+            dbh        => $dbh,
+            db         => $db,
+            tbl        => $tbl,
+            chunk_size => $final_o->get('chunk-size'),
+         );
 
-            # Calculate chunks for this table.
-            my %params = $ch->get_range_statistics(
+         # Calculate chunks for this table.
+         my %params = $ch->get_range_statistics(
+            dbh        => $dbh,
+            db         => $db,
+            tbl        => $tbl,
+            chunk_col  => $chunk_col,
+            tbl_struct => $struct,
+         );
+         if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
+            @chunks = $ch->calculate_chunks(
                dbh        => $dbh,
                db         => $db,
                tbl        => $tbl,
-               chunk_col  => $chunk_col,
                tbl_struct => $struct,
+               chunk_col  => $chunk_col,
+               chunk_size => $rows_per_chunk,
+               zero_chunk => $final_o->get('zero-chunk'),
+               %params,
             );
-            if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
-               @chunks = $ch->calculate_chunks(
-                  dbh        => $dbh,
-                  db         => $db,
-                  tbl        => $tbl,
-                  tbl_struct => $struct,
-                  chunk_col  => $chunk_col,
-                  chunk_size => $rows_per_chunk,
-                  zero_chunk => $final_o->get('zero-chunk'),
-                  %params,
-               );
-               $maxval = $params{max};
-            }
+            $maxval = $params{max};
          }
       }
 
