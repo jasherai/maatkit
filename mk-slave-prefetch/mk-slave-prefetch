@@ -4139,7 +4139,20 @@ sub main {
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
    $dbh->{InactiveDestroy}  = 1;
    $dbh->{FetchHashKeyName} = 'NAME_lc';
-   $dbh->do('/*!40001 SET @@session.query_cache_type=OFF */');
+
+   # ########################################################################
+   # Disable query cache.
+   # http://code.google.com/p/maatkit/issues/detail?id=992
+   # ########################################################################
+   my $sql = "SHOW VARIABLES LIKE 'have_query_cache'";
+   MKDEBUG && _d($dbh, $sql);
+   if ( my $have_qcache = $dbh->selectrow_hashref($sql) ) {
+      if ( $have_qcache->{value} ) {
+         $sql = '/*!40001 SET @@session.query_cache_type=OFF */';
+         MKDEBUG && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
+   }
 
    # ########################################################################
    # Daemonize only after (potentially) asking for passwords.
