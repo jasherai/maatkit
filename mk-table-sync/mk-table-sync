@@ -9189,6 +9189,9 @@ It means the timeout was exceeded and you need to increase it.
 The default value of this option is influenced by other options.  To see what
 value is in effect, run with L<"--help">.
 
+To disable waiting entirely (except for locks), specify L<"--wait"> 0.  This
+helps when the slave is lagging on tables that are not being synced.
+
 =item --where
 
 type: string
