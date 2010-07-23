@@ -109,6 +109,8 @@ sub get_dbh_for {
       MKDEBUG && _d('Failed to get dbh for', $server, ':', $EVAL_ERROR);
       return 0;
    }
+   $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
+   $dbh->{FetchHashKeyName} = 'NAME_lc';
    return $dbh;
 }
 
