@@ -542,14 +542,173 @@ sub parse_identifier {
    *parse_tables = \&parse_from;
 }
 
-# For now this just chops a WHERE clause into its predicates.
-# We do not handled nested conditions, operator precedence, etc.
-# Predicates are separated by either AND or OR.  Since either
-# of those words can appear in an argval (e.g. c="me or him")
-# and AND is used with BETWEEN, we have to parse carefully.
+# This is not your traditional parser, but it works for simple to rather
+# complex cases, with a few noted and intentional limitations.  First,
+# the limitations:
+#
+#   * probably doesn't handle every possible operator (see $op)
+#   * doesn't care about grouping with parentheses
+#   * not "fully" tested because the possibilities are infinite
+#
+# It works in four steps; let's take this WHERE clause as an example:
+# 
+#   i="x and y" or j in ("and", "or") and x is not null or a between 1 and 10 and sz="this 'and' foo"
+#
+# The first step splits the string on and|or, the only two keywords I'm
+# aware of that join the separate predicates.  This step doesn't care if
+# and|or is really between two predicates or in a string or something else.
+# The second step is done while the first step is being done: check predicate
+# "fragments" (from step 1) for operators; save which ones have and don't
+# have at least one operator.  So the result of step 1 and 2 is:
+#
+#   PREDICATE FRAGMENT                OPERATOR
+#   ================================  ========
+#   i="x                              Y
+#   and y"                            N
+#   or j in ("                        Y
+#   and", "                           N
+#   or")                              N
+#   and x is not null                 Y
+#   or a between 1                    Y
+#   and 10                            N
+#   and sz="this '                    Y
+#   and' foo"                         N
+#
+# The third step runs through the list of pred frags backwards and joins
+# the current frag to the preceding frag if it does not have an operator.
+# The result is:
+# 
+#   PREDICATE FRAGMENT                OPERATOR
+#   ================================  ========
+#   i="x and y"                       Y
+#                                     N
+#   or j in ("and", "or")             Y
+#                                     N
+#                                     N
+#   and x is not null                 Y
+#   or a between 1 and 10             Y
+#                                     N
+#   and sz="this 'and' foo"           Y
+#                                     N
+#
+# The fourth step is similar but not shown: pred frags with unbalanced ' or "
+# are joined to the preceding pred frag.  This fixes cases where a pred frag
+# has multiple and|or in a string value; e.g. "foo and bar or dog".
+# 
+# After the pred frags are complete, the parts of these predicates are parsed
+# and returned in an arrayref of hashrefs like:
+#
+#   {
+#     predicate => 'and',
+#     column    => 'id',
+#     operator  => '>=',
+#     value     => '42',
+#   }
+#
+# Invalid predicates, or valid ones that we can't parse,  will cause
+# the sub to die.
 sub parse_where {
    my ( $self, $where ) = @_;
-   return $where;
+
+   # Not all the operators listed at
+   # http://dev.mysql.com/doc/refman/5.1/en/non-typed-operators.html
+   # are supported.  E.g. - (minus) is an op but does it ever show up
+   # in a where clause?  "col-3=2" is valid (where col=5), but we're
+   # not interested in weird stuff like that.
+   my $op = qr/
+      (?:\b|\s)
+      (?:
+          <=
+         |>=
+         |<>
+         |!=
+         |<
+         |>
+         |=
+         |(?:NOT\s)?LIKE
+         |IS(?:\sNOT\s)?
+         |(?:\sNOT\s)?BETWEEN
+         |(?:NOT\s)?IN
+      )
+   /xi;
+
+   # Step 1 and 2: split on and|or and look for operators.
+   my $offset = 0;
+   my $pred   = "";
+   my @pred;
+   my @has_op;
+   while ( $where =~ m/\b(and|or)\b/gi ) {
+      my $pos = (pos $where) - (length $1);  # pos at and|or, not after
+
+      $pred = substr $where, $offset, ($pos-$offset);
+      push @pred, $pred;
+      push @has_op, $pred =~ m/$op/io ? 1 : 0;
+
+      $offset = $pos;
+   }
+   # Final predicate fragment: last and|or to end of string.
+   $pred = substr $where, $offset;
+   push @pred, $pred;
+   push @has_op, $pred =~ m/$op/io ? 1 : 0;
+
+   # Step 3: join pred frags without ops to preceding pred frag.
+   my $n = scalar @pred - 1;
+   for my $i ( 1..$n ) {
+      $i   *= -1;
+      my $j = $i - 1;  # preceding pred frag
+      if ( !$has_op[$i] ) {
+         $pred[$j] .= $pred[$i];
+         $pred[$i]  = undef;
+      }
+   }
+
+   # Step 4: join pred frags with unbalanced ' or " to preceding pred frag.
+   for my $i ( 0..@pred ) {
+      $pred = $pred[$i];
+      next unless defined $pred;
+      my $n_single_quotes = ($pred =~ tr/'//);
+      my $n_double_quotes = ($pred =~ tr/"//);
+      if ( ($n_single_quotes % 2) || ($n_double_quotes % 2) ) {
+         $pred[$i]     .= $pred[$i + 1];
+         $pred[$i + 1]  = undef;
+      }
+   }
+
+   # Parse, clean up and save the complete predicates.
+   my @predicates;
+   foreach my $pred ( @pred ) {
+      next unless defined $pred;
+      $pred =~ s/^\s+//;
+      $pred =~ s/\s+$//;
+      my $conj;
+      if ( $pred =~ s/^(and|or)\s+//i ) {
+         $conj = lc $1;
+      }
+      my ($col, $op, $val) = $pred =~ m/^(.+?)($op)(.*)/; 
+      if ( !$col || !$op ) {
+         die "Failed to parse predicate: $pred";
+      }
+
+      # Remove whitespace and lowercase some keywords.
+      $col =~ s/\s+$//;
+      $col =~ s/^\(//;  # no unquoted column name begins with (
+      $op  =  lc $op;
+      $op  =~ s/^\s+//;
+      $op  =~ s/\s+$//;
+      $val =~ s/^\s+//;
+      # no unquoted value ends with ) except in(), any() and some()
+      $val =~ s/\)$// if $op !~ m/in/i && $val !~ m/^(?:any|some)/i;
+      $val =  lc $val if $val =~ m/NULL|TRUE|FALSE/i;
+
+      push @predicates, {
+         column    => $col,
+         operator  => $op,
+         value     => $val,
+         predicate => $conj,
+      };
+   }
+
+   return \@predicates;
 }
 
 sub parse_having {

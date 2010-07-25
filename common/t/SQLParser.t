@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 87;
+use Test::More tests => 97;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -25,8 +25,6 @@ my $sp = new SQLParser();
 # #############################################################################
 # WHERE where_condition
 # #############################################################################
-SKIP: {
-   skip 'Work in progress', 0;
 sub test_where {
    my ( $where, $struct ) = @_;
    is_deeply(
@@ -38,70 +36,219 @@ sub test_where {
 
 test_where(
    'i=1',
-   ['i=1'],
+   [
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+   ],
+);
+
+test_where(
+   'i=1 or j<10 or k>100 or l != 0',
+   [
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'or',
+         column    => 'j',
+         operator  => '<',
+         value     => '10',
+      },
+      {
+         predicate => 'or',
+         column    => 'k',
+         operator  => '>',
+         value     => '100',
+      },
+      {
+         predicate => 'or',
+         column    => 'l',
+         operator  => '!=',
+         value     => '0',
+      },
+   ],
 );
 
 test_where(
    'i=1 and foo="bar"',
    [
-      'i=1',
-      'foo="bar"',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => '=',
+         value     => '"bar"',
+      },
    ],
 );
 
 test_where(
    '(i=1 and foo="bar")',
    [
-      'i=1',
-      'foo="bar"',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => '=',
+         value     => '"bar"',
+      },
    ],
 );
 
 test_where(
    '(i=1) and (foo="bar")',
    [
-      'i=1',
-      'foo="bar"',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => '=',
+         value     => '"bar"',
+      },
    ],
 );
 
 test_where(
-   'i= 1 and foo ="bar" and j = 2',
+   'i= 1 and foo ="bar" or j = 2',
    [
-      'i= 1',
-      'foo ="bar"',
-      'j = 2',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => '=',
+         value     => '"bar"',
+      },
+      {
+         predicate => 'or',
+         column    => 'j',
+         operator  => '=',
+         value     => '2',
+      },
    ],
 );
 
 test_where(
    'i=1 and foo="i have spaces and a keyword!"',
    [
-      'i=1',
-      'foo="i have spaces and a keyword!"',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => '=',
+         value     => '"i have spaces and a keyword!"',
+      },
    ],
 );
 
 test_where(
-   'i="this and this" or j="that and that" and k="and or and" and z=1',
+   'i="this and this" or j<>"that and that" and k="and or and" and z=1',
    [
-      'i="this and"',
-      'j="and that"',
-      'k="and or oh my"',
-      'z=1',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '"this and this"',
+      },
+      {
+         predicate => 'or',
+         column    => 'j',
+         operator  => '<>',
+         value     => '"that and that"',
+      },
+      {
+         predicate => 'and',
+         column    => 'k',
+         operator  => '=',
+         value     => '"and or and"',
+      },
+      {
+         predicate => 'and',
+         column    => 'z',
+         operator  => '=',
+         value     => '1',
+      },
    ],
 );
 
 test_where(
-   'i="this and this" or j in ("and", "or") and x is not null',
+   'i="this and this" or j in ("and", "or") and x is not null or a between 1 and 10 and sz="the keyword \'and\' is in the middle or elsewhere hidden"',
    [
-      'i="this and"',
-      'j="and that"',
-      'k="and or oh my"',
-      'z=1',
+      {
+         predicate => undef,
+         column    => 'i',
+         operator  => '=',
+         value     => '"this and this"',
+      },
+      {
+         predicate => 'or',
+         column    => 'j',
+         operator  => 'in',
+         value     => '("and", "or")',
+      },
+      {
+         predicate => 'and',
+         column    => 'x',
+         operator  => 'is not',
+         value     => 'null',
+      },
+      {
+         predicate => 'or',
+         column    => 'a',
+         operator  => 'between',
+         value     => '1 and 10',
+      },
+      {
+         predicate => 'and',
+         column    => 'sz',
+         operator  => '=',
+         value     => '"the keyword \'and\' is in the middle or elsewhere hidden"',
+      },
    ],
 );
-}
+
+test_where(
+   "(`ga_announcement`.`disabled` = 0)",
+   [
+      {
+         predicate => undef,
+         column    => '`ga_announcement`.`disabled`',
+         operator  => '=',
+         value     => '0',
+      },
+   ]
+);
 
 # #############################################################################
 # Whitespace and comments.
@@ -801,7 +948,14 @@ my @cases = (
             where => 'id=1',
          },
          from    => [ { name => 'tbl', } ],
-         where   => 'id=1',
+         where   => [
+            {
+               predicate => undef,
+               column    => 'id',
+               operator  => '=',
+               value     => '1',
+            },
+         ],
          unknown => undef,
       },
    },
@@ -843,7 +997,14 @@ my @cases = (
             limit => '3',
          },
          from    => [ { name => 'tbl', } ],
-         where   => 'id=1 ',
+         where   => [
+            {
+               predicate => undef,
+               column    => 'id',
+               operator  => '=',
+               value     => '1',
+            },
+         ],
          limit   => {
             row_count => 3,
          },
@@ -860,7 +1021,14 @@ my @cases = (
             order_by => 'id',
          },
          from     => [ { name => 'tbl', } ],
-         where    => 'id=1 ',
+         where   => [
+            {
+               predicate => undef,
+               column    => 'id',
+               operator  => '=',
+               value     => '1',
+            },
+         ],
          order_by => [qw(id)],
          unknown  => undef,
       },
@@ -876,7 +1044,14 @@ my @cases = (
             limit    => '1 OFFSET 3',
          },
          from    => [ { name => 'tbl', } ],
-         where   => 'id=1 ',
+         where   => [
+            {
+               predicate => undef,
+               column    => 'id',
+               operator  => '=',
+               value     => '1',
+            },
+         ],
          order_by=> ['id ASC'],
          limit   => {
             row_count       => 1,
@@ -993,7 +1168,14 @@ my @cases = (
             },
             columns => [ { name => 'id' } ],
             from    => [ { name => 'tbl2', } ],
-            where   => 'id > 100',
+            where   => [
+               {
+                  predicate => undef,
+                  column    => 'id',
+                  operator  => '>',
+                  value     => '100',
+               },
+            ],
             unknown => undef,
          },
          unknown      => undef,
@@ -1132,7 +1314,20 @@ my @cases = (
                },
             },
          ],
-         where    => 't2.col IS NOT NULL AND t2.name = "bob" ',
+         where    => [
+            {
+               predicate => undef,
+               column    => 't2.col',
+               operator  => 'is not',
+               value     => 'null',
+            },
+            {
+               predicate => 'and',
+               column    => 't2.name',
+               operator  => '=',
+               value     => '"bob"',
+            },
+         ],
          group_by => { columns => [qw(a b)], },
          order_by => ['t2.name ASC'],
          limit    => {
@@ -1192,7 +1387,14 @@ my @cases = (
                },
             },
          ],
-         where    => 't2.col IS NOT NULL',
+         where    => [
+            {
+               predicate => undef,
+               column    => 't2.col',
+               operator  => 'is not',
+               value     => 'null',
+            },
+         ],
          unknown => undef,
       },
    },
@@ -1224,22 +1426,36 @@ my @cases = (
          },
          columns  => [ { name => '*' } ],
          from     => [ { name => 'tbl' } ],
-         where    => 'ip="127.0.0.1"',
+         where    => [
+            {
+               predicate => undef,
+               column    => 'ip',
+               operator  => '=',
+               value     => '"127.0.0.1"',
+            },
+         ],
          unknown  => undef,
       },
    },
    { name    => 'SELECT with simple subquery',
-     query   => 'select * from t where id in(select col from t2) where i=1',
+     query   => 'select * from t where id in(select col from t2)',
      struct  => {
          type    => 'select',
          clauses => { 
             columns => '* ',
             from    => 't ',
-            where   => 'i=1',
+            where   => 'id in(__SQ0__)',
          },
          columns    => [ { name => '*' } ],
          from       => [ { name => 't' } ],
-         where      => 'i=1',
+         where      => [
+            {
+               predicate => undef,
+               column    => 'id',
+               operator  => 'in',
+               value     => '(__SQ0__)',
+            },
+         ],
          unknown    => undef,
          subqueries => [
             {
@@ -1310,7 +1526,26 @@ my @cases = (
                },
             },
          ],
-         where      => 'c1 > any(__SQ1__) and s in ("select", "tricky") or s <> "select" ',
+         where      => [
+            {
+               predicate => undef,
+               column    => 'c1',
+               operator  => '>',
+               value     => 'any(__SQ1__)',
+            },
+            {
+               predicate => 'and',
+               column    => 's',
+               operator  => 'in',
+               value     => '("select", "tricky")',
+            },
+            {
+               predicate => 'or',
+               column    => 's',
+               operator  => '<>',
+               value     => '"select"',
+            },
+         ],
          limit      => { row_count => 10 },
          group_by   => { columns => ['1'], },
          unknown    => undef,
@@ -1328,7 +1563,14 @@ my @cases = (
                query   => 'select max(col) from l where col<100',
                type    => 'select',
                unknown => undef,
-               where   => 'col<100'
+               where   => [
+                  {
+                     predicate => undef,
+                     column    => 'col',
+                     operator  => '<',
+                     value     => '100',
+                  },
+               ],
             },
             {
                clauses  => {
@@ -1344,7 +1586,14 @@ my @cases = (
                query    => 'select col2 as z from sqt2 zz where sqtc<__SQ0__',
                type     => 'select',
                unknown  => undef,
-               where    => 'sqtc<__SQ0__'
+               where    => [
+                  {
+                     predicate => undef,
+                     column    => 'sqtc',
+                     operator  => '<',
+                     value     => '__SQ0__',
+                  },
+               ],
             },
             {
                clauses  => {
@@ -1370,7 +1619,14 @@ my @cases = (
                query    => 'select foo from bar where id=1',
                type     => 'select',
                unknown  => undef,
-               where    => 'id=1'
+               where    => [
+                  {
+                     predicate => undef,
+                     column    => 'id',
+                     operator  => '=',
+                     value     => '1',
+                  },
+               ],
             },
          ],
       },
@@ -1424,7 +1680,14 @@ my @cases = (
             name => 'auth_user'
           }
          ],
-         where   => '`w_chapter`.`status` = 1',
+         where   => [
+            {
+               predicate => undef,
+               column    => '`w_chapter`.`status`',
+               operator  => '=',
+               value     => '1',
+            },
+         ],
          unknown => undef,
       },
    },
@@ -1458,7 +1721,14 @@ my @cases = (
          },
          tables   => [ { name => 'tbl', alias => 't', explicit_alias => 1, } ],
          set      => ['foo=NULL'],
-         where    => 'foo IS NOT NULL ',
+         where    => [
+            {
+               predicate => undef,
+               column    => 'foo',
+               operator  => 'is not',
+               value     => 'null',
+            },
+         ],
          order_by => ['id'],
          limit    => { row_count => 10 },
          unknown => undef,
