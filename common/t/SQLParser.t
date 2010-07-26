@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 97;
+use Test::More tests => 100;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -246,6 +246,54 @@ test_where(
          column    => '`ga_announcement`.`disabled`',
          operator  => '=',
          value     => '0',
+      },
+   ]
+);
+
+test_where(
+   "1",
+   [
+      {
+         predicate => undef,
+         column    => undef,
+         operator  => undef,
+         value     => '1',
+      },
+   ]
+);
+
+test_where(
+   "1 and foo not like '%bar%'",
+   [
+      {
+         predicate => undef,
+         column    => undef,
+         operator  => undef,
+         value     => '1',
+      },
+      {
+         predicate => 'and',
+         column    => 'foo',
+         operator  => 'not like',
+         value     => '\'%bar%\'',
+      },
+   ]
+);
+
+test_where(
+   "TRUE or FALSE",
+   [
+      {
+         predicate => undef,
+         column    => undef,
+         operator  => undef,
+         value     => 'true',
+      },
+      {
+         predicate => 'or',
+         column    => undef,
+         operator  => undef,
+         value     => 'false',
       },
    ]
 );

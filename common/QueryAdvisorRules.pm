@@ -169,6 +169,27 @@ sub get_rules {
       },
    },
    {
+      id   => 'CLA.005',      # ORDER BY col where col=<constant>
+      code => sub {
+         my ( $event ) = @_;
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $orderby;
+         my $where   = $event->{query_struct}->{where};
+         return unless $where;
+         my %orderby_col = map {
+            my ($col) = lc $_;
+            $col =~ s/\s+(?:asc|desc)$//;
+            $col => 1;
+         } @$orderby;
+         foreach my $pred ( @$where ) {
+            my $val = $pred->{value};
+            next unless $val;
+            return 0 if $val =~ m/^\d+$/ && $orderby_col{lc $pred->{column}};
+         }
+         return;
+      },
+   },
+   {
       id   => 'COL.001',      # SELECT *
       code => sub {
          my ( $event ) = @_;

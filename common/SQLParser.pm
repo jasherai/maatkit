@@ -609,6 +609,8 @@ sub parse_identifier {
 # the sub to die.
 sub parse_where {
    my ( $self, $where ) = @_;
+   return unless $where;
+   MKDEBUG && _d("Parsing WHERE clause:", $where);
 
    # Not all the operators listed at
    # http://dev.mysql.com/doc/refman/5.1/en/non-typed-operators.html
@@ -650,17 +652,31 @@ sub parse_where {
    $pred = substr $where, $offset;
    push @pred, $pred;
    push @has_op, $pred =~ m/$op/io ? 1 : 0;
+   MKDEBUG && _d("Predicate fragments:", Dumper(\@pred));
+   MKDEBUG && _d("Predicate frags with operators:", @has_op);
 
    # Step 3: join pred frags without ops to preceding pred frag.
    my $n = scalar @pred - 1;
    for my $i ( 1..$n ) {
       $i   *= -1;
       my $j = $i - 1;  # preceding pred frag
+
+      # Two constants in a row, like "TRUE or FALSE", are a special case.
+      # The current pred ($i) will not have an op but in this case it's
+      # not a continuation of the preceding pred ($j) so we don't want to
+      # join them.  And there's a special case within this special case:
+      # "BETWEEN 1 AND 10".  _is_constant() strips leading AND or OR so
+      # 10 is going to look like an independent constant but really it's
+      # part of the BETWEEN op, so this whole special check is skipped
+      # if the preceding pred contains BETWEEN.  Yes, parsing SQL is tricky.
+      next if $pred[$j] !~ m/\s+between\s+/i  && $self->_is_constant($pred[$i]);
+
       if ( !$has_op[$i] ) {
          $pred[$j] .= $pred[$i];
          $pred[$i]  = undef;
       }
    }
+   MKDEBUG && _d("Predicate fragments joined:", Dumper(\@pred));
 
    # Step 4: join pred frags with unbalanced ' or " to preceding pred frag.
    for my $i ( 0..@pred ) {
@@ -673,6 +689,7 @@ sub parse_where {
          $pred[$i + 1]  = undef;
       }
    }
+   MKDEBUG && _d("Predicate fragments balanced:", Dumper(\@pred));
 
    # Parse, clean up and save the complete predicates.
    my @predicates;
@@ -686,18 +703,27 @@ sub parse_where {
       }
       my ($col, $op, $val) = $pred =~ m/^(.+?)($op)(.*)/; 
       if ( !$col || !$op ) {
-         die "Failed to parse predicate: $pred";
+         if ( $self->_is_constant($pred) ) {
+            $val = lc $pred;
+         }
+         else {
+            die "Failed to parse predicate: $pred";
+         }
       }
 
       # Remove whitespace and lowercase some keywords.
-      $col =~ s/\s+$//;
-      $col =~ s/^\(//;  # no unquoted column name begins with (
-      $op  =  lc $op;
-      $op  =~ s/^\s+//;
-      $op  =~ s/\s+$//;
+      if ( $col ) {
+         $col =~ s/\s+$//;
+         $col =~ s/^\(//;  # no unquoted column name begins with (
+      }
+      if ( $op ) {
+         $op  =  lc $op;
+         $op  =~ s/^\s+//;
+         $op  =~ s/\s+$//;
+      }
       $val =~ s/^\s+//;
       # no unquoted value ends with ) except in(), any() and some()
-      $val =~ s/\)$// if $op !~ m/in/i && $val !~ m/^(?:any|some)/i;
+      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^(?:any|some)/i;
       $val =  lc $val if $val =~ m/NULL|TRUE|FALSE/i;
 
       push @predicates, {
@@ -709,6 +735,16 @@ sub parse_where {
    }
 
    return \@predicates;
+}
+
+# Returns true if the value is a constant.  Constants are TRUE, FALSE,
+# and any signed number.  A leading AND or OR keyword is removed first.
+sub _is_constant {
+   my ( $self, $val ) = @_;
+   return 0 unless defined $val;
+   $val =~ s/^\s*(?:and|or)\s+//;
+   return
+      $val =~ m/^\s*(?:TRUE|FALSE)\s*$/i || $val =~ m/^\s*-?\d+\s*$/ ? 1 : 0;
 }
 
 sub parse_having {
