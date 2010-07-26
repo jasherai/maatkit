@@ -457,7 +457,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6762
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -552,7 +552,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -1650,7 +1650,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6535
+# QueryRewriter package 6767
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -1908,6 +1908,9 @@ sub distill {
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
