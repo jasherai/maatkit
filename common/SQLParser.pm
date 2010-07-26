@@ -722,8 +722,8 @@ sub parse_where {
          $op  =~ s/\s+$//;
       }
       $val =~ s/^\s+//;
-      # no unquoted value ends with ) except in(), any() and some()
-      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^(?:any|some)/i;
+      # no unquoted value ends with ) except <function>(...)
+      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^\w+\([^\)]+\)$/;
       $val =  lc $val if $val =~ m/NULL|TRUE|FALSE/i;
 
       push @predicates, {

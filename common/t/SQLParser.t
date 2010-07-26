@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 100;
+use Test::More tests => 102;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -294,6 +294,30 @@ test_where(
          column    => undef,
          operator  => undef,
          value     => 'false',
+      },
+   ]
+);
+
+test_where(
+   "TO_DAYS(column) < TO_DAYS(NOW()) - 5",
+   [
+      {
+         predicate => undef,
+         column    => "TO_DAYS(column)",
+         operator  => '<',
+         value     => 'TO_DAYS(NOW()) - 5',
+      },
+   ]
+);
+
+test_where(
+   "id <> CONV(ff, 16, 10)",
+   [
+      {
+         predicate => undef,
+         column    => 'id',
+         operator  => '<>',
+         value     => 'CONV(ff, 16, 10)',
       },
    ]
 );
