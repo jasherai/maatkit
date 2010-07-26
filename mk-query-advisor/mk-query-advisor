@@ -380,7 +380,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6762
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -475,7 +475,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -2945,7 +2945,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 6746
+# QueryAdvisorRules package 6764
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryAdvisorRules.pm
@@ -3091,6 +3091,27 @@ sub get_rules {
          return unless $groupby;
          foreach my $col ( @{$groupby->{columns}} ) {
             return 0 if $col =~ m/^\d+\b/;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'CLA.005',      # ORDER BY col where col=<constant>
+      code => sub {
+         my ( $event ) = @_;
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $orderby;
+         my $where   = $event->{query_struct}->{where};
+         return unless $where;
+         my %orderby_col = map {
+            my ($col) = lc $_;
+            $col =~ s/\s+(?:asc|desc)$//;
+            $col => 1;
+         } @$orderby;
+         foreach my $pred ( @$where ) {
+            my $val = $pred->{value};
+            next unless $val;
+            return 0 if $val =~ m/^\d+$/ && $orderby_col{lc $pred->{column}};
          }
          return;
       },
@@ -3572,7 +3593,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 5945
+# SQLParser package 6764
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SQLParser.pm
+#   trunk/common/t/SQLParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SQLParser;
 
@@ -3995,7 +4021,120 @@ sub parse_identifier {
 
 sub parse_where {
    my ( $self, $where ) = @_;
-   return $where;
+   return unless $where;
+   MKDEBUG && _d("Parsing WHERE clause:", $where);
+
+   my $op = qr/
+      (?:\b|\s)
+      (?:
+          <=
+         |>=
+         |<>
+         |!=
+         |<
+         |>
+         |=
+         |(?:NOT\s)?LIKE
+         |IS(?:\sNOT\s)?
+         |(?:\sNOT\s)?BETWEEN
+         |(?:NOT\s)?IN
+      )
+   /xi;
+
+   my $offset = 0;
+   my $pred   = "";
+   my @pred;
+   my @has_op;
+   while ( $where =~ m/\b(and|or)\b/gi ) {
+      my $pos = (pos $where) - (length $1);  # pos at and|or, not after
+
+      $pred = substr $where, $offset, ($pos-$offset);
+      push @pred, $pred;
+      push @has_op, $pred =~ m/$op/io ? 1 : 0;
+
+      $offset = $pos;
+   }
+   $pred = substr $where, $offset;
+   push @pred, $pred;
+   push @has_op, $pred =~ m/$op/io ? 1 : 0;
+   MKDEBUG && _d("Predicate fragments:", Dumper(\@pred));
+   MKDEBUG && _d("Predicate frags with operators:", @has_op);
+
+   my $n = scalar @pred - 1;
+   for my $i ( 1..$n ) {
+      $i   *= -1;
+      my $j = $i - 1;  # preceding pred frag
+
+      next if $pred[$j] !~ m/\s+between\s+/i  && $self->_is_constant($pred[$i]);
+
+      if ( !$has_op[$i] ) {
+         $pred[$j] .= $pred[$i];
+         $pred[$i]  = undef;
+      }
+   }
+   MKDEBUG && _d("Predicate fragments joined:", Dumper(\@pred));
+
+   for my $i ( 0..@pred ) {
+      $pred = $pred[$i];
+      next unless defined $pred;
+      my $n_single_quotes = ($pred =~ tr/'//);
+      my $n_double_quotes = ($pred =~ tr/"//);
+      if ( ($n_single_quotes % 2) || ($n_double_quotes % 2) ) {
+         $pred[$i]     .= $pred[$i + 1];
+         $pred[$i + 1]  = undef;
+      }
+   }
+   MKDEBUG && _d("Predicate fragments balanced:", Dumper(\@pred));
+
+   my @predicates;
+   foreach my $pred ( @pred ) {
+      next unless defined $pred;
+      $pred =~ s/^\s+//;
+      $pred =~ s/\s+$//;
+      my $conj;
+      if ( $pred =~ s/^(and|or)\s+//i ) {
+         $conj = lc $1;
+      }
+      my ($col, $op, $val) = $pred =~ m/^(.+?)($op)(.*)/; 
+      if ( !$col || !$op ) {
+         if ( $self->_is_constant($pred) ) {
+            $val = lc $pred;
+         }
+         else {
+            die "Failed to parse predicate: $pred";
+         }
+      }
+
+      if ( $col ) {
+         $col =~ s/\s+$//;
+         $col =~ s/^\(//;  # no unquoted column name begins with (
+      }
+      if ( $op ) {
+         $op  =  lc $op;
+         $op  =~ s/^\s+//;
+         $op  =~ s/\s+$//;
+      }
+      $val =~ s/^\s+//;
+      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^(?:any|some)/i;
+      $val =  lc $val if $val =~ m/NULL|TRUE|FALSE/i;
+
+      push @predicates, {
+         column    => $col,
+         operator  => $op,
+         value     => $val,
+         predicate => $conj,
+      };
+   }
+
+   return \@predicates;
+}
+
+sub _is_constant {
+   my ( $self, $val ) = @_;
+   return 0 unless defined $val;
+   $val =~ s/^\s*(?:and|or)\s+//;
+   return
+      $val =~ m/^\s*(?:TRUE|FALSE)\s*$/i || $val =~ m/^\s*-?\d+\s*$/ ? 1 : 0;
 }
 
 sub parse_having {
@@ -4749,6 +4888,12 @@ severity: note
 Ordinal in the GROUP BY clause.  Using a number in the GROUP BY clause,
 instead of an expression or column name, can cause problems if the
 query is changed.
+
+=item CLA.005
+
+severity: warn
+
+ORDER BY constant column.
 
 =item COL.001
 
