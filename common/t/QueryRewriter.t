@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 256;
+use Test::More tests => 257;
 
 use QueryRewriter;
 use QueryParser;
@@ -613,6 +613,14 @@ is(
    $qr->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
    'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
    'Do not select * from a join',
+);
+
+# do not convert subqueries ###################################################
+
+is(
+   $qr->convert_to_select("UPDATE mybbl_MBMessage SET groupId = (select groupId from Group_ where name = 'Guest')"),
+   undef,
+   'Do not convert subquery'
 );
 
 # #############################################################################

@@ -368,6 +368,13 @@ sub distill {
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   # Trying to convert statments that have subqueries as values to column
+   # assignments doesn't work.  E.g. SET col=(SELECT ...).  But subqueries
+   # do work in other cases like JOIN (SELECT ...).
+   # http://code.google.com/p/maatkit/issues/detail?id=347
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
