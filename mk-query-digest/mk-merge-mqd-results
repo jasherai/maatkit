@@ -4498,7 +4498,7 @@ sub _d {
 # Check at the end of this package for the call to main() which actually runs
 # the program.
 # ###########################################################################
-package merge_mqd_results;
+package mk_merge_mqd_results;
 
 use strict;
 use warnings FATAL => 'all';

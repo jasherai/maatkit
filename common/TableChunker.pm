@@ -17,27 +17,31 @@
 # ###########################################################################
 # TableChunker package $Revision$
 # ###########################################################################
-package TableChunker;
 
-# This package helps figure out how to "chunk" a table.  Chunk are
+# Package: TableChunker
+# TableChunker helps determine how to "chunk" a table.  Chunk are
 # pre-determined ranges of rows defined by boundary values (sometimes also
 # called endpoints) on numeric or numeric-like columns, including date/time
-# types.  Any numeric column type that MySQL can do positional comparisons (<,
-# <=, >, >=) on works.  Chunking over character data is not supported yet (but
-# see issue 568).  Usually chunks range over all rows in a table but sometimes
-# they only range over a subset of rows if an optional where arg is passed to
-# various subs.  In either case a chunk is like "`col` >= 5 AND `col` < 10".  If
+# types.  Any numeric column type that MySQL can do positional comparisons
+# (<, <=, >, >=) on works.  Chunking on character data is not supported yet
+# (but see <issue 568 at http://code.google.com/p/maatkit/issues/detail?id=568>).
+# 
+# Usually chunks range over all rows in a table but sometimes they only
+# range over a subset of rows if an optional where arg is passed to various
+# subs.  In either case a chunk is like "`col` >= 5 AND `col` < 10".  If
 # col is of type int and is unique, then that chunk ranges over up to 5 rows.
+#
 # Chunks are included in WHERE clauses by various tools to do work on discrete
 # chunks of the table instead of trying to work on the entire table at once.
 # Chunks do not overlap and their size is configurable via the chunk_size arg
-# passed to several subs.  The chunk_size can be a number of rows or a size like
-# 1M, in which case it's in estimated bytes of data.  Real chunk sizes are
-# usually close to the requested chunk_size but unless the optional exact arg is
-# passed the real chunk sizes are approximate.  Sometimes the distribution of
-# values on the chunk colun can skew chunking.  If, for example, col has values
-# 0, 100, 101, ... then the zero value skews chunking.  The zero_chunk arg
-# handles this.
+# passed to several subs.  The chunk_size can be a number of rows or a size
+# like 1M, in which case it's in estimated bytes of data.  Real chunk sizes
+# are usually close to the requested chunk_size but unless the optional exact
+# arg is assed the real chunk sizes are approximate.  Sometimes the
+# distribution of values on the chunk colun can skew chunking.  If, for
+# example, col has values 0, 100, 101, ... then the zero value skews chunking.
+# The zero_chunk arg handles this.
+package TableChunker;
 
 use strict;
 use warnings FATAL => 'all';
@@ -52,6 +56,21 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
+my %real_types = map { $_ => 1 }
+   qw(decimal double float);
+
+# Sub: new
+#
+# Parameters:
+#   $class - TableChunker (automatic)
+#   %args  - Arguments
+#
+# Required Arguments:
+#   Quoter    - <Quoter> object
+#   MySQLDump - <MySQLDump> object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter MySQLDump) ) {
@@ -61,19 +80,28 @@ sub new {
    return bless $self, $class;
 }
 
-my $EPOCH      = '1970-01-01';
-my %int_types  = map { $_ => 1 }
-   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
-my %real_types = map { $_ => 1 }
-   qw(decimal double float);
-
-# Arguments:
-#   * table_struct    Hashref returned from TableParser::parse
-#   * exact           (optional) bool: Try to support exact chunk sizes
-#                     (may still chunk fuzzily)
-# Returns an array:
-#   whether the table can be chunked exactly, if requested (zero otherwise)
-#   arrayref of columns that support chunking
+# Sub: find_chunk_columns
+#   Find chunkable columns.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   table_struct - Hashref returned from <TableParser::parse()>
+#
+# Optional Arguments:
+#   exact - bool: Try to support exact chunk sizes (may still chunk fuzzily)
+#
+# Returns:
+#   Array: whether the table can be chunked exactly if requested (zero
+#   otherwise), arrayref of columns that support chunking.  Example:
+#   (start code)
+#   1,
+#   [
+#     { column => 'id', index => 'PRIMARY' },
+#     { column => 'i',  index => 'i_idx'   },
+#   ]
+#   (end code)
 sub find_chunk_columns {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
@@ -146,27 +174,42 @@ sub find_chunk_columns {
    return ($can_chunk_exact, @result);
 }
 
-# Calculate chunks for the given range statistics.  Args min, max and
-# rows_in_range are returned from get_range_statistics() which is usually
-# called before this sub.  Min and max are expected to be valid values
-# (NULL is valid).
-# Arguments:
-#   * dbh            dbh
-#   * db             scalar: database name
-#   * tbl            scalar: table name
-#   * tbl_struct     hashref: retval of TableParser::parse()
-#   * chunk_col      scalar: column name to chunk on
-#   * min            scalar: min col value
-#   * max            scalar: max col value
-#   * rows_in_range  scalar: number of rows to chunk
-#   * chunk_size     scalar: requested size of each chunk
-#   * zero_chunk     bool: add an extra chunk for zero values (0, 00:00, etc.)
-# Optional arguments:
-#   * exact          bool: use exact chunk_size if true else use approximates
-#   * tries          scalar: fetch up to this many rows to find a non-zero value
-# Returns a list of WHERE predicates like "`col` >= '10' AND `col` < '20'",
-# one for each chunk.  All values are single-quoted due to
-# http://code.google.com/p/maatkit/issues/detail?id=1002
+# Sub: calculate_chunks
+#   Calculate chunks for the given range statistics.  Args min, max and
+#   rows_in_range are returned from get_range_statistics() which is usually
+#   called before this sub.  Min and max are expected to be valid values
+#   (NULL is valid).
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh           - dbh
+#   db            - database name
+#   tbl           - table name
+#   tbl_struct    - retval of <TableParser::parse()>
+#   chunk_col     - column name to chunk on
+#   min           - min col value, from <TableChunker::get_range_statistics()>
+#   max           - max col value, from <TableChunker::get_range_statistics()>
+#   rows_in_range - number of rows to chunk, from
+#                   <TableChunker::get_range_statistics()>
+#   chunk_size    - requested size of each chunk
+#   zero_chunk    - add an extra chunk for zero values? (0, 00:00, etc.)
+#
+# Optional Arguments:
+#   exact - Use exact chunk_size? Use approximates is not.
+#   tries - Fetch up to this many rows to find a non-zero value
+#
+# Returns:
+#   Array of WHERE predicates like "`col` >= '10' AND `col` < '20'",
+#   one for each chunk.  All values are single-quoted due to <issue 1002 at
+#   http://code.google.com/p/maatkit/issues/detail?id=1002>.  Example:
+#   (start code)
+#   `film_id` < '30',
+#   `film_id` >= '30' AND `film_id` < '60',
+#   `film_id` >= '60' AND `film_id` < '90',
+#   `film_id` >= '90',
+#   (end code)
 sub calculate_chunks {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);

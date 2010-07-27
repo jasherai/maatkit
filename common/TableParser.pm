@@ -17,6 +17,21 @@
 # ###########################################################################
 # TableParser package $Revision$
 # ###########################################################################
+
+# Package: TableParser
+# TableParser parses SHOW CREATE TABLE.
+#
+# Several subs in this module require either a $ddl or $tbl param.
+#
+# $ddl is the return value from MySQLDump::get_create_table() (which returns
+# the output of SHOW CREATE TALBE).
+#
+# $tbl is the return value from the sub below, parse().
+#
+# And some subs have an optional $opts param which is a hashref of options.
+# $opts->{mysql_version} is typically used, which is the return value from
+# VersionParser::parser() (which returns a zero-padded MySQL version,
+# e.g. 004001000 for 4.1.0).
 package TableParser;
 
 use strict;
@@ -29,7 +44,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(Quoter);
@@ -40,18 +54,11 @@ sub new {
    return bless $self, $class;
 }
 
-# Several subs in this module require either a $ddl or $tbl param.
+# Sub: parse
+#   Parse SHOW CREATE TABLE.
 #
-# $ddl is the return value from MySQLDump::get_create_table() (which returns
-# the output of SHOW CREATE TALBE).
-#
-# $tbl is the return value from the sub below, parse().
-#
-# And some subs have an optional $opts param which is a hashref of options.
-# $opts->{mysql_version} is typically used, which is the return value from
-# VersionParser::parser() (which returns a zero-padded MySQL version,
-# e.g. 004001000 for 4.1.0).
-
+# Returns:
+#   Hashref of table structure
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
    return unless $ddl;

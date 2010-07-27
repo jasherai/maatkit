@@ -1,0 +1,44 @@
+#!/usr/bin/env perl
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+my $trunk = $ENV{MAATKIT_WORKING_COPY};
+die "MAATKIT_WORKING_COPY environment variable is not set." unless $trunk;
+
+my $tool_name = shift @ARGV;
+die "Usage: extra-tool-package TOOL" unless $tool_name;
+
+my $tool_package = $tool_name;
+$tool_package =~ s/-/_/g;
+
+my %dir_for_tool = (
+   'mk-checksum-filter'   => 'mk-table-checksum',
+   'mk-merge-mqd-results' => 'mk-query-digest',
+   'mk-profile-compact'   => 'mk-query-profiler',
+);
+my $tool_dir  = $dir_for_tool{$tool_name} || $tool_name;
+my $tool_path = "$trunk/$tool_dir";
+
+warn "Extracting $tool_package package from $tool_name...\n";
+
+$INPUT_RECORD_SEPARATOR = undef;
+open my $fh, "<", "$tool_path/$tool_name"
+   or die "Cannot open $tool_path/$tool_name: $OS_ERROR";
+my $tool_code = <$fh>;
+close $fh;
+
+my ($pkg) = $tool_code =~ m/^(package $tool_package;.+?^1;)(\s+#.+?)?$/ms;
+
+# Might need to remove this if it confuses natural docs
+# because it's an nd keyword.
+# $pkg =~ s/^#\s+Subroutines\.?\s*$//ms;
+
+if ( $pkg ) {
+   print "#!/usr/bin/env perl\n$pkg";
+   exit 0;
+}
+else {
+   warn "$tool_package package not found\n";
+   exit 1;
+}

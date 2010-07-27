@@ -17,6 +17,9 @@
 # ###########################################################################
 # Quoter package $Revision$
 # ###########################################################################
+
+# Package: Quoter
+# Handles value quoting, unquoting, escaping, etc.
 package Quoter;
 
 use strict;
@@ -25,11 +28,29 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Sub: new
+#
+# Parameters:
+#   $class - Quoter (automatic)
+#   %args  - Arguments
+#
+# Required Arguments:
+#
+# Returns:
+#   Quoter object
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
+# Sub: quote
+#   Quote values in backticks.
+#
+# Parameters:
+#   @vals - List of values to quote
+#
+# Returns:
+#   Array of backtick-quoted values
 sub quote {
    my ( $self, @vals ) = @_;
    foreach my $val ( @vals ) {
@@ -38,8 +59,15 @@ sub quote {
    return join('.', map { '`' . $_ . '`' } @vals);
 }
 
-# Quote everything, even numbers to avoid problems where
-# the col is char so user really means col="3".
+# Sub: quote_val
+#   Quote a value for use in a SQL statement.  Examples: undef = "NULL",
+#   empty string = '', etc.
+#
+# Parameters:
+#   $val - Value to quote
+#
+# Returns:
+#   Quoted value
 sub quote_val {
    my ( $self, $val ) = @_;
 
@@ -52,6 +80,20 @@ sub quote_val {
    return "'$val'";
 }
 
+# Sub: split_unquote
+#   Split and unquote a table name.  The table name can be database-qualified
+#   or not, like `db`.`table`.  The table name can be backtick-quoted or not.
+#
+# Parameters:
+#   $db_tbl     - Table name
+#   $default_db - Default database name to return if $db_tbl is not
+#                 database-qualified
+#
+# Returns:
+#   Array: unquoted database (possibly undef), unquoted table
+#
+# See Also:
+#   <join_quote>
 sub split_unquote {
    my ( $self, $db_tbl, $default_db ) = @_;
    $db_tbl =~ s/`//g;
@@ -63,7 +105,14 @@ sub split_unquote {
    return ($db, $tbl);
 }
 
-# Escapes LIKE wildcard % and _.
+# Sub: literal_like
+#   Escape LIKE wildcard % and _.
+#
+# Parameters:
+#   $like - LIKE value to escape
+#
+# Returns:
+#   Escaped LIKE value
 sub literal_like {
    my ( $self, $like ) = @_;
    return unless $like;
@@ -71,7 +120,21 @@ sub literal_like {
    return "'$like'";
 }
 
-# The opposite of split_unquote.
+# Sub: join_quote
+#   Join and backtick-quote a database name with a table name. This sub does
+#   the opposite of split_unquote.
+#
+# Parameters:
+#   $default_db - Default database name to use if $db_tbl is not
+#                 database-qualified
+#   $db_tbl     - Table name, optionally database-qualified, optionally
+#                 quoted
+#
+# Returns:
+#   Backtick-quoted, database-qualified table like `database`.`table`
+#
+# See Also:
+#   <split_unquote>
 sub join_quote {
    my ( $self, $default_db, $db_tbl ) = @_;
    return unless $db_tbl;

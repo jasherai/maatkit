@@ -1,0 +1,29 @@
+#!/bin/sh
+
+nd="$MAATKIT_WORKING_COPY/doc/naturaldocs/NaturalDocs";
+project="$MAATKIT_WORKING_COPY/doc/nd-conf/";
+source="$MAATKIT_WORKING_COPY/doc/nd-temp/"
+output="$MAATKIT_WORKING_COPY/doc/code/"
+
+copy_code_to_source() {
+   if [ ! -d $source ]; then
+      mkdir $source
+      mkdir $source/modules
+      mkdir $source/tools
+   fi
+
+   cp $MAATKIT_WORKING_COPY/common/*.pm $source/modules
+
+   for tool in $MAATKIT_WORKING_COPY/mk-*/mk-*; do
+      tool=`basename $tool`
+      $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
+   done;
+}
+
+copy_code_to_source
+
+$nd --rebuild --project $project  --source $source -o HTML $output
+
+rm -rf $source >/dev/null
+ 
+exit
