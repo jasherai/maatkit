@@ -20,8 +20,8 @@ copy_code_to_source() {
    done;
 }
 
-tool="$1"
-if [ -n $tool ]; then
+tool=$1
+if [ -n "$tool" ]; then
    $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
 else
    copy_code_to_source

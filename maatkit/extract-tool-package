@@ -34,8 +34,12 @@ my ($pkg) = $tool_code =~ m/^(package $tool_package;.+?^1;)(\s+#.+?)?$/ms;
 # because it's an nd keyword.
 # $pkg =~ s/^#\s+Subroutines\.?\s*$//ms;
 
+my ($desc) = $tool_code =~ m/^$tool_name\s+-\s+(.+?)$/m;
+
 if ( $pkg ) {
-   print "#!/usr/bin/env perl\n$pkg";
+   print "#!/usr/bin/env perl\n";
+   print "\n# Package: $tool_package\n# $desc\n" if $desc;
+   print $pkg;
    exit 0;
 }
 else {
