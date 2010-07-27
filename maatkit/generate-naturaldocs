@@ -20,10 +20,17 @@ copy_code_to_source() {
    done;
 }
 
-copy_code_to_source
+tool="$1"
+if [ -n $tool ]; then
+   $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
+else
+   copy_code_to_source
+fi
 
-$nd --rebuild --project $project  --source $source -o HTML $output
+$nd --project $project  --source $source -o HTML $output
 
-rm -rf $source >/dev/null
- 
+if [ ! -f "$MAATKIT_WORKING_COPY/doc/keep-nd-temp" ]; then
+   rm -rf $source >/dev/null
+fi
+
 exit
