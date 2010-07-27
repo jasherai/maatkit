@@ -7160,6 +7160,22 @@ sub main {
 # Subroutines
 # ############################################################################
 
+# Sub: lock_and_rename
+#   Lock and rename a table.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dsns         - Arrayref of DSNs
+#   plugins      - Arrayref of TableSync* objects
+#   hdr          - Header to print before output
+#   OptionParser - <OptionParser> object
+#   DSNParser    - <DSNParser> object
+#   Quoter       - <Quoter> object
+#
+# Returns:
+#   Exit status
 sub lock_and_rename {
    my ( %args ) = @_;
    my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
@@ -7232,6 +7248,28 @@ sub lock_and_rename {
    return $exit_status;
 }
 
+# Sub: sync_one_table
+#   Sync one table between one source host and multiple destination hosts.
+#   The first DSN in $args{dsns} specifies the source host, database (D),
+#   and table (t).  The other DSNs are the destination hosts.  If a destination
+#   DSN does not specify a database or table, the source database or table
+#   are used as defaults.  Else, the destination-specific database or table
+#   are used.  This allows you to sync tables with different names.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dsns          - Arrayref of DSNs
+#   plugins       - Arrayref of TableSync* objects
+#   hdr           - Header to print before output
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   Quoter        - <Quoter> object
+#   VersionParser - <VersionParser> object
+#
+# Returns:
+#   Exit status
 sub sync_one_table {
    my ( %args ) = @_;
    my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
@@ -7286,6 +7324,33 @@ sub sync_one_table {
    return $exit_status;
 }
 
+# Sub: sync_via_replication
+#   Sync multiple destination hosts to one source host via replication.
+#   The first DSN in $args{dsns} specifies the source host.
+#   If --sync-to-master is specified, then the source host is a master
+#   and there is only one destination host which is its slave.
+#   Else, destination hosts are auto-discovered with
+#   <MasterSlave::recurse_to_slaves()>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dsns          - Arrayref of DSNs
+#   plugins       - Arrayref of TableSync* objects
+#   hdr           - Header to print before output
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   Quoter        - <Quoter> object
+#   VersionParser - <VersionParser> object
+#   TableChecksum - <TableChecksum> object
+#   MasterSlave   - <MasterSlave> object
+#
+# Returns:
+#   Exit status
+#
+# See Also:
+#   <filter_diffs()>
 sub sync_via_replication {
    my ( %args ) = @_;
    my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
@@ -7452,6 +7517,28 @@ sub sync_via_replication {
    return $exit_status;
 }
 
+# Sub: sync_all
+#   Sync every table between one source host and multiple destination hosts.
+#   The first DSN in $args{dsns} specifies the source host. The other DSNs
+#   are the destination hosts.  Unlike <sync_one_table>, the database and
+#   table names must be the same on the source and destination hosts.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dsns          - Arrayref of DSNs
+#   plugins       - Arrayref of TableSync* objects
+#   hdr           - Header to print before output
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   Quoter        - <Quoter> object
+#   VersionParser - <VersionParser> object
+#   TableParser   - <TableParser> object
+#   MySQLDump     - <MySQLDump> object
+#
+# Returns:
+#   Exit status
 sub sync_all {
    my ( %args ) = @_;
    my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
@@ -7534,6 +7621,19 @@ sub sync_all {
    return $exit_status;
 }
 
+# Sub: lock_server
+#   Lock a host with FLUSH TABLES WITH READ LOCK.  This implements
+#   --lock 3 by calling <TableSyncer::lock_and_wait()>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   src           - Hashref with source host information
+#   dst           - Hashref with destination host information
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   TableSyncer   - <TableSyncer> object
 sub lock_server {
    my ( %args ) = @_;
    foreach my $arg ( qw(src dst OptionParser DSNParser TableSyncer) ) {
@@ -7560,6 +7660,19 @@ sub lock_server {
    return;
 }
 
+# Sub: unlock_server
+#   Unlock a host with UNLOCK TABLES.  This implements
+#   --lock 3 by calling <TableSyncer::unlock()>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   src           - Hashref with source host information
+#   dst           - Hashref with destination host information
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   TableSyncer   - <TableSyncer> object
 sub unlock_server {
    my ( %args ) = @_;
    my @required_args = qw(src dst OptionParser DSNParser TableSyncer);
@@ -7597,10 +7710,29 @@ sub unlock_server {
    return;
 }
 
-# This is the primary subroutine which actually makes the table syncs
-# happen by calling $syncer->sync_table().  It is, therefore, a big
-# wrapper around $syncer->sync_table(); it does pre- and post-sync
-# stuff.  It returns an exit status; see EXIT STATUS in the POD.
+# Sub: sync_a_table
+#   Sync the destination host table to the source host table.  This sub
+#   is not called directly but indirectly via the other sync_* subs.
+#   In turn, this sub calls <TableSyncer::sync_table()> which actually
+#   does the sync work.  Calling sync_table() requires a fair amount of
+#   prep work that this sub does/simplifies.  New <RowDiff> and <ChangeHandler>
+#   objects are created, so those packages need to be available.
+#
+# Parameters:
+#   $args - Arguments
+#
+# Required Arguments:
+#   src           - Hashref with source host information
+#   dst           - Hashref with destination host information
+#   plugins       - Arrayref of TableSync* objects
+#   OptionParser  - <OptionParser> object
+#   Quoter        - <Quoter> object
+#   TableParser   - <TableParser> object
+#   MySQLDump     - <MySQLDump> object
+#   TableSyncer   - <TableSyncer> object
+#
+# Returns:
+#   Exit status
 sub sync_a_table {
    my ( %args ) = @_;
    my @required_args = qw(src dst plugins OptionParser Quoter TableParser
@@ -7722,6 +7854,31 @@ sub sync_a_table {
    return $exit_status;
 }
 
+# Sub: get_change_dbh
+#   Return the dbh to write to for syncing changes.  Write statements
+#   are executed on the "change dbh".  If --sync-to-master or --replicate
+#   is specified, the source (master) dbh is the "change dbh".  This means
+#   changes replicate to all slaves.  Else, the destination dbh is the
+#   change dbh.  This is the case when two independent servers (or perhaps
+#   one table on the same server) are synced.  This sub implements
+#   --[no]check-slave because writing to a slave is generally a bad thing.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   src           - Hashref with source host information
+#   dst           - Hashref with destination host information
+#   tbl_struct    - Hashref returned by <TableParser::parse()>
+#   OptionParser  - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#   MasterSlave   - <MasterSlave> object
+#
+# Returns:
+#   Either $args{src}->{dbh} or $args{dst}->{dbh} if no checks fail.
+#
+# See Also:
+#   <make_action_subs()>
 sub get_change_dbh {
    my ( %args ) = @_;
    my @required_args = qw(src dst tbl_struct OptionParser DSNParser
@@ -7769,6 +7926,19 @@ sub get_change_dbh {
    return $change_dbh;
 }
 
+# Sub: make_action_subs
+#   Make callbacks for <ChangeHandler::new()> actions argument.  This
+#   sub implements --print and --execute.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   change_dbh   - dbh returned by <get_change_dbh>
+#   OptionParser - <OptionParser> object
+#
+# Returns:
+#   Arrayref of callbacks (coderefs)
 sub make_action_subs {
    my ( %args ) = @_;
    my @required_args = qw(change_dbh OptionParser);
@@ -7807,7 +7977,15 @@ sub make_action_subs {
    return \@actions;
 }
 
-# Tries to extract the MySQL error message and print it
+
+# Sub: print_err
+#   Try to extract the MySQL error message and print it.
+#
+# Parameters:
+#   $msg      - Error message
+#   $database - Database name being synced when error occurred
+#   $table    - Table name being synced when error occurred
+#   $host     - Host name error occurred on
 sub print_err {
    my ( $msg, $database, $table, $host ) = @_;
    return if !defined $msg;
@@ -7822,6 +8000,19 @@ sub print_err {
    print STDERR $msg, "\n";
 }
 
+# Sub: get_cxn
+#   Connect to host specified by DSN.
+#
+# Parameters:
+#   $dsn  - Host DSN
+#   %args - Arguments
+#
+# Required Arguments:
+#   OptionaParser - <OptionParser> object
+#   DSNParser     - <DSNParser> object
+#
+# Returns:
+#   dbh
 sub get_cxn {
    my ( $dsn, %args ) = @_;
    my @required_args = qw(OptionParser DSNParser);
@@ -7887,6 +8078,29 @@ sub get_cxn {
    return $dbh;
 }
 
+
+# Sub: ok_to_sync
+#   Check that the destination host table can be synced to the source host
+#   table.  All sorts of sanity checks are performed to help ensure that
+#   syncing the table won't cause problems in <sync_a_table()> or
+#   <TableSyncer::sync_table()>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   src           - Hashref with source host information
+#   dst           - Hashref with destination host information
+#   DSNParser     - <DSNParser> object
+#   Quoter        - <Quoter> object
+#   VersionParser - <VersionParser> object
+#   TableParser   - <TableParser> object
+#   MySQLDump     - <MySQLDump> object
+#   TableSyncer   - <TableSyncer> object
+#   OptionParser  - <OptionParser> object
+#
+# Returns:
+#   Table structure (from <TableParser::parse()>) if ok to sync, else it dies.
 sub ok_to_sync {
    my ( %args ) = @_;
    my @required_args = qw(src dst DSNParser Quoter VersionParser TableParser
@@ -7958,6 +8172,19 @@ sub ok_to_sync {
    return $tbl_struct;
 }
 
+# Sub: filter_diffs
+#   Filter different slave tables according to the various schema object
+#   filters.  This sub is called in <sync_via_replication()> to implement
+#   schema object filters like --databases and --tables.
+#
+# Parameters:
+#   $skip_table - Hashref of databases and tables to skip
+#   $databases  - Hashref of databases to skip
+#   $tables     - Hashref of tables to skip
+#   @diffs      - Array of hashrefs, one for each different slave table
+#
+# Returns:
+#   Array of different slave tables that pass the filters
 sub filter_diffs {
    my ( $skip_table, $databases, $tables, @diffs ) = @_;
    return grep {
@@ -7967,6 +8194,14 @@ sub filter_diffs {
    } @diffs;
 }
 
+
+# Sub: disconnect
+#   Disconnect host dbhs created by <get_cxn()>.  To make sure all dbh
+#   are closed, mk-table-sync keeps track of the dbh it opens and this
+#   sub helps keep track of the dbh that are closed.
+#
+# Parameters:
+#   @hosts - Array of hashrefs with host information, one for each host 
 sub disconnect {
    my ( @hosts ) = @_;
    foreach my $host ( @hosts ) {
@@ -7982,8 +8217,14 @@ sub disconnect {
    return;
 }
 
-# This is passed as the callback for TableSyncer::sync_table()
-# if --print --verbose --verbose is specified.
+# Sub: print_sql
+#   Callback for <TableSyncer::sync_table()> if --print --verbose --verbose
+#   is specified.  The callback simply prints the SQL statements passed to
+#   it by sync_table().  They're usually (always?) identical statements.
+#
+# Parameters:
+#   $src_sql - SQL statement to be executed on the sourch host
+#   $dst_sql - SQL statement to be executed on the destination host
 sub print_sql {
    my ( $src_sql, $dst_sql ) = @_;
    print "# $src_sql\n" if $src_sql;
@@ -7991,16 +8232,25 @@ sub print_sql {
    return;
 }
 
-# Compares left_val to right_val by doing cmp.  Returns one of the
-# result constants listed below, or dies if cmp is invalid.  The val
-# arg is used for certain cmp, like equals and matches.  The twos
-# vals should generally not be equal; if they are, UPDATE_NEITHER is
-# returned.  Threshold (thr) only applies to temporal datetimes and
-# dates and numerical values.
 use constant UPDATE_LEFT      => -1;
 use constant UPDATE_RIGHT     =>  1;
 use constant UPDATE_NEITHER   =>  0;  # neither value equals/matches
 use constant FAILED_THRESHOLD =>  2;  # failed to exceed threshold
+
+# Sub: cmd_conflict_col
+#   Compare --conflict-column values for --bidirectional.  This sub is
+#   used as a callback in <set_bidirectional_callbacks()>.
+#
+# Parameters:
+#   $left_val  - Column value from left (usually the source host)
+#   $right_val - Column value from right (usually the destination host)
+#   $cmp       - Type of conflict comparison, --conflict-comparison
+#   $val       - Value for certain types of comparisons, --conflict-value
+#   $thr       - Threshold for certain types of comparisons,
+#                --conflict-threshold
+#
+# Returns:
+#   One of the constants above, UPDATE_* or FAILED_THRESHOLD
 sub cmp_conflict_col {
    my ( $left_val, $right_val, $cmp, $val, $thr ) = @_;
    MKDEBUG && _d('Compare', @_);
@@ -8053,6 +8303,15 @@ sub cmp_conflict_col {
    return $res;
 }
 
+# Sub: set_bidirectional_callbacks
+#   Set syncer plugin callbacks for --bidirectional.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   plugin       - TableSync* object
+#   OptionParser - <OptionParser> object
 sub set_bidirectional_callbacks {
    my ( %args ) = @_;
    foreach my $arg ( qw(plugin OptionParser) ) {
@@ -8142,9 +8401,12 @@ sub set_bidirectional_callbacks {
    return;
 }
 
-# Returns a hash of available algoritms and the plugin/module names that
-# implement them, like "chunk => TableSyncChunk".  Currently, we just
-# parse our self for TableSync* packages.
+# Sub: get_plugins
+#   Get internal TableSync* plugins.
+#
+# Returns:
+#   Hash of available algoritms and the plugin/module names that
+#   implement them, like "chunk => TableSyncChunk".
 sub get_plugins {
    my ( %args ) = @_;
    
