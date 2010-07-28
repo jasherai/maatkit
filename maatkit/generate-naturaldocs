@@ -22,8 +22,18 @@ copy_code_to_source() {
 
 tool=$1
 if [ -n "$tool" ]; then
-   $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
+   if [ -f "$MAATKIT_WORKING_COPY/common/$tool" ]; then
+      echo "Generating Natural Docs output for $tool..."
+      cp "$MAATKIT_WORKING_COPY/common/$tool" $source/tools
+   elif [ -f "$MAATKIT_WORKING_COPY/$tool/$tool" ]; then
+      echo "Generating Natural Docs output for $tool..."
+      $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
+   else
+      print "$tool is not a module or a tool";
+      exit 1;
+   fi
 else
+   echo "Generating Natural Docs output for the entire Maatkit code base..."
    copy_code_to_source
 fi
 
