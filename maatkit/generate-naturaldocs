@@ -24,7 +24,7 @@ tool=$1
 if [ -n "$tool" ]; then
    if [ -f "$MAATKIT_WORKING_COPY/common/$tool" ]; then
       echo "Generating Natural Docs output for $tool..."
-      cp "$MAATKIT_WORKING_COPY/common/$tool" $source/tools
+      cp "$MAATKIT_WORKING_COPY/common/$tool" $source/modules/
    elif [ -f "$MAATKIT_WORKING_COPY/$tool/$tool" ]; then
       echo "Generating Natural Docs output for $tool..."
       $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
