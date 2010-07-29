@@ -29,7 +29,7 @@ if [ -n "$tool" ]; then
       echo "Generating Natural Docs output for $tool..."
       $MAATKIT_WORKING_COPY/maatkit/extract-tool-package $tool > $source/tools/$tool
    else
-      print "$tool is not a module or a tool";
+      echo "$tool is not a module or a tool";
       exit 1;
    fi
 else
@@ -37,7 +37,14 @@ else
    copy_code_to_source
 fi
 
-$nd --project $project  --source $source -o HTML $output
+extra_opts=""
+if [ -f "$MAATKIT_WORKING_COPY/doc/rebuild" ]; then
+   extra_opts="$extra_opts --rebuild"
+fi
+
+$nd --project $project  --source $source -o HTML $output $extra_opts
+
+rm -rf "$MAATKIT_WORKING_COPY/doc/rebuild" >/dev/null
 
 if [ ! -f "$MAATKIT_WORKING_COPY/doc/keep-nd-temp" ]; then
    rm -rf $source >/dev/null

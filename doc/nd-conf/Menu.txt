@@ -46,9 +46,9 @@ Group: Modules  {
 
    File: BinaryLogParser  (modules/BinaryLogParser.pm)
    File: ChangeHandler  (modules/ChangeHandler.pm)
-   File: CompareQueryTimes  (modules/CompareTableStructs.pm)
    File: CompareQueryTimes  (modules/CompareQueryTimes.pm)
    File: CompareResults  (modules/CompareResults.pm)
+   File: CompareTableStructs  (modules/CompareTableStructs.pm)
    File: CompareWarnings  (modules/CompareWarnings.pm)
    File: Daemon  (modules/Daemon.pm)
    File: DSNParser  (modules/DSNParser.pm)
