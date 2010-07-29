@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,19 +17,32 @@
 # ###########################################################################
 # BinaryLogParser package $Revision$
 # ###########################################################################
+
+# Package: BinaryLogParser
+# BinaryLogParser parses binary log files converted to text by mysqlbinlog.
 package BinaryLogParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+my $binlog_line_1 = qr/at (\d+)$/m;
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
+my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Returns:
+#   BinaryLogParser object
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
@@ -39,12 +52,27 @@ sub new {
    return bless $self, $class;
 }
 
-my $binlog_line_1 = qr/at (\d+)$/m;
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
-my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
+# Sub: parse_event
+#   Parse binary log events returned by input callback.  This sub implements
+#   a standard interface that the *Parser.pm modules share.  Each such
+#   module has a sub named "parse_event" that is expected to return one event
+#   each time it's called.  Events are received from an input callback,
+#   $args{next_event}.  The events are chunks of text that this sub parses
+#   into a hashref representing the attributes and values of the event.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   next_event - Coderef that returns the text of the next event from the input
+#   tell       - Coderef that tells the file position being read in the input
+#
+# Optional Arguments:
+#   oktorun - Coderef to tell caller that there are no more events
+#
+# Returns:
+#   Hashref representing one event and its attributes and values
 sub parse_event {
    my ( $self, %args ) = @_;
    my @required_args = qw(next_event tell);

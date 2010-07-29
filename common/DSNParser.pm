@@ -17,11 +17,17 @@
 # ###########################################################################
 # DSNParser package $Revision$
 # ###########################################################################
+
+# Package: DSNParser
+# DSNParser parses DSNs and creates connections to MySQL using DBI and
+# DBD::mysql.
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -31,8 +37,18 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   opts - Hashref of DSN options, usually created in
+#          <OptionParser::get_specs()>
+#
+# Returns:
+#   DSNParser object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(opts) ) {
@@ -73,19 +89,30 @@ sub prop {
    return $self->{$prop};
 }
 
-# Parse DSN string, like "h=host,P=3306", and return hashref with
-# all DSN values, like:
-#    {
-#       D => undef,
-#       F => undef,
-#       h => 'host',
-#       p => undef,
-#       P => 3306,
-#       S => undef,
-#       t => undef,
-#       u => undef,
-#       A => undef,
-#    }
+# Sub: parse
+#   Parse a DSN string like "h=host,P=3306".
+#
+# Parameters:
+#   $dsn      - DSN string
+#   $prev     - Optional DSN hashref with previous DSN values
+#   $defaults - Optional DSN hashref with default DSN values, used if a prop
+#               isn't specified in $dsn or $prev
+#
+# Returns:
+#   A DSN hashref like:
+#   (start code)
+#   {
+#     D => 'database',
+#     F => undef,
+#     h => 'host',
+#     p => 'mysql-password',
+#     P => 3306,
+#     S => undef,
+#     t => 'table',
+#     u => 'mysql-user',
+#     A => undef,
+#   }
+#   (end code)
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
    if ( !$dsn ) {

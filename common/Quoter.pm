@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -19,7 +19,7 @@
 # ###########################################################################
 
 # Package: Quoter
-# Handles value quoting, unquoting, escaping, etc.
+# Quoter handles value quoting, unquoting, escaping, etc.
 package Quoter;
 
 use strict;
@@ -31,10 +31,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # Sub: new
 #
 # Parameters:
-#   $class - Quoter (automatic)
 #   %args  - Arguments
-#
-# Required Arguments:
 #
 # Returns:
 #   Quoter object

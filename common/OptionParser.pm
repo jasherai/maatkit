@@ -17,19 +17,31 @@
 # ###########################################################################
 # OptionParser package $Revision$
 # ###########################################################################
+
+# Package: OptionParser
+# OptionParser parses command line options from a tool's POD.
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   description - Description of the tool
+#
+# Returns:
+#   OptionParser object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(description) ) {
@@ -101,8 +113,15 @@ sub new {
    return bless $self, $class;
 }
 
-# Read and parse POD OPTIONS in file or current script if
-# no file is given. This sub must be called before get_opts();
+# Sub: get_specs
+#   Read and parse options from the OPTIONS section of the POD.  This sub
+#   should be called first, then <get_opts()>.  <_pod_to_specs()>
+#   and <_parse_specs()> do most of the work.  If the POD has a
+#   DSN OPTIONS section then a <DSNParser> object is created which
+#   can be accessed with <DSNParser()>.
+#
+# Parameters:
+#   $file - File name to read, __FILE__ if none given
 sub get_specs {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
@@ -160,28 +179,44 @@ sub get_specs {
    return;
 }
 
+# Sub: DSNParser
+#   Return the <DSNParser> object automatically created for DSN type opts.
+#
+# Returns:
+#   <DSNParser> object
 sub DSNParser {
    my ( $self ) = @_;
    return $self->{DSNParser};
 };
 
-# Returns the program's defaults files.
+# Sub: get_defaults_files
+#   Return the program's defaults files.
+#
+# Returns:
+#   Array of defaults files
 sub get_defaults_files {
    my ( $self ) = @_;
    return @{$self->{default_files}};
 }
 
-# Parse command line options from the OPTIONS section of the POD in the
-# given file. If no file is given, the currently running program's POD
-# is parsed.
-# Returns an array of hashrefs which is usually passed to _parse_specs().
-# Each hashref in the array corresponds to one command line option from
-# the POD. Each hashref has the structure:
-#    {
-#       spec  => GetOpt::Long specification,
-#       desc  => short description for --help
-#       group => option group (default: 'default')
-#    }
+# Sub: _pod_to_specs()
+#   Parse basic specs for each option.  Each opt spec is a
+#   hashref like:
+#   (start code)
+#   {
+#      spec  => GetOpt::Long specification,
+#      desc  => short description for --help
+#      group => option group (default: 'default')
+#   }
+#   (end code)
+#   This is step 1 of 2 of parsing the POD opts.  The second is
+#   C<_parse_specs()>.
+#
+# Parameters:
+#   $file - File name to read, __FILE__ if none given
+#
+# Returns:
+#   Array of opt spec hashrefs to pass to <_parse_specs()>.
 sub _pod_to_specs {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
@@ -279,17 +314,21 @@ sub _pod_to_specs {
    return @specs, @rules;
 }
 
-# Parse an array of option specs and rules (usually the return value of
-# _pod_to_spec()). Each option spec is parsed and the following attributes
-# pairs are added to its hashref:
-#    short         => the option's short key (-A for --charset)
-#    is_cumulative => true if the option is cumulative
-#    is_negatable  => true if the option is negatable
-#    is_required   => true if the option is required
-#    type          => the option's type, one of $self->{types}
-#    got           => true if the option was given explicitly on the cmd line
-#    value         => the option's value
+# Sub: _parse_specs
+#   Parse option specs and rules.  The opt specs and rules are returned
+#   by <_pod_to_specs()>.  The following attributes are added to each opt spec:
+#   (start code)
+#   short         => the option's short key (-A for --charset)
+#   is_cumulative => true if the option is cumulative
+#   is_negatable  => true if the option is negatable
+#   is_required   => true if the option is required
+#   type          => the option's type, one of $self->{types}
+#   got           => true if the option was given explicitly on the cmd line
+#   value         => the option's value
+#   (end code)
 #
+# Parameters:
+#   @specs - Opt specs and rules from <_pod_to_specs()>
 sub _parse_specs {
    my ( $self, @specs ) = @_;
    my %disables; # special rule that requires deferred checking
@@ -419,9 +458,17 @@ sub _parse_specs {
    return; 
 }
 
-# Returns an array of long option names in str. This is used to
-# find the "participants" of option rules (i.e. the options to
-# which a rule applies).
+# Sub: _get_participants
+#   Extract option names from a string.  This is used to
+#   find the "participants" of option rules (i.e. the options to
+#   which a rule applies).
+#
+# Parameters:
+#   $str - String containing option names like "Options L<"--[no]foo"> and
+#          --bar are mutually exclusive."
+#
+# Returns:
+#   Array of option names
 sub _get_participants {
    my ( $self, $str ) = @_;
    my @participants;
@@ -434,20 +481,28 @@ sub _get_participants {
    return @participants;
 }
 
-# Returns a copy of the internal opts hash.
+# Sub: opts
+#
+# Returns:
+#   A copy of the internal opts hash
 sub opts {
    my ( $self ) = @_;
    my %opts = %{$self->{opts}};
    return %opts;
 }
 
-# Returns a copy of the internal short_opts hash.
+# Sub: short_opts
+#
+# Returns:
+#   A copy of the internal short_opts hash
 sub short_opts {
    my ( $self ) = @_;
    my %short_opts = %{$self->{short_opts}};
    return %short_opts;
 }
 
+# Sub: set_defaults
+#   Set default values for options.
 sub set_defaults {
    my ( $self, %defaults ) = @_;
    $self->{defaults} = {};
@@ -470,9 +525,10 @@ sub get_groups {
    return $self->{groups};
 }
 
-# Getopt::Long calls this sub for each opt it finds on the
-# cmd line. We have to do this in order to know which opts
-# were "got" on the cmd line.
+# Sub: _set_option
+#   Getopt::Long calls this sub for each opt it finds on the
+#   cmd line. We have to do this in order to know which opts
+#   were "got" on the cmd line.
 sub _set_option {
    my ( $self, $opt, $val ) = @_;
    my $long = exists $self->{opts}->{$opt}       ? $opt
@@ -491,9 +547,11 @@ sub _set_option {
    MKDEBUG && _d('Got option', $long, '=', $val);
 }
 
-# Get options on the command line (ARGV) according to the option specs
-# and enforce option rules. Option values are saved internally in
-# $self->{opts} and accessed later by get(), got() and set().
+# Sub: get_opts
+#   Get command line options and enforce option rules.
+#   Option values are saved internally in $self->{opts} and accessed
+#   later by <get()>, <got()>, and <set()>.  Call <get_specs()>
+#   before calling this sub.
 sub get_opts {
    my ( $self ) = @_; 
 
@@ -582,6 +640,11 @@ sub get_opts {
    return;
 }
 
+# Sub: _check_opts
+#   Check options against rules and group restrictions.
+#
+# Parameters:
+#   @long - Array of option names
 sub _check_opts {
    my ( $self, @long ) = @_;
    my $long_last = scalar @long;
@@ -660,6 +723,11 @@ sub _check_opts {
    return;
 }
 
+# Sub: _validate_type
+#   Validate special option types like sizes and DSNs.
+#
+# Parameters:
+#   $opt - Long option name to validate
 sub _validate_type {
    my ( $self, $opt ) = @_;
    return unless $opt;
@@ -734,8 +802,15 @@ sub _validate_type {
    return;
 }
 
-# Get an option's value. The option can be either a
-# short or long name (e.g. -A or --charset).
+# Sub: get
+#   Get an option's value. The option can be either a
+#   short or long name (e.g. -A or --charset).
+#
+# Parameters:
+#   $opt - Option name, long (--charset) or short (-A)
+#
+# Returns:
+#   The option's value
 sub get {
    my ( $self, $opt ) = @_;
    my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
@@ -744,9 +819,14 @@ sub get {
    return $self->{opts}->{$long}->{value};
 }
 
-# Returns true if the option was given explicitly on the
-# command line; returns false if not. The option can be
-# either short or long name (e.g. -A or --charset).
+# Sub: got
+#   Test if an option was explicitly given on the command line.
+#
+# Parameters:
+#   $opt - Option name, long (--charset) or short (-A)
+#
+# Returns:
+#   Bool
 sub got {
    my ( $self, $opt ) = @_;
    my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
@@ -755,18 +835,27 @@ sub got {
    return $self->{opts}->{$long}->{got};
 }
 
-# Returns true if the option exists.
+# Sub: has
+#   Test if an option exists (i.e. is specified in the tool's POD).
+#
+# Parameters:
+#   $opt - Option name, long (--charset) or short (-A)
+#
+# Returns:
+#   Bool
 sub has {
    my ( $self, $opt ) = @_;
    my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
    return defined $long ? exists $self->{opts}->{$long} : 0;
 }
 
-# Set an option's value. The option can be either a
-# short or long name (e.g. -A or --charset). The value
-# can be any scalar, ref, or undef. No type checking
-# is done so becareful to not set, for example, an integer
-# option with a DSN.
+# Sub: set
+#   Set an option's value.  No type checking is done so be careful to
+#   not set, for example, an integer option with a DSN.
+#
+# Parameters:
+#   $opt - Option name, long (--charset) or short (-A)
+#   $val - Option's new value
 sub set {
    my ( $self, $opt, $val ) = @_;
    my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
@@ -776,14 +865,18 @@ sub set {
    return;
 }
 
-# Save an error message to be reported later by calling usage_or_errors()
-# (or errors()--mostly for testing).
+# Sub: save_error
+#    Save an error message to be reported later by <usage_or_errors()>.
+#
+# Parameters:
+#   $error - Error message
 sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
 }
 
-# Return arrayref of errors (mostly for testing).
+# Sub: errors
+#   Used for testing.
 sub errors {
    my ( $self ) = @_;
    return $self->{errors};
@@ -1006,8 +1099,26 @@ sub _read_config_file {
    return @args;
 }
 
-# Reads the next paragraph from the POD after the magical regular expression is
-# found in the text.
+# Sub: read_para_after
+#   Read the POD paragraph after a magical regex.  This is used,
+#   for exmaple, to get default CREATE TABLE from the POD.  We write something
+#   like:
+#   (start code)
+#   This is the default MAGIC_foo_table:
+#
+#     CREATE TABLE `foo` (i INT)
+#   
+#   Blah blah...
+#   (end code)
+#   Then to get that CREATE TABLE, you pass "MAGIC_foo_table" as the
+#   magical regex.
+#
+# Parameters:
+#   $file  - File to read
+#   $regex - Regex to find something magical before the desired POD paragraph
+#
+# Returns:
+#   POD paragraph after magical regex
 sub read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";

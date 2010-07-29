@@ -1,4 +1,4 @@
-# This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2009-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,17 +17,18 @@
 # ###########################################################################
 # CompareQueryTimes package $Revision$
 # ###########################################################################
+
+# Package: CompareQueryTimes
+# CompareQueryTimes is an mk-audit plugin that compares query execution times.
 package CompareQueryTimes;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use POSIX qw(floor);
-
-Transformers->import(qw(micro_t));
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+Transformers->import(qw(micro_t));
+use POSIX qw(floor);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -41,8 +42,16 @@ $Data::Dumper::Quotekeys = 0;
 my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
 # my @bucket_labels  = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
-# Required args:
-#   * get_id  coderef: used by report() to trf query to its ID
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   get_id - Callback used by report() to transform query to its ID
+#
+# Returns:
+#   CompareQueryTimes object
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(get_id);
@@ -57,17 +66,6 @@ sub new {
    return bless $self, $class;
 }
 
-# Required args:
-#   * event  hashref: an event
-#   * dbh    scalar: active dbh
-# Optional args:
-#   * db             scalar: database name to create temp table in unless...
-#   * temp-database  scalar: ...temp db name is given
-# Returns: hashref
-# Can die: yes
-# before_execute() selects from its special temp table to clear the warnings
-# if the module was created with the clear arg specified.  The temp table is
-# created if there's a db or temp db and the table doesn't exist yet.
 sub before_execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event);
@@ -77,14 +75,18 @@ sub before_execute {
    return $args{event};
 }
 
-# Required args:
-#   * event  hashref: an event
-#   * dbh    scalar: active dbh
-# Returns: hashref
-# Can die: yes
-# execute() executes the event's query if is hasn't already been executed. 
-# Any prep work should have been done in before_execute().  Adds Query_time
-# attrib to the event.
+# Sub: execute
+#   Execute query if not already executed.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   event - Hashref with event attributes and values
+#   dbh   - dbh on which to execute the event
+#
+# Returns:
+#   Hashref of event with Query_time attribute added
 sub execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event dbh);
@@ -116,11 +118,6 @@ sub execute {
    return $event;
 }
 
-# Required args:
-#   * event  hashref: an event
-# Returns: hashref
-# Can die: yes
-# after_execute() gets any warnings from SHOW WARNINGS.
 sub after_execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event);
@@ -130,14 +127,17 @@ sub after_execute {
    return $args{event};
 }
 
-# Required args:
-#   * events  arrayref: events
-# Returns: array
-# Can die: yes
-# compare() compares events that have been run through before_execute(),
-# execute() and after_execute().  Only a "summary" of differences is
-# returned.  Specific differences are saved internally and are reported
-# by calling report() later.
+# Sub: compare
+#   Compare executed events.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   events - Arrayref of event hashrefs
+#
+# Returns:
+#   Hash of differences
 sub compare {
    my ( $self, %args ) = @_;
    my @required_args = qw(events);
@@ -185,6 +185,14 @@ sub compare {
    );
 }
 
+# Sub: buck_for
+#   Calculate bucket for value.
+#
+# Parameters:
+#   $val - Value
+#
+# Returns:
+#   Bucket number for value
 sub bucket_for {
    my ( $val ) = @_;
    die "I need a val" unless defined $val;
@@ -194,6 +202,15 @@ sub bucket_for {
    return $bucket;
 }
 
+# Sub: percentage_increase
+#   Calculate percentage increase between two values.
+#
+# Parameters:
+#   $x - First value
+#   $y - Second value
+#
+# Returns:
+#   Percentage increase from first to second value
 sub percentage_increase {
    my ( $x, $y ) = @_;
    return 0 if $x == $y;
@@ -211,6 +228,18 @@ sub percentage_increase {
    return sprintf '%.2f', (($y - $x) / $x) * 100;
 }
 
+
+# Sub: report
+#   Report differences found.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   hosts - Arrayref of hosts
+#
+# Returns:
+#   Report text of differences
 sub report {
    my ( $self, %args ) = @_;
    my @required_args = qw(hosts);
@@ -243,6 +272,18 @@ sub report {
    return join("\n", @reports);
 }
 
+# Sub: _report_diff_big
+#   Report big differences in query times.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   query_id_col - Hashref <ReportFormat> column descriptor
+#   hosts        - Arrayref of hosts
+#
+# Returns:
+#   Big query time diff report
 sub _report_diff_big {
    my ( $self, %args ) = @_;
    my @required_args = qw(query_id_col hosts);
@@ -278,6 +319,18 @@ sub _report_diff_big {
    return $report->get_report();
 }
 
+# Sub: _report_diff_big
+#   Report smaller, "in bucket" query time differences.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   query_id_col - Hashref <ReportFormat> column descriptor
+#   hosts        - Arrayref of hosts
+#
+# Returns:
+#   In bucket query time diff report
 sub _report_diff_in_bucket {
    my ( $self, %args ) = @_;
    my @required_args = qw(query_id_col hosts);
@@ -314,6 +367,14 @@ sub _report_diff_in_bucket {
    return $report->get_report();
 }
 
+# Sub: samples
+#   Return samples of queries with differences.
+#
+# Parameters:
+#   $item - Query fingerprint
+#
+# Returns:
+#   Array of queries
 sub samples {
    my ( $self, $item ) = @_;
    return unless $item;
@@ -324,6 +385,9 @@ sub samples {
    return @samples;
 }
 
+
+# Sub: reset
+#   Reset internal state for another run.
 sub reset {
    my ( $self ) = @_;
    $self->{diffs}   = {};

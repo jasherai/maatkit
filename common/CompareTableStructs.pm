@@ -1,4 +1,4 @@
-# This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2009-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -15,14 +15,13 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# CompareQueryTimes package $Revision$
+# CompareTableStructs package $Revision$
 # ###########################################################################
-package CompareQueryTimes;
+package CompareTableStructs;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
@@ -110,5 +109,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End CompareQueryTimes package
+# End CompareTableStructs package
 # ###########################################################################
