@@ -60,7 +60,7 @@ like($output, qr/Prompt for a password/, 'It compiles');
 # Double-check that we're setup correctly.
 my $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 is(
-   $row->[0]->{Master_Port},
+   $row->[0]->{master_port},
    '12346',
    'slave2 is slave of slave1 before move'
 );
@@ -69,7 +69,7 @@ is(
 mk_slave_move::main('--sibling-of-master', 'h=127.1,P=12347,u=msandbox,p=msandbox');
 $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 ok(
-   $row->[0]->{Master_Port} eq '12345',
+   $row->[0]->{master_port} eq '12345',
    'slave2 is slave of master after --sibling-of-master'
 );
 
@@ -77,7 +77,7 @@ ok(
 mk_slave_move::main('--slave-of-sibling', 'h=127.1,u=msandbox,p=msandbox', qw(--port 12347), 'h=127.1,P=12346,u=msandbox,p=msandbox');
 $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 ok(
-   $row->[0]->{Master_Port} eq '12346',
+   $row->[0]->{master_port} eq '12346',
    'slave2 is slave of slave1 again after --slave-of-sibling'
 );
 
@@ -101,12 +101,12 @@ diag(`rm -rf /tmp/12347 >/dev/null`);
 eval { $slave_1_dbh->do('start slave'); };
 sleep 1;
 is_deeply(
-   $slave_1_dbh->selectrow_hashref('show slave status')->{Slave_IO_Running},
+   $slave_1_dbh->selectrow_hashref('show slave status')->{slave_io_running},
    'Yes',
    'Sandbox slave IO running'
 );
 is_deeply(
-   $slave_1_dbh->selectrow_hashref('show slave status')->{Slave_SQL_Running},
+   $slave_1_dbh->selectrow_hashref('show slave status')->{slave_sql_running},
    'Yes',
    'Sandbox slave SQL running'
 );

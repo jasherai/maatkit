@@ -87,7 +87,7 @@ SKIP: {
 
    my $ss = $slave_dbh->selectrow_hashref('show slave status');
    skip "Slave did not reset to second master binary log ", 2
-      unless $ss->{Master_Log_File} eq $mbinlogs->[1]->[0];
+      unless $ss->{master_log_file} eq $mbinlogs->[1]->[0];
 
    $master_binlogs = [ mk_purge_logs::get_master_binlogs(dbh=>$master_dbh) ];
 

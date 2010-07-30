@@ -39,7 +39,7 @@ plan skip_all => "Failed to reset and flush master binary logs"
 
 my $ss = $slave_dbh->selectrow_hashref('show slave status');
 plan skip_all => "Slave did not reset to second master binary log "
-   unless $ss->{Master_Log_File} eq $mbinlogs->[1]->[0];
+   unless $ss->{master_log_file} eq $mbinlogs->[1]->[0];
 
 plan tests => 6;
 

@@ -43,10 +43,10 @@ my $cnf='/tmp/12345/my.sandbox.cnf';
 # Backticks don't work here.
 system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(4)' >/dev/null&");
 sleep 0.5;
-my $rows = $dbh->selectall_hashref('show processlist', 'Id');
+my $rows = $dbh->selectall_hashref('show processlist', 'id');
 my $pid;
-map  { $pid = $_->{Id} }
-grep { $_->{Info} && $_->{Info} =~ m/select sleep\(4\)/ }
+map  { $pid = $_->{id} }
+grep { $_->{info} && $_->{info} =~ m/select sleep\(4\)/ }
 values %$rows;
 
 ok(
@@ -65,9 +65,9 @@ like(
 );
 
 sleep 0.5;
-$rows = $dbh->selectall_hashref('show processlist', 'Id');
+$rows = $dbh->selectall_hashref('show processlist', 'id');
 
-my $con_alive = grep { $_->{Id} eq $pid } values %$rows;
+my $con_alive = grep { $_->{id} eq $pid } values %$rows;
 ok(
    !$con_alive,
    'Killed connection'
@@ -82,10 +82,10 @@ ok(
 # sleep3 to start using the same connection id (pid).
 system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(5); select sleep(3)' >/dev/null&");
 sleep 0.5;
-$rows = $dbh->selectall_hashref('show processlist', 'Id');
+$rows = $dbh->selectall_hashref('show processlist', 'id');
 $pid = 0;  # reuse, reset
-map  { $pid = $_->{Id} }
-grep { $_->{Info} && $_->{Info} =~ m/select sleep\(5\)/ }
+map  { $pid = $_->{id} }
+grep { $_->{info} && $_->{info} =~ m/select sleep\(5\)/ }
 values %$rows;
 ok(
    $pid,
@@ -103,15 +103,15 @@ like(
 );
 
 sleep 1;
-$rows = $dbh->selectall_hashref('show processlist', 'Id');
-$con_alive = grep { $_->{Id} eq $pid } values %$rows;
+$rows = $dbh->selectall_hashref('show processlist', 'id');
+$con_alive = grep { $_->{id} eq $pid } values %$rows;
 ok(
    $con_alive,
    'Killed query, not connection'
 );
 
 is(
-   ($rows->{$pid}->{Info} || ''),
+   ($rows->{$pid}->{info} || ''),
    'select sleep(3)',
    'Connection is still alive'
 );

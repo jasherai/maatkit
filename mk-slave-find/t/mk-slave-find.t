@@ -48,7 +48,7 @@ like($output, qr/Prompt for a password/, 'It compiles');
 # Double check that we're setup correctly.
 my $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 is(
-   $row->[0]->{Master_Port},
+   $row->[0]->{master_port},
    '12346',
    'slave2 is slave of slave1'
 );

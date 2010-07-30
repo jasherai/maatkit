@@ -56,7 +56,7 @@ is_deeply(
 );
 
 is(
-   $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+   $slave_dbh->selectrow_hashref('show slave status')->{last_error},
    '',
    'No slave error before restore (issue 506)'
 );
@@ -64,7 +64,7 @@ is(
 `$cmd $basedir/issue_506`;
 
 is(
-   $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+   $slave_dbh->selectrow_hashref('show slave status')->{last_error},
    '',
    'No slave error after restore (issue 506)'
 );
@@ -74,7 +74,7 @@ $slave_dbh->do('set global SQL_SLAVE_SKIP_COUNTER=1');
 $slave_dbh->do('start slave');
 
 is_deeply(
-   $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+   $slave_dbh->selectrow_hashref('show slave status')->{last_error},
    '',
    'No slave error (issue 506)'
 );

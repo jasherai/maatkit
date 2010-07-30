@@ -72,7 +72,7 @@ is_deeply(
 
 my $autoinc = $dbh->selectrow_hashref('show table status from `cai` like "t"');
 is(
-   $autoinc->{Auto_increment},
+   $autoinc->{auto_increment},
    16,
    "Reset AUTO_INCREMENT"
 );
