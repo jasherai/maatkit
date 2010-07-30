@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * The tool did not retry MASTER_POS_WAIT for --wait (issue 748).
+
 2010-07-01: version 1.0.29
 
    * Empty result set with MySQL 4.0 could caused a crash (issue 672).

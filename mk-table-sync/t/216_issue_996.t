@@ -33,7 +33,7 @@ else {
 my $output;
 my @args = ('--sync-to-master', 'h=127.1,P=12346,u=msandbox,p=msandbox',
             qw(-d issue_375 --replicate issue_375.checksums --print));
-my $mk_table_checksum = "$trunk/mk-table-checksum/mk-table-checksum F=/tmp/12345/my.sandbox.cnf -d issue_375 --chunk-size 20";
+my $mk_table_checksum = "$trunk/mk-table-checksum/mk-table-checksum F=/tmp/12345/my.sandbox.cnf -d issue_375 --chunk-size 20 --chunk-size-limit 0";
 
 # #############################################################################
 # Issue 996: might not chunk inside of mk-table-checksum's boundaries
