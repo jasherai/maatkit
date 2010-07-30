@@ -23,6 +23,7 @@ use TableParser;
 use MySQLDump;
 use VersionParser;
 use MasterSlave;
+use Retry;
 use TableSyncer;
 use MaatkitTest;
 
@@ -44,6 +45,7 @@ my $ms = new MasterSlave();
 my $tp = new TableParser(Quoter=>$q);
 my $du = new MySQLDump();
 my $vp = new VersionParser();
+my $rr = new Retry();
 
 my $nibbler = new TableNibbler(
    TableParser => $tp,
@@ -81,7 +83,8 @@ my $syncer = new TableSyncer(
    MasterSlave   => $ms,
    TableChecksum => $checksum,
    Quoter        => $q,
-   VersionParser => $vp
+   VersionParser => $vp,
+   Retry         => $rr,
 );
 
 $sb->create_dbs($dbh, ['test']);

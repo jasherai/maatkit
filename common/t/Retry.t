@@ -28,7 +28,7 @@ my $try = sub {
       $die = 0;
       die "Arrrgh!";
    }
-   return $tryno++ == $tries ? "succeed" : 0;
+   return $tryno++ == $tries ? "succeed" : undef;
 };
 my $wait = sub {
    $waitno++;

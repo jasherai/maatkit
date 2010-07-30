@@ -35,10 +35,11 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * Quoter         A Quoter module
 #   * VersionParser  A VersionParser module
 #   * TableChecksum  A TableChecksum module
+#   * Retry          A Retry module
 #   * DSNParser      (optional)
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum);
+   my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum Retry);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -96,7 +97,6 @@ sub get_best_plugin {
 #   * change_dbh      locking
 #   * lock            locking
 #   * wait            locking
-#   * timeout_ok      locking
 sub sync_table {
    my ( $self, %args ) = @_;
    my @required_args = qw(plugins src dst tbl_struct cols chunk_size
@@ -443,6 +443,8 @@ sub unlock {
 #    local_level  scalar: lock level code is calling from
 #    src          hashref
 #    dst          hashref
+# Optional arguments:
+#   * wait_retry_args  hashref: retry args for retrying wait/MASTER_POS_WAIT
 # Lock levels:
 #   0 => none
 #   1 => per sync cycle
@@ -510,11 +512,74 @@ sub lock_and_wait {
 
    # If there is any error beyond this point, we need to unlock/commit.
    eval {
-      if ( $args{wait} ) {
-         # Always use the misc_dbh dbh to check the master's position, because
-         # the main dbh might be in use due to executing $src_sth.
-         $self->{MasterSlave}->wait_for_master(
-            $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
+      if ( my $timeout = $args{wait} ) {
+         my $wait  = $args{wait_retry_args}->{wait}  || 10;
+         my $tries = $args{wait_retry_args}->{tries} || 3;
+         $self->{Retry}->retry(
+            wait  => sub { sleep $wait; },
+            tries => $tries,
+            try   => sub {
+               my ( %args ) = @_;
+               # Be careful using $args{...} in this callback!  %args in
+               # here are the passed-in args, not the args to lock_and_wait().
+
+               if ( $args{tryno} > 1 ) {
+                  warn "Retrying MASTER_POS_WAIT() for --wait $timeout...";
+               }
+
+               # Always use the misc_dbh dbh to check the master's position
+               # because the main dbh might be in use due to executing
+               # $src_sth.
+               my $wait = $self->{MasterSlave}->wait_for_master(
+                  master_dbh => $src->{misc_dbh},
+                  slave_dbh  => $dst->{dbh},
+                  timeout    => $timeout,
+               );
+               if ( !defined $wait->{result} ) {
+                  # Slave was stopped either before or during the wait.
+                  # Wait a few seconds and try again in hopes that the
+                  # slave is restarted.  This is the only case for which
+                  # we wait and retry because the slave might have been
+                  # stopped temporarily and/or unbeknownst to the user,
+                  # so they'll be happy if we wait for slave to be restarted
+                  # and then continue syncing.
+                  my $msg;
+                  if ( $wait->{waited}  ) {
+                     $msg = "The slave was stopped while waiting with "
+                          . "MASTER_POS_WAIT().";
+                  }
+                  else {
+                     $msg = "MASTER_POS_WAIT() returned NULL.  Verify that "
+                          . "the slave is running.";
+                  }
+                  if ( $tries - $args{tryno} ) {
+                     $msg .= "  Sleeping $wait seconds then retrying "
+                           . ($tries - $args{tryno}) . " more times.";
+                  }
+                  warn $msg;
+                  return;
+               }
+               elsif ( $wait->{result} == -1 ) {
+                  # No more retries will be attempted if we die here since
+                  # retry_on_die is not set.  on_failure will be called.
+                  # Since we already waited as long as the user specified
+                  # with --wait, we don't need to retry and wait any longer.
+                  die "Slave did not catch up to its master after waiting "
+                     . "$timeout seconds with MASTER_POS_WAIT.  Try inceasing "
+                     . "the --wait time, or disable this feature by specifying "
+                     . "--wait 0.";
+               }
+               else {
+                  return $result;  # slave caught up
+               }
+            },
+            on_failure => sub {
+               die "Slave did not catch up to its master after $tries attempts "
+                  . "of waiting $timeout seconds with MASTER_POS_WAIT.  "
+                  . "Check that the slave is running, increase the --wait "
+                  . "time, or disable this feature by specifying --wait 0.";
+            },
+         );  # retry MasterSlave::wait_for_master()
       }
 
       # Don't lock the destination if we're making changes on the source
@@ -537,7 +602,6 @@ sub lock_and_wait {
          }
       }
    };
-
    if ( $EVAL_ERROR ) {
       # Must abort/unlock/commit so that we don't interfere with any further
       # tables we try to do.

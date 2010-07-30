@@ -39,6 +39,7 @@ use MySQLDump;
 use VersionParser;
 use TableSyncer;
 use MasterSlave;
+use Retry;
 
 my $mysql = $sb->_use_for('master');
 
@@ -49,13 +50,15 @@ my $tp = new TableParser(Quoter => $q);
 my $du = new MySQLDump();
 my $vp = new VersionParser();
 my $ms = new MasterSlave();
+my $rr = new Retry();
 my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );
 my $checksum   = new TableChecksum( Quoter => $q, VersionParser => $vp );
 my $syncer     = new TableSyncer(
    MasterSlave   => $ms,
    TableChecksum => $checksum,
    Quoter        => $q,
-   VersionParser => $vp
+   VersionParser => $vp,
+   Retry         => $rr,
 );
 
 my $ddl;

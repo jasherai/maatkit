@@ -17,6 +17,7 @@ use MasterSlave;
 use Quoter;
 use TableChecksum;
 use VersionParser;
+use Retry;
 # The sync plugins:
 use TableSyncChunk;
 use TableSyncNibble;
@@ -50,7 +51,7 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 59;
+   plan tests => 60;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -87,6 +88,7 @@ throws_ok(
 my $rd       = new RowDiff(dbh=>$src_dbh);
 my $ms       = new MasterSlave();
 my $vp       = new VersionParser();
+my $rt       = new Retry();
 my $checksum = new TableChecksum(
    Quoter         => $q,
    VersionParser => $vp,
@@ -97,6 +99,7 @@ my $syncer = new TableSyncer(
    TableChecksum => $checksum,
    VersionParser => $vp,
    DSNParser     => $dp,
+   Retry         => $rt,
 );
 isa_ok($syncer, 'TableSyncer');
 
@@ -1016,10 +1019,47 @@ foreach my $sync( $sync_chunk, $sync_nibble, $sync_groupby ) {
    );
 }
 
+
+# #############################################################################
+# Retry wait.
+# #############################################################################
+diag(`/tmp/12346/use -e "stop slave"`);
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   throws_ok(
+      sub {
+         $syncer->lock_and_wait(
+            src         => {
+               dbh      => $src_dbh,
+               db       => 'sakila',
+               tbl      => 'actor',
+               misc_dbh => $dbh,
+            },
+            dst         => {
+               dbh => $dst_dbh,
+               db  => 'sakila',
+               tbl => 'actor',
+            },
+            lock        => 1,
+            lock_level  => 1,
+            wait        => 60,
+            wait_retry_args => {
+               wait  => 1,
+               tries => 2,
+            },
+         );
+      },
+      qr/Slave did not catch up to its master after 2 attempts of waiting 60/,
+      "Retries wait"
+   );
+}
+diag(`$trunk/sandbox/mk-test-env reset`);
+
 # #############################################################################
 # Done.
 # #############################################################################
-my $output = '';
 {
    local *STDERR;
    open STDERR, '>', \$output;

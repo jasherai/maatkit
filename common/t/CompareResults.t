@@ -27,6 +27,7 @@ use RowDiff;
 use ChangeHandler;
 use ReportFormatter;
 use Transformers;
+use Retry;
 use Sandbox;
 use CompareResults;
 use MaatkitTest;
@@ -49,10 +50,12 @@ my $du = new MySQLDump(cache => 0);
 my $tp = new TableParser(Quoter => $q);
 my $tc = new TableChecksum(Quoter => $q, VersionParser => $vp);
 my $of = new Outfile();
+my $rr = new Retry();
 my $ts = new TableSyncer(
    Quoter        => $q,
    VersionParser => $vp,
    TableChecksum => $tc,
+   Retry         => $rr,
    MasterSlave   => 1,
 );
 my %modules = (

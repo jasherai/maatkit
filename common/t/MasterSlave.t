@@ -239,16 +239,24 @@ map { $ms->stop_slave($_) } @slaves;
 map { $ms->start_slave($_) } @slaves;
 
 my $res;
-$res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
-ok(defined $res && $res >= 0, 'Wait was successful');
+$res = $ms->wait_for_master(
+   master_dbh => $dbh,
+   slave_dbh  => $slaves[0],
+   timeout    => 1
+);
+ok($res->{result} >= 0, 'Wait was successful');
 
 $ms->stop_slave($slaves[0]);
 $dbh->do('drop database if exists test'); # Any stmt will do
 diag(`(sleep 1; echo "start slave" | /tmp/$port_for{slave0}/use)&`);
 eval {
-   $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
+   $res = $ms->wait_for_master(
+      master_dbh => $dbh,
+      slave_dbh  => $slaves[0],
+      timeout    => 1,
+   );
 };
-ok($res, 'Waited for some events');
+ok($res->{result}, 'Waited for some events');
 
 # Clear any START SLAVE UNTIL conditions.
 map { $ms->stop_slave($_) } @slaves;

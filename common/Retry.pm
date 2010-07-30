@@ -60,14 +60,14 @@ sub retry {
       MKDEBUG && _d("Retry", $tryno, "of", $tries);
       my $result;
       eval {
-         $result = $try->();
+         $result = $try->(tryno=>$tryno);
       };
 
-      if ( $result ) {
+      if ( defined $result ) {
          MKDEBUG && _d("Try code succeeded");
          if ( my $on_success = $args{on_success} ) {
             MKDEBUG && _d("Calling on_success code");
-            $on_success->(result=>$result);
+            $on_success->(tryno=>$tryno, result=>$result);
          }
          return $result;
       }
@@ -77,8 +77,11 @@ sub retry {
          return unless $args{retry_on_die};
       }
 
-      MKDEBUG && _d("Try code failed, calling wait code");
-      $wait->(try=>$tryno);
+      # Wait if there's more retries, else end immediately.
+      if ( $tryno < $tries ) {
+         MKDEBUG && _d("Try code failed, calling wait code");
+         $wait->(tryno=>$tryno);
+      }
    }
 
    MKDEBUG && _d("Try code did not succeed");

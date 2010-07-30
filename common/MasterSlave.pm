@@ -17,18 +17,20 @@
 # ###########################################################################
 # MasterSlave package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
 
+# Package: MasterSlave
+# MasterSlave handles common tasks related to master-slave setups.
 package MasterSlave;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -36,19 +38,26 @@ sub new {
    return bless $self, $class;
 }
 
-# Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
+# Sub: recurse_to_slaves
+#   Descend to slaves by examining SHOW SLAVE HOSTS.
+#   The callback gets the slave's DSN, dbh, parent, and the recursion level
+#   as args.  The recursion is tail recursion.
 #
-# * dbh           (Optional) a DBH.
-# * dsn           The DSN to connect to; if no DBH, will connect using this.
-# * dsn_parser    A DSNParser object.
-# * recurse       How many levels to recurse. 0 = none, undef = infinite.
-# * callback      Code to execute after finding a new slave.
-# * skip_callback Optional: execute with slaves that will be skipped.
-# * method        Optional: whether to prefer HOSTS over PROCESSLIST
-# * parent        Optional: the DSN from which this call descended.
+# Parameters:
+#   $args  - Hashref of arguments
+#   $level - Recursion level
 #
-# The callback gets the slave's DSN, dbh, parent, and the recursion level as args.
-# The recursion is tail recursion.
+# Required Arguments:
+#   dsn           - The DSN to connect to; if no dbh arg, connect using this.
+#   recurse       - How many levels to recurse. 0 = none, undef = infinite.
+#   callback      - Code to execute after finding a new slave.
+#   dsn_parser    - <DSNParser> object
+#
+# Optional Arguments:
+#   dbh           - dbh
+#   skip_callback - Execute with slaves that will be skipped.
+#   method        - Whether to prefer HOSTS over PROCESSLIST
+#   parent        - The DSN from which this call descended.
 sub recurse_to_slaves {
    my ( $self, $args, $level ) = @_;
    $level ||= 0;
@@ -365,30 +374,65 @@ sub get_master_status {
    }
 }
 
-# Waits for a slave to catch up to the master, with MASTER_POS_WAIT().  Returns
-# the return value of MASTER_POS_WAIT().  $ms is the optional result of calling
-# get_master_status().
+# Sub: wait_for_master
+#   Execute MASTER_POS_WAIT() to make slave wait for its master.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   * master_dbh - dbh for master host
+#   * slave_dbh  - dbh for slave host
+#
+# Optional Arguments:
+#   * timeout       - Wait time in seconds (default 60)
+#   * master_status - Hashref returned by <get_master_status()>
+#
+# Returns:
+#   Hashref with result of waiting, like:
+#   (start code)
+#   {
+#     result => the result returned by MASTER_POS_WAIT: -1, undef, 0+
+#     waited => the number of seconds waited, might be zero
+#   }
+#   (end code)
 sub wait_for_master {
-   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(master_dbh slave_dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($master_dbh, $slave_dbh) = @args{@required_args};
+   my $timeout       = $args{timeout} || 60;
+   my $master_status = $args{master_status}
+                       || $self->get_master_status($master_dbh);
+
    my $result;
-   $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
-      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
-   $ms ||= $self->get_master_status($master);
-   if ( $ms ) {
-      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      MKDEBUG && _d($slave, $query);
-      ($result) = $slave->selectrow_array($query);
-      my $stat = defined $result ? $result : 'NULL';
-      MKDEBUG && _d('Result of waiting:', $stat);
-      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-         die "MASTER_POS_WAIT returned $stat";
-      }
+   my $waited;
+   if ( $master_status ) {
+      my $sql = "SELECT MASTER_POS_WAIT('$master_status->{file}', "
+              . "$master_status->{position}, $timeout)";
+      MKDEBUG && _d($slave_dbh, $sql);
+      my $start  = time;
+      ($result)  = $slave_dbh->selectrow_array($sql);
+
+      # If MASTER_POS_WAIT() returned NULL and we waited at least 1s
+      # and the time we waited is less than the timeout then this is
+      # a strong indication that the slave was stopped while we were
+      # waiting.
+      $waited = time - $start;
+
+      MKDEBUG && _d('Result of waiting:', $result);
+      MKDEBUG && _d("Waited", $waited, "seconds");
    }
    else {
       MKDEBUG && _d('Not waiting: this server is not a master');
    }
-   return $result;
+
+   return {
+      result => $result,
+      waited => $waited,
+   };
 }
 
 # Executes STOP SLAVE.
@@ -431,38 +475,46 @@ sub catchup_to_master {
    my $master_pos    = $self->repl_posn($master_status);
    MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
       'Slave position:', $self->pos_to_string($slave_pos));
+
+   my $result;
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       MKDEBUG && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
-      # The slave may catch up instantly and stop, in which case MASTER_POS_WAIT
-      # will return NULL.  We must catch this; if it returns NULL, then we check
-      # that its position is as desired.
-      eval {
-         $self->wait_for_master($master, $slave, $time, 0, $master_status);
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d($EVAL_ERROR);
-         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
-            $slave_status = $self->get_slave_status($slave);
-            if ( !$self->slave_is_running($slave_status) ) {
-               MKDEBUG && _d('Master position:',
-                  $self->pos_to_string($master_pos),
-                  'Slave position:', $self->pos_to_string($slave_pos));
-               $slave_pos = $self->repl_posn($slave_status);
-               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
-                  die "$EVAL_ERROR but slave has not caught up to master";
-               }
-               MKDEBUG && _d('Slave is caught up to master and stopped');
+
+      # The slave may catch up instantly and stop, in which case
+      # MASTER_POS_WAIT will return NULL and $result will be undef.
+      # We must catch this; if it returns NULL, then we check that
+      # its position is as desired.
+      # TODO: what if master_pos_wait times out and $result == -1? retry?
+      $result = $self->wait_for_master(
+            master_dbh    => $master,
+            slave_dbh     => $slave,
+            timeout       => $time,
+            master_status => $master_status
+      );
+      if ( !defined $result ) {
+         $slave_status = $self->get_slave_status($slave);
+         if ( !$self->slave_is_running($slave_status) ) {
+            MKDEBUG && _d('Master position:',
+               $self->pos_to_string($master_pos),
+               'Slave position:', $self->pos_to_string($slave_pos));
+            $slave_pos = $self->repl_posn($slave_status);
+            if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+               die "MASTER_POS_WAIT() returned NULL but slave has not "
+                  . "caught up to master";
             }
-            else {
-               die "$EVAL_ERROR but slave was still running";
-            }
+            MKDEBUG && _d('Slave is caught up to master and stopped');
          }
          else {
-            die $EVAL_ERROR;
+            die "Slave has not caught up to master and it is still running";
          }
       }
    }
+   else {
+      MKDEBUG && _d("Slave is already caught up to master");
+   }
+
+   return $result;
 }
 
 # Makes one server catch up to the other in replication.  When complete, both
