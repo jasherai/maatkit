@@ -75,7 +75,7 @@ if ( $vp->version_ge($master_dbh, '5.1.0') ) {
 }
 
 is(
-   lc($master_dbh->selectrow_hashref('show create table test.checksum')->{'Create Table'}),
+   lc($master_dbh->selectrow_hashref('show create table test.checksum')->{'create table'}),
    $create_tbl,
    'Creates the replicate table'
 );

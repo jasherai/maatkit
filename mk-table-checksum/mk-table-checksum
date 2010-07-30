@@ -2110,7 +2110,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 5266
+# VersionParser package 6667
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VersionParser.pm
@@ -2147,6 +2147,36 @@ sub version_ge {
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
    MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
+}
+
+sub innodb_version {
+   my ( $self, $dbh ) = @_;
+   return unless $dbh;
+   my $innodb_version = "NO";
+
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
+      }
+   }
+
+   MKDEBUG && _d("InnoDB version:", $innodb_version);
+   return $innodb_version;
 }
 
 sub _d {
@@ -2470,7 +2500,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6732
+# TableChunker package 6743
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2842,11 +2872,7 @@ sub get_range_statistics {
          . "on column $col: $EVAL_ERROR";
    }
 
-   my $sql = "EXPLAIN SELECT * FROM $db_tbl"
-           . ($args{index_hint} ? " $args{index_hint}" : "")
-           . ($where ? " WHERE $where" : '');
-   MKDEBUG && _d($sql);
-   my $expl = $dbh->selectrow_hashref($sql);
+   my $expl = $self->_explain(%args);
 
    return (
       min           => $min,
@@ -3189,6 +3215,22 @@ sub get_nonzero_value {
    }
 
    return $val;
+}
+
+sub _explain {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = "EXPLAIN SELECT * FROM $db_tbl"
+              . ($args{index_hint} ? " $args{index_hint}"  : "")
+              . ($args{where}      ? " WHERE $args{where}" : "");
+   MKDEBUG && _d($dbh, $sql);
+   return $dbh->selectrow_hashref($sql);
 }
 
 sub _d {
@@ -4513,7 +4555,6 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 $OUTPUT_AUTOFLUSH = 1;
 
 # Global variables.
-my $exit_status = 0;
 my $checksum_table_data;
 my ( $fetch_sth, $update_sth, $savesince_sth );
 my ( $crc_wid, $md5sum_fmt );
@@ -4530,8 +4571,7 @@ sub main {
    @ARGV = @_;  # set global ARGV for this package
 
    # Reset global vars else tests which run this tool as a module
-   # will have strange, overlapping results.
-   $exit_status                                = 0;
+   # will have strange, overlapping results. 
    $checksum_table_data                        = undef;
    ( $fetch_sth, $update_sth, $savesince_sth ) = (undef, undef, undef);
    ( $crc_wid, $md5sum_fmt )                   = (undef, undef);
@@ -4539,6 +4579,7 @@ sub main {
    %tables_to_checksum                         = ();
 
    my $q = new Quoter();
+   my $exit_status = 0;
 
    # ########################################################################
    # Get configuration information.
@@ -4625,6 +4666,12 @@ sub main {
    $o->set('throttle-method', 'slavelag')
       if $o->get('replicate') && !$o->got('throttle-method');
 
+   # These options are only needed if a --chunk-size is specified.
+   if ( !$o->get('chunk-size') ) {
+      $o->set('chunk-size-limit', undef);
+      $o->set('unchunkable-tables', 1);
+   }
+
    if ( !$o->get('help') ) {
       if ( $o->get('replicate-check') && !$o->get('replicate') ) {
          $o->save_error("--replicate-check requires --replicate.");
@@ -4661,6 +4708,15 @@ sub main {
          my ($db, $tbl) = $q->split_unquote($replicate_table);
          if ( !$db ) {
             $o->save_error('The --replicate table must be database-qualified');
+         }
+      }
+
+      if ( $o->get('chunk-size-limit') ) {
+         my $factor = $o->get('chunk-size-limit');
+         if ( $factor < 0                        # can't be negative
+              || ($factor > 0 && $factor < 1) )  # can't be less than 1
+         {
+            $o->save_error('--chunk-size-limit must be >= 1 or 0 to disable');
          }
       }
    }
@@ -4923,7 +4979,7 @@ sub main {
    # Finally, checksum the tables.
    foreach my $database ( keys %tables_to_checksum ) {
       my $tables = $tables_to_checksum{$database};
-      checksum_tables(
+      $exit_status |= checksum_tables(
          dbh     => $main_dbh,
          db      => $database,
          tbls    => $tables,
@@ -5010,7 +5066,8 @@ sub save_tbl_to_checksum {
       # and make it the preferred index.
       # http://code.google.com/p/maatkit/issues/detail?id=378
       if ( $final_o->get('where')
-           && !$final_o->get('chunk-column') && !$final_o->get('chunk-index') ) 
+           && !$final_o->get('chunk-column')
+           && !$final_o->get('chunk-index') ) 
       {
          my ($mysql_chosen_index) = $tp->find_possible_keys(
             $dbh, $db, $tbl, $q, $final_o->get('where'));
@@ -5019,6 +5076,7 @@ sub save_tbl_to_checksum {
          $final_o->set('chunk-index', $mysql_chosen_index)
             if $mysql_chosen_index;
       }
+
 
       # Get the first chunkable column and index, taking into account
       # --chunk-column and --chunk-index.  If either of those options
@@ -5039,49 +5097,54 @@ sub save_tbl_to_checksum {
       }
       MKDEBUG && _d('Index hint:', $index_hint);
 
-      my @chunks = '1=1'; # Default.
-      my $maxval = undef;
-      if ( $final_o->get('chunk-size') && $chunk_col ) {
-         my ($rows_per_chunk) = $ch->size_to_rows(
+      my @chunks         = '1=1'; # Default.
+      my $rows_per_chunk = undef;
+      my $maxval         = undef;
+      if ( $final_o->get('chunk-size') ) {
+         ($rows_per_chunk) = $ch->size_to_rows(
             dbh        => $dbh,
             db         => $db,
             tbl        => $tbl,
             chunk_size => $final_o->get('chunk-size'),
          );
 
-         # Calculate chunks for this table.
-         my %params = $ch->get_range_statistics(
-            dbh        => $dbh,
-            db         => $db,
-            tbl        => $tbl,
-            chunk_col  => $chunk_col,
-            tbl_struct => $struct,
-         );
-         if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
-            @chunks = $ch->calculate_chunks(
+         if ( $chunk_col ) {
+            # Calculate chunks for this table.
+            my %params = $ch->get_range_statistics(
                dbh        => $dbh,
                db         => $db,
                tbl        => $tbl,
-               tbl_struct => $struct,
                chunk_col  => $chunk_col,
-               chunk_size => $rows_per_chunk,
-               zero_chunk => $final_o->get('zero-chunk'),
-               %params,
+               tbl_struct => $struct,
             );
-            $maxval = $params{max};
+            if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
+               @chunks = $ch->calculate_chunks(
+                  dbh        => $dbh,
+                  db         => $db,
+                  tbl        => $tbl,
+                  tbl_struct => $struct,
+                  chunk_col  => $chunk_col,
+                  chunk_size => $rows_per_chunk,
+                  zero_chunk => $final_o->get('zero-chunk'),
+                  %params,
+               );
+               $maxval = $params{max};
+            }
          }
       }
 
       push @{ $tables_to_checksum{$db} }, {
-         struct   => $struct,
-         create   => $create,
-         database => $db,
-         table    => $tbl,
-         column   => $chunk_col,
-         maxval   => $maxval,
-         index    => $index_hint,
-         chunks   => \@chunks,
-         final_o  => $final_o,
+         struct      => $struct,
+         create      => $create,
+         database    => $db,
+         table       => $tbl,
+         column      => $chunk_col,
+         chunk_index => $chunk_index,
+         chunk_size  => $rows_per_chunk,
+         maxval      => $maxval,
+         index       => $index_hint,
+         chunks      => \@chunks,
+         final_o     => $final_o,
       };
    };
    if ( $EVAL_ERROR ) {
@@ -5108,194 +5171,223 @@ sub checksum_tables {
    my $q     = $args{q};
 
    my ($hdr, $explain);
+   my $exit_status = 0;
 
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
    # NOTE: remember to use the final_o embedded within each $table, not $o
    foreach my $table ( @$tbls ) {
-      eval {
-         my $final_o  = $table->{final_o};
-         my $do_table = 1;
-         MKDEBUG && _d("Doing", $db, '.', $table->{table});
-         MKDEBUG && _d("Table:", Dumper($table));
+      MKDEBUG && _d("Doing", $db, '.', $table->{table});
+      MKDEBUG && _d("Table:", Dumper($table));
+      my $final_o  = $table->{final_o};
 
-         # Determine the checksum strategy for every table because it
-         # might change given various --arg-table opts for each table.
-         my $strat_ref;
-         my ( $strat, $crc_type, $func, $opt_slice );
-         if ( $checksum_table_data && $do_table ) {
-            $strat_ref = determine_checksum_strat(
-               dbh => $dbh,
-               tc  => $tc,
-               o   => $final_o,
-            );
-            ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
-               = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
-            MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
-         }
-         else {
-            # --schema doesn't use a checksum strategy, but do_tbl()
-            # requires a start arg.
-            $strat = '--schema';
-         }
-         $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
+      my $is_chunkable_table = 1;  # table should be chunkable unless...
 
-         # Design and print header unless we are resuming in which case
-         # we should have already re-printed the partial output of the
-         # resume file in parse_resume_file().  This only has to be done
-         # once and done here because we need $crc_wid which is determined
-         # by the checksum strat above.
-         if ( !$hdr ) {
-            if ( $o->get('tab') ) {
-               $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
-               $explain = "%s\t%s\t%s\n";
+      # If there's a chunk size but no chunk index and unchunkable tables
+      # aren't allowed (they're not by default), then table may still be
+      # chunkable if it's small, i.e. total rows in table <= chunk size.
+      if ( $table->{chunk_size}
+           && !$table->{chunk_index}
+           && !$final_o->get('unchunkable-tables') )
+      {
+         $is_chunkable_table = is_chunkable_table(
+            dbh        => $dbh,
+            db         => $db,
+            tbl        => $table->{table},
+            chunk_size => $table->{chunk_size},
+            where      => $final_o->{where},
+            Quoter     => $q,
+         );
+         MKDEBUG && _d("Unchunkable table small enough to chunk:",
+            $is_chunkable_table ? 'yes' : 'no');
+      }
+
+      if ( !$is_chunkable_table ) {
+         $exit_status |= 1;
+         print "# cannot chunk $table->{database} $table->{table}\n";
+      }
+      else { 
+         eval {
+            my $do_table = 1;
+
+            # Determine the checksum strategy for every table because it
+            # might change given various --arg-table opts for each table.
+            my $strat_ref;
+            my ( $strat, $crc_type, $func, $opt_slice );
+            if ( $checksum_table_data && $do_table ) {
+               $strat_ref = determine_checksum_strat(
+                  dbh => $dbh,
+                  tc  => $tc,
+                  o   => $final_o,
+               );
+               ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
+                  = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
+               MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
             }
             else {
-               my $max_tbl  = max(5, map { length($_->{table}) } @$tbls);
-               my $max_db   = max(8, length($db));
-               my $max_host = max(4, map { length($_->{h}) } @$hosts);
-               $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
-                            . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
-               $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
+               # --schema doesn't use a checksum strategy, but do_tbl()
+               # requires a strat arg.
+               $strat = '--schema';
             }
-            my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
-                              COUNT CHECKSUM TIME WAIT STAT LAG);
-            unless ( $o->get('quiet')
-                     || $o->get('explain')
-                     || $o->get('checksum')
-                     || $o->get('resume') )
-            {
-               printf($hdr, @hdr_args)
-                  or die "Cannot print: $OS_ERROR";
-            }
-         }
+            $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 
-         # Clean out the replication table entry for this table.
-         if ( (my $replicate_table = $final_o->get('replicate'))
-              && !$final_o->get('explain') ) {
-            use_repl_db(%args);  # USE the proper replicate db
-            my $del_sql = "DELETE FROM $replicate_table WHERE db=? AND tbl=?";
-            MKDEBUG && _d($dbh, $del_sql, $db, $table->{table});
-            $dbh->do($del_sql, {}, $db, $table->{table});
-         }
-
-         # If --since is given, figure out either
-         # 1) for temporal sinces, if the table has an update time and that
-         #    time is newer than --since, then checksum the whole table,
-         #    otherwise skip it; or
-         # 2) for "numerical" sinces, which column to use: either the
-         #    specified column (--sincecolumn) or the auto-discovered one,
-         #    whichever exists in the table, in that order.
-         # Then, if --savesince is given, save either 1) the current timestamp
-         # or 2) the resulting WHERE clause.
-         if ( $final_o->get('since') ) {
-            if ( is_temporal($final_o->get('since')) ) {
-               MKDEBUG && _d('--since is temporal');
-               my ( $stat )
-                  = $du->get_table_status($dbh, $q, $db, $table->{table});
-               my $time = $stat->{update_time};
-               if ( $time && $time lt $final_o->get('since') ) {
-                  MKDEBUG && _d("Skipping table because --since value",
-                     $final_o->get('since'), "is newer than", $time);
-                  $do_table = 0;
-                  $table->{chunks} = [];
-               }
-            }
-            else {
-               MKDEBUG && _d('--since is numerical');
-               # For numerical sinces, choose the column to apply --since to.
-               # It may not be the column the user said to use! If the user
-               # didn't specify a column that's good to chunk on, we'll use
-               # something else instead.
-
-               # $table->{column} is the first chunkable column returned from
-               # the call to get_first_chunkable_column() in
-               # save_tbl_to_checksum().
-               my ( $sincecol ) =
-                  grep { $_ && $table->{struct}->{is_col}->{$_} }
-                     ( $table->{column}, $final_o->get('since-column') );
-
-               if ( $sincecol ) {
-                  MKDEBUG && _d('Column for numerical --since:',
-                     $db, '.', $table->{table}, '.', $sincecol);
-                  # This ends up being an additional WHERE clause.
-                  $table->{since} = $q->quote($sincecol)
-                     . '>=' .  $q->quote_val($final_o->get('since'));
+            # Design and print header unless we are resuming in which case
+            # we should have already re-printed the partial output of the
+            # resume file in parse_resume_file().  This only has to be done
+            # once and done here because we need $crc_wid which is determined
+            # by the checksum strat above.
+            if ( !$hdr ) {
+               if ( $o->get('tab') ) {
+                  $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+                  $explain = "%s\t%s\t%s\n";
                }
                else {
-                  MKDEBUG && _d('No column for numerical --since for',
-                     $db, '.', $table->{table});
+                  my $max_tbl  = max(5, map { length($_->{table}) } @$tbls);
+                  my $max_db   = max(8, length($db));
+                  my $max_host = max(4, map { length($_->{h}) } @$hosts);
+                  $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
+                               . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+                  $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
+               }
+               my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
+                                 COUNT CHECKSUM TIME WAIT STAT LAG);
+               unless ( $o->get('quiet')
+                        || $o->get('explain')
+                        || $o->get('checksum')
+                        || $o->get('resume') )
+               {
+                  printf($hdr, @hdr_args)
+                     or die "Cannot print: $OS_ERROR";
                }
             }
-         }
 
-         # ##################################################################
-         # The query is independent of the chunk, so I make it once for every
-         # one.
-         # ##################################################################
-         my $query;
-         if ( $checksum_table_data && $do_table ) {
-            $query = $tc->make_checksum_query(
-               db              => $db,
-               tbl             => $table->{table},
-               tbl_struct      => $table->{struct},
-               algorithm       => $strat,
-               function        => $func,
-               crc_wid         => $crc_wid,
-               crc_type        => $crc_type,
-               opt_slice       => $opt_slice,
-               cols            => $final_o->get('columns'),
-               sep             => $final_o->get('separator'),
-               replicate       => $final_o->get('replicate'),
-               float_precision => $final_o->get('float-precision'),
-               trim            => $final_o->get('trim'),
-               ignorecols      => $final_o->get('ignore-columns'),
+            # Clean out the replication table entry for this table.
+            if ( (my $replicate_table = $final_o->get('replicate'))
+                 && !$final_o->get('explain') ) {
+               use_repl_db(%args);  # USE the proper replicate db
+               my $del_sql = "DELETE FROM $replicate_table WHERE db=? AND tbl=?";
+               MKDEBUG && _d($dbh, $del_sql, $db, $table->{table});
+               $dbh->do($del_sql, {}, $db, $table->{table});
+            }
+
+            # If --since is given, figure out either
+            # 1) for temporal sinces, if the table has an update time and that
+            #    time is newer than --since, then checksum the whole table,
+            #    otherwise skip it; or
+            # 2) for "numerical" sinces, which column to use: either the
+            #    specified column (--sincecolumn) or the auto-discovered one,
+            #    whichever exists in the table, in that order.
+            # Then, if --savesince is given, save either 1) the current timestamp
+            # or 2) the resulting WHERE clause.
+            if ( $final_o->get('since') ) {
+               if ( is_temporal($final_o->get('since')) ) {
+                  MKDEBUG && _d('--since is temporal');
+                  my ( $stat )
+                     = $du->get_table_status($dbh, $q, $db, $table->{table});
+                  my $time = $stat->{update_time};
+                  if ( $time && $time lt $final_o->get('since') ) {
+                     MKDEBUG && _d("Skipping table because --since value",
+                        $final_o->get('since'), "is newer than", $time);
+                     $do_table = 0;
+                     $table->{chunks} = [];
+                  }
+               }
+               else {
+                  MKDEBUG && _d('--since is numerical');
+                  # For numerical sinces, choose the column to apply --since to.
+                  # It may not be the column the user said to use! If the user
+                  # didn't specify a column that's good to chunk on, we'll use
+                  # something else instead.
+
+                  # $table->{column} is the first chunkable column returned from
+                  # the call to get_first_chunkable_column() in
+                  # save_tbl_to_checksum().
+                  my ( $sincecol ) =
+                     grep { $_ && $table->{struct}->{is_col}->{$_} }
+                        ( $table->{column}, $final_o->get('since-column') );
+
+                  if ( $sincecol ) {
+                     MKDEBUG && _d('Column for numerical --since:',
+                        $db, '.', $table->{table}, '.', $sincecol);
+                     # This ends up being an additional WHERE clause.
+                     $table->{since} = $q->quote($sincecol)
+                        . '>=' .  $q->quote_val($final_o->get('since'));
+                  }
+                  else {
+                     MKDEBUG && _d('No column for numerical --since for',
+                        $db, '.', $table->{table});
+                  }
+               }
+            }
+
+            # ##################################################################
+            # The query is independent of the chunk, so I make it once for every
+            # one.
+            # ##################################################################
+            my $query;
+            if ( $checksum_table_data && $do_table ) {
+               $query = $tc->make_checksum_query(
+                  db              => $db,
+                  tbl             => $table->{table},
+                  tbl_struct      => $table->{struct},
+                  algorithm       => $strat,
+                  function        => $func,
+                  crc_wid         => $crc_wid,
+                  crc_type        => $crc_type,
+                  opt_slice       => $opt_slice,
+                  cols            => $final_o->get('columns'),
+                  sep             => $final_o->get('separator'),
+                  replicate       => $final_o->get('replicate'),
+                  float_precision => $final_o->get('float-precision'),
+                  trim            => $final_o->get('trim'),
+                  ignorecols      => $final_o->get('ignore-columns'),
+               );
+            }
+            else { # --schema
+               $query = undef;
+            }
+
+            $exit_status |= checksum_chunks(
+               %args,
+               tbl     => $table,
+               query   => $query,
+               hdr     => $hdr,
+               explain => $explain,
+               final_o => $final_o,
+               strat   => $strat,
             );
-         }
-         else { # --schema
-            $query = undef;
-         }
 
-         checksum_chunks(
-            %args,
-            tbl     => $table,
-            query   => $query,
-            hdr     => $hdr,
-            explain => $explain,
-            final_o => $final_o,
-            strat   => $strat,
-         );
-
-         # Save the --since value if
-         #    1) it's temporal and the tbl had changed since --since; or
-         #    2) it's "numerical" and it had a chunkable or nibble-able
-         #       column and it wasn't empty
-         # See issues 121 and 122.
-         if ( $final_o->get('save-since') && $savesince_sth ) {
-            if ( is_temporal($final_o->get('since')) ) {
-               MKDEBUG && _d(
-                  "Saving temporal --since value: current timestamp for",
-                  $db, '.', $table->{table});
-               $savesince_sth->execute(undef,
-                  $db, $table->{table});
+            # Save the --since value if
+            #    1) it's temporal and the tbl had changed since --since; or
+            #    2) it's "numerical" and it had a chunkable or nibble-able
+            #       column and it wasn't empty
+            # See issues 121 and 122.
+            if ( $final_o->get('save-since') && $savesince_sth ) {
+               if ( is_temporal($final_o->get('since')) ) {
+                  MKDEBUG && _d(
+                     "Saving temporal --since value: current timestamp for",
+                     $db, '.', $table->{table});
+                  $savesince_sth->execute(undef,
+                     $db, $table->{table});
+               }
+               elsif ( defined $table->{maxval} ) {
+                  MKDEBUG && _d("Saving numerical --since value:",
+                     $table->{maxval}, "for", $db, '.', $table->{table});
+                  $savesince_sth->execute($table->{maxval},
+                     $db, $table->{table});
+               }
+               else {
+                  MKDEBUG && _d("Cannot save --since value:",
+                     $table->{maxval}, "for", $db, '.', $table->{table});
+               }
             }
-            elsif ( defined $table->{maxval} ) {
-               MKDEBUG && _d("Saving numerical --since value:",
-                  $table->{maxval}, "for", $db, '.', $table->{table});
-               $savesince_sth->execute($table->{maxval},
-                  $db, $table->{table});
-            }
-            else {
-               MKDEBUG && _d("Cannot save --since value:",
-                  $table->{maxval}, "for", $db, '.', $table->{table});
-            }
+         };
+         if ( $EVAL_ERROR ) {
+            print_err($o, $EVAL_ERROR, $db, $table->{table});
          }
-      };
-      if ( $EVAL_ERROR ) {
-         print_err($o, $EVAL_ERROR, $db, $table->{table});
-      }
+      }  # chunkable table
    }
 
-   return;
+   return $exit_status;
 }
 
 sub checksum_chunks {
@@ -5322,11 +5414,46 @@ sub checksum_chunks {
    # This is by design. It lets me unlock the table on the master
    # between chunks.
    # ##################################################################
+   my $exit_status     = 0;
    my $num_chunks      = scalar(@{$tbl->{chunks}});
    my $throttle_method = $o->get('throttle-method');
    MKDEBUG && _d('Checksumming', $num_chunks, 'chunks');
    CHUNK:
    foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
+
+      if (    $final_o->get('chunk-size-limit')
+           && $final_o->get('chunk-size')
+           && $tbl->{chunk_size} )
+      {
+         my $is_oversize_chunk = is_oversize_chunk(
+            %args,
+            db         => $tbl->{database},
+            tbl        => $tbl->{table},
+            chunk      => $tbl->{chunks}->[$chunk_num],
+            chunk_size => $tbl->{chunk_size},
+            where      => [$final_o->get('where'), $tbl->{since}],
+            limit      => $final_o->get('chunk-size-limit'),
+            Quoter     => $q,
+         );
+         if ( $is_oversize_chunk ) {
+            $exit_status |= 1;
+            if ( !$final_o->get('quiet') && !$final_o->get('explain') ) {
+               if ( $final_o->get('checksum') ) {
+                  printf($md5sum_fmt, 'NULL', '',
+                     @{$tbl}{qw(database table)}, $chunk_num)
+                     or die "Cannot print: $OS_ERROR";
+               }
+               else {
+                  printf($args{hdr},
+                     @{$tbl}{qw(database table)}, $chunk_num,
+                     $hosts[0]->{h}, $tbl->{struct}->{engine}, 'OVERSIZE',
+                     'NULL', 'NULL', 'NULL', 'NULL', 'NULL')
+                        or die "Cannot print: $OS_ERROR";
+               }
+            }
+            next CHUNK;
+         }
+      }
 
       if ( $throttle_method eq 'slavelag' ) {
          wait_for_slaves(
@@ -5492,7 +5619,7 @@ sub checksum_chunks {
       }
    } # End foreach CHUNK
 
-   return;
+   return $exit_status;
 }
 
 # Override the command-line arguments with those from --arg-table
@@ -6317,6 +6444,131 @@ sub wait_for_slaves {
    return;
 }
 
+# Sub: is_oversize_chunk
+#   Determine if the chunk is oversize.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   * dbh        - dbh
+#   * db         - db name, not quoted
+#   * tbl        - tbl name, not quoted
+#   * chunk_size - chunk size in number of rows
+#   * chunk      - chunk, e.g. "`a` > 10"
+#   * limit      - oversize if rows > factor * chunk_size
+#   * Quoter     - <Quoter> object
+#
+# Optional Arguments:
+#   * where      - Arrayref of WHERE clauses added to chunk
+#   * index_hint - FORCE INDEX clause
+#
+# Returns:
+#   True if EXPLAIN rows is >= chunk_size * limit, else false
+sub is_oversize_chunk {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db tbl chunk_size chunk limit Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $where = [$args{chunk}, $args{where} ? @{$args{where}} : ()];
+   my $expl;
+   eval {
+      $expl = _explain(%args, where => $where);
+   };
+   if ( $EVAL_ERROR ) {
+      # This shouldn't happen in production but happens in testing because
+      # we chunk tables that don't actually exist.
+      MKDEBUG && _d("Failed to EXPLAIN chunk:", $EVAL_ERROR);
+      return $args{chunk};
+   }
+   MKDEBUG && _d("Chunk", $args{chunk}, "covers", ($expl->{rows} || 0), "rows");
+
+   return ($expl->{rows} || 0) >= $args{chunk_size} * $args{limit} ? 1 : 0;
+}
+
+# Sub: is_chunkable_table
+#   Determine if the table is chunkable.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   * dbh        - dbh
+#   * db         - db name, not quoted
+#   * tbl        - tbl name, not quoted
+#   * chunk_size - chunk size in number of rows
+#   * Quoter     - <Quoter> object
+#
+# Optional Arguments:
+#   * where      - Arrayref of WHERE clauses added to chunk
+#   * index_hint - FORCE INDEX clause
+#
+# Returns:
+#   True if EXPLAIN rows is <= chunk_size, else false
+sub is_chunkable_table {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db tbl chunk_size Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $expl;
+   eval {
+      $expl = _explain(%args);
+   };
+   if ( $EVAL_ERROR ) {
+      # This shouldn't happen in production but happens in testing because
+      # we chunk tables that don't actually exist.
+      MKDEBUG && _d("Failed to EXPLAIN table:", $EVAL_ERROR);
+      return;  # errr on the side of caution: not chunkable if not explainable
+   }
+   MKDEBUG && _d("Table has", ($expl->{rows} || 0), "rows");
+
+   return ($expl->{rows} || 0) <= $args{chunk_size} ? 1 : 0;
+}
+
+# Sub: _explain
+#   EXPLAIN a chunk or table.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   * dbh        - dbh
+#   * db         - db name, not quoted
+#   * tbl        - tbl name, not quoted
+#   * Quoter     - <Quoter> object
+#
+# Optional Arguments:
+#   * where      - Arrayref of WHERE clauses added to chunk
+#   * index_hint - FORCE INDEX clause
+#
+# Returns:
+#   Hashref of first EXPLAIN row
+sub _explain {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db tbl Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl, $q) = @args{@required_args};
+
+   my $db_tbl = $q->quote($db, $tbl);
+   my $where;
+   if ( $args{where} && @{$args{where}} ) {
+      $where = join(" AND ", map { "($_)" } grep { defined } @{$args{where}});
+   }
+   my $sql    = "EXPLAIN SELECT * FROM $db_tbl"
+              . ($args{index_hint} ? " $args{index_hint}" : "")
+              . ($args{where}      ? " WHERE $where"      : "");
+   MKDEBUG && _d($dbh, $sql);
+
+   my $expl = $dbh->selectrow_hashref($sql);
+   return $expl;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -6788,8 +7040,8 @@ In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
   algorithm chunk-column chunk-index chunk-size columns count crc function lock
-  modulo use-index offset optimize-xor probability separator save-since
-  single-chunk since since-column sleep sleep-coef trim wait where
+  modulo use-index offset optimize-xor chunk-size-limit probability separator
+  save-since single-chunk since since-column sleep sleep-coef trim wait where
 
 Each of these columns corresponds to the long form of a command-line option.
 Each column should be NULL-able.  Column names with hyphens should be enclosed
@@ -6908,6 +7160,33 @@ If you specify a suffix (one of k, M or G), the parameter is treated as a data
 size rather than a number of rows.  The output of SHOW TABLE STATUS is then used
 to estimate the amount of data the table contains, and convert that to a number
 of rows.
+
+=item --chunk-size-limit
+
+type: float; default: 2.0; group: Safety
+
+Do not checksum chunks with this many times more rows than L<"--chunk-size">.
+
+When L<"--chunk-size"> is given it specifies an ideal size for each chunk
+of a chunkable table (in rows; size values are converted to rows).  Before
+checksumming each chunk, mk-table-checksum checks how many rows are in the
+chunk with EXPLAIN.  If the number of rows reported by EXPLAIN is this many
+times greater than L<"--chunk-size">, then the chunk is skipped.
+
+For example, if you specify L<"--chunk-size"> 100 and a chunk has 150 rows,
+then it is checksummed with the default L<"--chunk-size-limit"> value 2.0
+because 150 is less than 100 * 2.0.  But if the chunk has 205 rows, then it
+is not checksummed because 205 is greater than 100 * 2.0.
+
+The minimum value for this option is 1 which means that no chunk can be any
+larger than L<"--chunk-size">.  You probably don't want to specify 1 because
+rows reported by EXPLAIN are estimates which can be greater than or less than
+the real number of rows in the chunk.  If too many chunks are skipped because
+they are oversize, you might want to specify a value larger than 2.
+
+You can disable oversize chunk checking by specifying L<"--chunk-size-limit"> 0.
+
+See also L<"--unchunkable-tables">.
 
 =item --columns
 
@@ -7110,6 +7389,23 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
+
+=item --unchunkable-tables
+
+group: Safety
+
+Checksum tables that cannot be chunked when L<"--chunk-size"> is specified.
+
+By default mk-table-checksum will not checksum a table that cannot be chunked
+when L<"--chunk-size"> is specified because this might result in a huge,
+non-chunkable table being checksummed in one huge, memory-intensive chunk.
+
+Specifying this option allows checksumming tables that cannot be chunk.
+Be careful when using this option!  Make sure any non-chunkable tables
+are not so large that they will cause the tool to consume too much memory
+or CPU.
+
+See also L<"--chunk-size-limit">.
 
 =item --offset
 

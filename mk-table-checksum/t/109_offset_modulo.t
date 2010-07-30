@@ -31,7 +31,7 @@ my $cnf='/tmp/12345/my.sandbox.cnf';
 my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 # Check --offset with --modulo
-$output = `$cmd --databases mysql --chunk-size 5 --modulo 7 --offset 'weekday(now())' --tables help_relation 2>&1`;
+$output = `$cmd --databases mysql --chunk-size 5 --modulo 7 --offset 'weekday(now())' --tables help_relation --chunk-size-limit 0 2>&1`;
 like($output, qr/^mysql\s+help_relation\s+\d+/m, '--modulo --offset runs');
 my @chunks = $output =~ m/help_relation\s+(\d+)/g;
 my $chunks = scalar @chunks;

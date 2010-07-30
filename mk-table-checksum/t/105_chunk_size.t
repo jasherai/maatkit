@@ -34,7 +34,7 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # Ensure chunking works
-$output = `$cmd --function sha1 --explain --chunk-size 200 -d test -t chunk`;
+$output = `$cmd --function sha1 --explain --chunk-size 200 -d test -t chunk --chunk-size-limit 0`;
 like($output, qr/test\s+chunk\s+`film_id` > 0 AND `film_id` < '\d+'/, 'chunking works');
 my $num_chunks = scalar(map { 1 } $output =~ m/^test/gm);
 ok($num_chunks >= 5 && $num_chunks < 8, "Found $num_chunks chunks");

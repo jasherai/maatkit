@@ -48,7 +48,7 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/resume2.sql');
 # Child processes checksum each db.tbl on each host and print the results
 # when done.  So the output is nondeterministic.  sort helps fix this.
 
-$output = `$cmd h=127.1,P=12346 -d test -t resume --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume-chunked-complete.txt -`;
+$output = `$cmd h=127.1,P=12346 -d test -t resume --chunk-size 3 --chunk-size-limit 0 --resume $trunk/mk-table-checksum/t/samples/resume-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume-chunked-complete.txt -`;
 is(
    $output,
    '',
@@ -62,7 +62,7 @@ is(
    '--resume'
 );
 
-$output = `$cmd h=127.1,P=12346 -d test,test2 -t resume,resume2 --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume2-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume2-chunked-complete.txt -`;
+$output = `$cmd h=127.1,P=12346 -d test,test2 -t resume,resume2 --chunk-size 3 --chunk-size-limit 0 --resume $trunk/mk-table-checksum/t/samples/resume2-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume2-chunked-complete.txt -`;
 is(
    $output,
    '',
@@ -73,7 +73,7 @@ is(
 
 # First re-checksum and replicate using chunks so we can more easily break,
 # resume and test it.
-`$cmd -d test --replicate test.checksum --empty-replicate-table --chunk-size 3`;
+`$cmd -d test --replicate test.checksum --empty-replicate-table --chunk-size 3 --chunk-size-limit 0`;
 
 # Make sure the results propagate.
 sleep 1;
@@ -82,7 +82,7 @@ sleep 1;
 `/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl='resume' AND chunk=2"`;
 
 # And now test --resume with --replicate.
-$output = `$cmd -d test --resume-replicate --replicate test.checksum --chunk-size 3`;
+$output = `$cmd -d test --resume-replicate --replicate test.checksum --chunk-size 3 --chunk-size-limit 0`;
 
 # The TIME value can fluctuate between 1 and 0.  Make it 0.
 $output =~ s/6abf4a82(\s+)\d+/6abf4a82${1}0/;

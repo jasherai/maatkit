@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --chunk-size-limit (issue 796).
+   * Added --unchunkable-tables (issue 796).
    * Use optimizer preferred index as --chunk-index for --where (issue 378).
 
 2010-07-01: version 1.2.16

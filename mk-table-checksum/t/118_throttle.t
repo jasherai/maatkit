@@ -74,7 +74,7 @@ is(
 $slave2_dbh->do('stop slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave2'
 );
@@ -98,7 +98,7 @@ is(
 $slave2_dbh->do('start slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'Yes',
    'Started slave SQL thread on slave2'
 ) or BAIL_OUT("Failed to restart SQL thread on slave2 (12347)");
@@ -108,7 +108,7 @@ is(
 $slave2_dbh->do('stop slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave2'
 );
@@ -142,7 +142,7 @@ is(
 $slave2_dbh->do('stop slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave2'
 );
@@ -161,7 +161,7 @@ is(
 $slave2_dbh->do('start slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'Yes',
    'Started slave SQL thread on slave2'
 ) or BAIL_OUT("Failed to restart SQL thread on slave2 (12347)");
@@ -169,7 +169,7 @@ is(
 $slave1_dbh->do('stop slave sql_thread');
 $row = $slave1_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave1'
 );
@@ -192,7 +192,7 @@ is(
 $slave1_dbh->do('start slave sql_thread');
 $row = $slave1_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'Yes',
    'Started slave SQL thread on slave1'
 ) or BAIL_OUT("Failed to restart SQL thread on slave1 (12346)");
@@ -205,7 +205,7 @@ sleep 1;
 $slave1_dbh->do('stop slave sql_thread');
 $row = $slave1_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave1'
 );
@@ -215,7 +215,7 @@ is(
 $slave2_dbh->do('stop slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'No',
    'Stopped slave SQL thread on slave2'
 );
@@ -248,7 +248,7 @@ is(
 $slave1_dbh->do('start slave sql_thread');
 $row = $slave1_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'Yes',
    'Started slave SQL thread on slave1'
 ) or BAIL_OUT("Failed to restart SQL thread on slave1 (12346)");
@@ -256,7 +256,7 @@ is(
 $slave2_dbh->do('start slave sql_thread');
 $row = $slave2_dbh->selectrow_hashref('show slave status');
 is(
-   $row->{Slave_SQL_Running},
+   $row->{slave_sql_running},
    'Yes',
    'Started slave SQL thread on slave2'
 ) or BAIL_OUT("Failed to restart SQL thread on slave2 (12347)");
