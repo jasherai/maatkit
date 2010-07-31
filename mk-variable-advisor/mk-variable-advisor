@@ -2719,11 +2719,6 @@ package mk_variable_advisor;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub main {
@@ -2874,7 +2869,7 @@ sub main {
 #   TextResultSetParser - <TextResultSetParser> object if source==file
 #
 # Returns:
-#   hashref of SHOW /*40003 GLOBAL*/ VARIABLES values.
+#   Hashref of SHOW /*40003 GLOBAL*/ VARIABLES values.
 sub get_variables {
    my ( %args ) = @_;
    my @required_args = qw(source);
@@ -2908,6 +2903,16 @@ sub get_variables {
    return $vars;
 }
 
+# Sub: print_advice
+#   Print information about rules that matched.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   advice       - Arrayref of rule IDs, returned by <Advisor::run_rules()>
+#   Advisor      - <Advisor> object
+#   OptionParser - <OptionParser> object
 sub print_advice {
    my ( %args ) = @_;
    my @required_args = qw(advice Advisor OptionParser);
@@ -2963,7 +2968,11 @@ mk-variable-advisor - Analyze MySQL variables and advise on possible problems.
 
 =head1 SYNOPSIS
 
+Get SHOW VARIABLES from localhost:
+
   mk-variable-advisor localhost
+
+Get SHOW VARIABLES output saved in vars.txt:
 
   mk-variable-advisor --source-of-variables vars.txt
 
@@ -2989,9 +2998,33 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-variable-advisor examines variables.
+mk-variable-advisor examines C<SHOW VARIABLES> for bad values and settings
+according to the L<"RULES"> described below.  It reports on variables that
+match the rules, so you can find bad settings in your MySQL server.
+
+At the time of this release, mk-variable-advisor only examples
+C<SHOW VARIABLES>, but other input sources are planned like C<SHOW STATUS>
+and C<SHOW SLAVE STATUS>.
 
 =head1 RULES
+
+These are the rules that mk-variable-advisor will apply to SHOW VARIABLES.
+Each rule has three parts: an ID, a severity, and a description.
+
+The rule's ID is a short, unique name for the rule.  It usually relates
+to the variable that the rule examines.  If a variable is examined by
+several rules, then the rules' IDs are numbered like "-1", "-2", "-N".
+
+The rule's severity is an indication of how important it is that this
+rule matched a query.  We use NOTE, WARN, and CRIT to denote these
+levels.
+
+The rule's description is a textual, human-readable explanation of
+what it means when a variable matches this rule.  Depending on the
+verbosity of the report you generate, you will see more of the text in
+the description.  By default, you'll see only the first sentence,
+which is sort of a terse synopsis of the rule's meaning.  At a higher
+verbosity, you'll see subsequent sentences.
 
 =over
 
