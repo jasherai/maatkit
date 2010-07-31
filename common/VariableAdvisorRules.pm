@@ -366,7 +366,8 @@ sub get_rules {
       id   => 'slave_skip_errors',
       code => sub {
          my ( %args ) = @_;
-         return $args{variables}->{slave_skip_errors} ? 1 : 0;
+         return $args{variables}->{slave_skip_errors}
+             && $args{variables}->{slave_skip_errors} ne 'OFF' ? 1 : 0;
       },
    },
    {

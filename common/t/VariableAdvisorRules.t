@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 79;
+use Test::More tests => 80;
 
 use PodParser;
 use AdvisorRules;
@@ -235,6 +235,10 @@ my @cases = (
    {  name   => "slave skip errors",
       vars   => [qw(slave_skip_errors 1024)],
       advice => [qw(slave_skip_errors)],
+   },
+   {  name   => "slave skip errors",
+      vars   => [qw(slave_skip_errors OFF)],
+      advice => [],
    },
    {  name   => "sort_buffer_size-1",
       vars   => [qw(sort_buffer_size 2097140)],
