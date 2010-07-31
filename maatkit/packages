@@ -12,6 +12,7 @@ mk-log-player
 mk-parallel-dump
 mk-parallel-restore
 mk-purge-logs
+mk-query-advisor
 mk-query-digest
 mk-query-profiler
 mk-show-grants
@@ -23,4 +24,5 @@ mk-slave-restart
 mk-table-checksum
 mk-table-sync
 mk-upgrade
+mk-variable-advisor
 mk-visual-explain
