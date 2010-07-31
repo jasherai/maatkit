@@ -40,7 +40,7 @@ $output = output(
 );
 like(
    $output,
-   qr/port The server is listening on a non-default port/,
+   qr/port: The server is listening on a non-default port/,
    "Get variables from host"
 );
 

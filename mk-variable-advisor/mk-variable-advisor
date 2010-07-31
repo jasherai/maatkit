@@ -25,23 +25,23 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -120,7 +120,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -978,18 +978,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -999,7 +1002,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1604,7 +1606,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 6696
+# PodParser package 6813
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/PodParser.pm
@@ -1896,7 +1898,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Advisor package 6699
+# Advisor package 6813
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Advisor.pm
@@ -2019,7 +2021,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# AdvisorRules package 6678
+# AdvisorRules package 6813
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/AdvisorRules.pm
@@ -2105,7 +2107,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VariableAdvisorRules package 6698
+# VariableAdvisorRules package 6813
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VariableAdvisorRules.pm
@@ -2745,7 +2747,7 @@ sub main {
       if ( @ARGV == 0
             && (!$o->get('show-variables')) ) {
          $o->save_error("--show-variables must be specified if "
-            . "a DNS is not given");
+            . "a DSN is not given");
       }
    }
 
@@ -2893,7 +2895,7 @@ sub print_advice {
                : $verbose == 2 ? "$desc[0] $desc[1]"  # fuller
                : $verbose >  2 ? $info->{description} # complete
                :                 '';                  # none
-      print "# ", uc $info->{severity}, " $id $desc\n\n";
+      print "# ", uc $info->{severity}, " $id: $desc\n\n";
    }
 
    return;
@@ -3418,7 +3420,7 @@ The server is using a non-standard storage engine as default.
 severity: warn 
 
 Binary logging is enabled, but sync_binlog isn't configured so that
-every transaction is flushed the binary log for durability.
+every transaction is flushed to the binary log for durability.
 
 =item tmp_table_size
 
