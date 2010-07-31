@@ -982,10 +982,10 @@ $syncer->lock_and_wait(
 
 my $cid = $src_dbh->selectrow_arrayref("SELECT CONNECTION_ID()")->[0];
 $src_dbh->do("SELECT * FROM sakila.actor WHERE 1=1 LIMIT 2 FOR UPDATE");
-my $idb_status = $src_dbh->selectrow_arrayref("SHOW INNODB STATUS");
+my $idb_status = $src_dbh->selectrow_hashref("SHOW INNODB STATUS");
 $src_dbh->commit();
 like(
-   $idb_status->[2],
+   $idb_status->{status},
    qr/MySQL thread id $cid, query id \d+/,
    "Open transaction"
 );
