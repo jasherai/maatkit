@@ -2107,7 +2107,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VariableAdvisorRules package 6813
+# VariableAdvisorRules package 6821
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VariableAdvisorRules.pm
@@ -2460,7 +2460,8 @@ sub get_rules {
       id   => 'slave_skip_errors',
       code => sub {
          my ( %args ) = @_;
-         return $args{variables}->{slave_skip_errors} ? 1 : 0;
+         return $args{variables}->{slave_skip_errors}
+             && $args{variables}->{slave_skip_errors} ne 'OFF' ? 1 : 0;
       },
    },
    {
