@@ -2751,7 +2751,7 @@ sub main {
 
    if ( !$o->get('help') ) {
       if ( $vars_from eq 'mysql' && @ARGV == 0 ) {
-         $o->save_error("A DSN must be given when --source-of-variables=mysql");
+         $o->save_error("A DSN must be specified when --source-of-variables=mysql");
       }
    }
 

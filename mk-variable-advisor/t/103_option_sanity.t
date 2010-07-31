@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 use MaatkitTest;
 shift @INC;  # These shifts are required for tools that use base and derived
@@ -24,6 +24,13 @@ like(
    $output,
    qr/--source-of-variables file \S+ does not exist/,
    "--source-of-variables file doesn't exit"
+);
+
+$output = `$cmd --source-of-variables mysql 2>&1`;
+like(
+   $output,
+   qr/DSN must be specified/,
+   "--source-of-variablels=mysql requires DSN"
 );
 
 # #############################################################################
