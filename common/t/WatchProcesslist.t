@@ -22,7 +22,7 @@ my $pla = new ProcesslistAggregator();
 my $r   = new TextResultSetParser();
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
+my $dbh = $sb->get_dbh_for('master', {no_lc=>1});
 
 my $proc;
 sub show_processlist { return $proc };

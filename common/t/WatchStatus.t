@@ -20,7 +20,7 @@ use MaatkitTest;
 my $is  = new InnoDBStatusParser();
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('slave1');
+my $dbh = $sb->get_dbh_for('slave1', {no_lc=>1});
 
 my $status;
 

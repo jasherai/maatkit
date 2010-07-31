@@ -880,10 +880,10 @@ SKIP: {
    # Test wait_for_master().
    my $ms = $master_dbh->selectrow_hashref('SHOW MASTER STATUS');
    my $ss = $slave_dbh->selectrow_hashref('SHOW SLAVE STATUS');
-   my $master_pos = $ms->{Position};
+   my $master_pos = $ms->{position};
    my %wait_args = (
       dbh       => $slave_dbh,
-      mfile     => $ss->{Relay_Master_Log_File},
+      mfile     => $ss->{relay_master_log_file},
       until_pos => $master_pos + 100,
    );
    is(

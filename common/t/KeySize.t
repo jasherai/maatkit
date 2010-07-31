@@ -139,7 +139,7 @@ is(
 );
 is(
    $ks->explain(),
-   "Extra: Using where; Using index
+   "extra: Using where; Using index
 id: 1
 key: BASE_KID_ID
 key_len: 17

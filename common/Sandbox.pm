@@ -110,7 +110,7 @@ sub get_dbh_for {
       return 0;
    }
    $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
-   $dbh->{FetchHashKeyName} = 'NAME_lc';
+   $dbh->{FetchHashKeyName} = 'NAME_lc' unless $cxn_ops && $cxn_ops->{no_lc};
    return $dbh;
 }
 
