@@ -25,18 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -46,7 +49,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -380,23 +382,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6762
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -1333,13 +1335,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -1349,7 +1352,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
@@ -2151,7 +2154,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6535
+# QueryRewriter package 6767
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -2409,6 +2412,9 @@ sub distill {
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
@@ -2945,24 +2951,141 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 6764
+# Advisor package 6813
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
-#   trunk/common/QueryAdvisorRules.pm
-#   trunk/common/t/QueryAdvisorRules.t
+#   trunk/common/Advisor.pm
+#   trunk/common/t/Advisor.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package QueryAdvisorRules;
+package Advisor;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(match_type) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
 
+   my $self = {
+      %args,
+      rules          => [],  # Rules from all advisor modules.
+      rule_index_for => {},  # Maps rules by ID to their array index in $rules.
+      rule_info      => {},  # ID, severity, description, etc. for each rule.
+   };
+
+   return bless $self, $class;
+}
+
+sub load_rules {
+   my ( $self, $advisor ) = @_;
+   return unless $advisor;
+   MKDEBUG && _d('Loading rules from', ref $advisor);
+
+   my $i = scalar @{$self->{rules}};
+
+   RULE:
+   foreach my $rule ( $advisor->get_rules() ) {
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{"$id"} ) {
+         MKDEBUG && _d("Ignoring rule", $id);
+         next RULE;
+      }
+      die "Rule $id already exists and cannot be redefined"
+         if defined $self->{rule_index_for}->{$id};
+      push @{$self->{rules}}, $rule;
+      $self->{rule_index_for}->{$id} = $i++;
+   }
+
+   return;
+}
+
+sub load_rule_info {
+   my ( $self, $advisor ) = @_;
+   return unless $advisor;
+   MKDEBUG && _d('Loading rule info from', ref $advisor);
+   my $rules = $self->{rules};
+   foreach my $rule ( @$rules ) {
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{"$id"} ) {
+         die "Rule $id was loaded but should be ignored";
+      }
+      my $rule_info = $advisor->get_rule_info($id);
+      next unless $rule_info;
+      die "Info for rule $id already exists and cannot be redefined"
+         if $self->{rule_info}->{$id};
+      $self->{rule_info}->{$id} = $rule_info;
+   }
+   return;
+}
+
+sub run_rules {
+   my ( $self, %args ) = @_;
+   my @matched_rules;
+   my @matched_pos;
+   my $rules      = $self->{rules};
+   my $match_type = lc $self->{match_type};
+   foreach my $rule ( @$rules ) {
+      eval {
+         my $match = $rule->{code}->(%args);
+         if ( $match_type eq 'pos' ) {
+            if ( defined $match ) {
+               MKDEBUG && _d('Matches rule', $rule->{id}, 'near pos', $match);
+               push @matched_rules, $rule->{id};
+               push @matched_pos,   $match;
+            }
+         }
+         elsif ( $match_type eq 'bool' ) {
+            if ( $match ) {
+               MKDEBUG && _d("Matches rule", $rule->{id});
+               push @matched_rules, $rule->{id};
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Code for rule $rule->{id} caused an error: $EVAL_ERROR";
+      }
+   }
+   return \@matched_rules, \@matched_pos;
+};
+
+sub get_rule_info {
+   my ( $self, $id ) = @_;
+   return unless $id;
+   return $self->{rule_info}->{$id};
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Advisor package
+# ###########################################################################
+
+# ###########################################################################
+# AdvisorRules package 6813
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/AdvisorRules.pm
+#   trunk/common/t/AdvisorRules.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package AdvisorRules;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
@@ -2970,307 +3093,13 @@ sub new {
    foreach my $arg ( qw(PodParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-
-   my @rules = get_rules();
-   MKDEBUG && _d(scalar @rules, 'rules');
-
    my $self = {
       %args,
-      rules     => \@rules,
+      rules     => [],
       rule_info => {},
    };
-
    return bless $self, $class;
 }
-
-sub get_rules {
-   return
-   {
-      id   => 'ALI.001',      # Implicit alias
-      code => sub {
-         my ( $event ) = @_;
-         my $struct = $event->{query_struct};
-         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
-         return unless $tbls;
-         foreach my $tbl ( @$tbls ) {
-            return 0 if $tbl->{alias} && !$tbl->{explicit_alias};
-         }
-         my $cols = $struct->{columns};
-         return unless $cols;
-         foreach my $col ( @$cols ) {
-            return 0 if $col->{alias} && !$col->{explicit_alias};
-         }
-         return;
-      },
-   },
-   {
-      id   => 'ALI.002',      # tbl.* alias
-      code => sub {
-         my ( $event ) = @_;
-         my $cols = $event->{query_struct}->{columns};
-         return unless $cols;
-         foreach my $col ( @$cols ) {
-            return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
-         }
-         return;
-      },
-   },
-   {
-      id   => 'ALI.003',      # tbl AS tbl
-      code => sub {
-         my ( $event ) = @_;
-         my $struct = $event->{query_struct};
-         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
-         return unless $tbls;
-         foreach my $tbl ( @$tbls ) {
-            return 0 if $tbl->{alias} && $tbl->{alias} eq $tbl->{name};
-         }
-         my $cols = $struct->{columns};
-         return unless $cols;
-         foreach my $col ( @$cols ) {
-            return 0 if $col->{alias} && $col->{alias} eq $col->{name};
-         }
-         return;
-      },
-   },
-   {
-      id   => 'ARG.001',      # col = '%foo'
-      code => sub {
-         my ( $event ) = @_;
-         return 0 if $event->{arg} =~ m/[\'\"][\%\_]./;
-         return;
-      },
-   },
-   {
-      id   => 'ARG.002',      # LIKE w/o wildcard
-      code => sub {
-         my ( $event ) = @_;
-         my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
-         foreach my $arg ( @like_args ) {
-            return 0 if $arg !~ m/[%_]/;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'CLA.001',      # SELECT w/o WHERE
-      code => sub {
-         my ( $event ) = @_;
-         return unless ($event->{query_struct}->{type} || '') eq 'select';
-         return unless $event->{query_struct}->{from};
-         return 0 unless $event->{query_struct}->{where};
-         return;
-      },
-   },
-   {
-      id   => 'CLA.002',      # ORDER BY RAND()
-      code => sub {
-         my ( $event ) = @_;
-         my $orderby = $event->{query_struct}->{order_by};
-         return unless $orderby;
-         foreach my $col ( @$orderby ) {
-            return 0 if $col =~ m/RAND\([^\)]*\)/i;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'CLA.003',      # LIMIT w/ OFFSET
-      code => sub {
-         my ( $event ) = @_;
-         return unless $event->{query_struct}->{limit};
-         return unless defined $event->{query_struct}->{limit}->{offset};
-         return 0;
-      },
-   },
-   {
-      id   => 'CLA.004',      # GROUP BY <number>
-      code => sub {
-         my ( $event ) = @_;
-         my $groupby = $event->{query_struct}->{group_by};
-         return unless $groupby;
-         foreach my $col ( @{$groupby->{columns}} ) {
-            return 0 if $col =~ m/^\d+\b/;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'CLA.005',      # ORDER BY col where col=<constant>
-      code => sub {
-         my ( $event ) = @_;
-         my $orderby = $event->{query_struct}->{order_by};
-         return unless $orderby;
-         my $where   = $event->{query_struct}->{where};
-         return unless $where;
-         my %orderby_col = map {
-            my ($col) = lc $_;
-            $col =~ s/\s+(?:asc|desc)$//;
-            $col => 1;
-         } @$orderby;
-         foreach my $pred ( @$where ) {
-            my $val = $pred->{value};
-            next unless $val;
-            return 0 if $val =~ m/^\d+$/ && $orderby_col{lc $pred->{column}};
-         }
-         return;
-      },
-   },
-   {
-      id   => 'COL.001',      # SELECT *
-      code => sub {
-         my ( $event ) = @_;
-         return unless ($event->{query_struct}->{type} || '') eq 'select';
-         my $cols = $event->{query_struct}->{columns};
-         return unless $cols;
-         foreach my $col ( @$cols ) {
-            return 0 if $col->{name} eq '*';
-         }
-         return;
-      },
-   },
-   {
-      id   => 'COL.002',      # INSERT w/o (cols) def
-      code => sub {
-         my ( $event ) = @_;
-         my $type = $event->{query_struct}->{type} || '';
-         return unless $type eq 'insert' || $type eq 'replace';
-         return 0 unless $event->{query_struct}->{columns};
-         return;
-      },
-   },
-   {
-      id   => 'LIT.001',      # IP as string
-      code => sub {
-         my ( $event ) = @_;
-         if ( $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/gc ) {
-            return (pos $event->{arg}) || 0;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'LIT.002',      # Date not quoted
-      code => sub {
-         my ( $event ) = @_;
-         if ( $event->{arg} =~ m/(?<!['"\w-])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
-            return (pos $event->{arg}) || 0;
-         }
-         if ( $event->{arg} =~ m/(?<!['"\w\d-])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
-            return (pos $event->{arg}) || 0;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
-      code => sub {
-         my ( $event ) = @_;
-         return 0 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
-         return;
-      },
-   },
-   {
-      id   => 'JOI.001',      # comma and ansi joins
-      code => sub {
-         my ( $event ) = @_;
-         my $struct = $event->{query_struct};
-         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
-         return unless $tbls;
-         my $comma_join = 0;
-         my $ansi_join  = 0;
-         foreach my $tbl ( @$tbls ) {
-            if ( $tbl->{join} ) {
-               if ( $tbl->{join}->{ansi} ) {
-                  $ansi_join = 1;
-               }
-               else {
-                  $comma_join = 1;
-               }
-            }
-            return 0 if $comma_join && $ansi_join;
-         }
-         return;
-      },
-   },
-   {
-      id   => 'RES.001',      # non-deterministic GROUP BY
-      code => sub {
-         my ( $event ) = @_;
-         return unless ($event->{query_struct}->{type} || '') eq 'select';
-         my $groupby = $event->{query_struct}->{group_by};
-         return unless $groupby;
-         my %groupby_col = map { $_ => 1 }
-                           grep { m/^[^\d]+\b/ }
-                           @{$groupby->{columns}};
-         return unless scalar %groupby_col;
-         my $cols = $event->{query_struct}->{columns};
-         foreach my $col ( @$cols ) {
-            return 0 unless $groupby_col{ $col->{name} };
-         }
-         return;
-      },
-   },
-   {
-      id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
-      code => sub {
-         my ( $event ) = @_;
-         return unless $event->{query_struct}->{limit};
-         return unless    $event->{query_struct}->{from}
-                         || $event->{query_struct}->{into}
-                         || $event->{query_struct}->{tables};
-         return 0 unless $event->{query_struct}->{order_by};
-         return;
-      },
-   },
-   {
-      id   => 'STA.001',      # != instead of <>
-      code => sub {
-         my ( $event ) = @_;
-         return 0 if $event->{arg} =~ m/!=/;
-         return;
-      },
-   },
-   {
-      id   => 'SUB.001',      # IN(<subquery>)
-      code => sub {
-         my ( $event ) = @_;
-         if ( $event->{arg} =~ m/\bIN\s*\(\s*SELECT\b/gi ) {
-            return pos $event->{arg};
-         }
-         return;
-      },
-   },
-   {
-      id   => 'JOI.002',      # table joined more than once, but not self-join
-      code => sub {
-         my ( $event ) = @_;
-         my $struct = $event->{query_struct};
-         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
-         return unless $tbls;
-         my %tbl_cnt;
-         my $n_tbls = scalar @$tbls;
-
-         for my $i ( 0..($n_tbls-1) ) {
-            my $tbl      = $tbls->[$i];
-            my $tbl_name = lc $tbl->{name};
-
-            $tbl_cnt{$tbl_name}->{cnt}++;
-            $tbl_cnt{$tbl_name}->{ansi_join}++
-               if $tbl->{join} && $tbl->{join}->{ansi};
-            $tbl_cnt{$tbl_name}->{comma_join}++
-               if $tbl->{join} && !$tbl->{join}->{ansi};
-
-            if ( $tbl_cnt{$tbl_name}->{cnt} > 1 ) {
-               return 0
-                  if    $tbl_cnt{$tbl_name}->{ansi_join}
-                     && $tbl_cnt{$tbl_name}->{comma_join};
-            }
-         }
-         return;
-      },
-   },
-};
 
 sub load_rule_info {
    my ( $self, %args ) = @_;
@@ -3327,98 +3156,342 @@ sub _d {
 1;
 
 # ###########################################################################
-# End QueryAdvisorRules package
+# End AdvisorRules package
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisor package 6029
+# QueryAdvisorRules package 6814
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryAdvisorRules.pm
+#   trunk/common/t/QueryAdvisorRules.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package QueryAdvisor;
+package QueryAdvisorRules;
+use base 'AdvisorRules';
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   my $self = {
-      %args,
-      rules          => [],  # Rules from all advisor modules.
-      rule_index_for => {},  # Maps rules by ID to their array index in $rules.
-      rule_info      => {},  # ID, severity, description, etc. for each rule.
-   };
-
-   return bless $self, $class;
+   my $self = $class->SUPER::new(%args);
+   @{$self->{rules}} = $self->get_rules();
+   MKDEBUG && _d(scalar @{$self->{rules}}, "rules");
+   return $self;
 }
 
-sub load_rules {
-   my ( $self, $advisor ) = @_;
-   return unless $advisor;
-   MKDEBUG && _d('Loading rules from', ref $advisor);
+sub get_rules {
+   return
+   {
+      id   => 'ALI.001',      # Implicit alias
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         foreach my $tbl ( @$tbls ) {
+            return 0 if $tbl->{alias} && !$tbl->{explicit_alias};
+         }
+         my $cols = $struct->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 0 if $col->{alias} && !$col->{explicit_alias};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'ALI.002',      # tbl.* alias
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $cols  = $event->{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'ALI.003',      # tbl AS tbl
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         foreach my $tbl ( @$tbls ) {
+            return 0 if $tbl->{alias} && $tbl->{alias} eq $tbl->{name};
+         }
+         my $cols = $struct->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 0 if $col->{alias} && $col->{alias} eq $col->{name};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'ARG.001',      # col = '%foo'
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return 0 if $event->{arg} =~ m/[\'\"][\%\_]./;
+         return;
+      },
+   },
+   {
+      id   => 'ARG.002',      # LIKE w/o wildcard
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};        
+         my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
+         foreach my $arg ( @like_args ) {
+            return 0 if $arg !~ m/[%_]/;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'CLA.001',      # SELECT w/o WHERE
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
+         return unless $event->{query_struct}->{from};
+         return 0 unless $event->{query_struct}->{where};
+         return;
+      },
+   },
+   {
+      id   => 'CLA.002',      # ORDER BY RAND()
+      code => sub {
+         my ( %args ) = @_;
+         my $event   = $args{event};
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $orderby;
+         foreach my $col ( @$orderby ) {
+            return 0 if $col =~ m/RAND\([^\)]*\)/i;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'CLA.003',      # LIMIT w/ OFFSET
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless $event->{query_struct}->{limit};
+         return unless defined $event->{query_struct}->{limit}->{offset};
+         return 0;
+      },
+   },
+   {
+      id   => 'CLA.004',      # GROUP BY <number>
+      code => sub {
+         my ( %args ) = @_;
+         my $event   = $args{event};
+         my $groupby = $event->{query_struct}->{group_by};
+         return unless $groupby;
+         foreach my $col ( @{$groupby->{columns}} ) {
+            return 0 if $col =~ m/^\d+\b/;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'CLA.005',      # ORDER BY col where col=<constant>
+      code => sub {
+         my ( %args ) = @_;
+         my $event   = $args{event};
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $orderby;
+         my $where   = $event->{query_struct}->{where};
+         return unless $where;
+         my %orderby_col = map {
+            my ($col) = lc $_;
+            $col =~ s/\s+(?:asc|desc)$//;
+            $col => 1;
+         } @$orderby;
+         foreach my $pred ( @$where ) {
+            my $val = $pred->{value};
+            next unless $val;
+            return 0 if $val =~ m/^\d+$/ && $orderby_col{lc $pred->{column}};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'COL.001',      # SELECT *
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
+         my $cols = $event->{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 0 if $col->{name} eq '*';
+         }
+         return;
+      },
+   },
+   {
+      id   => 'COL.002',      # INSERT w/o (cols) def
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $type  = $event->{query_struct}->{type} || '';
+         return unless $type eq 'insert' || $type eq 'replace';
+         return 0 unless $event->{query_struct}->{columns};
+         return;
+      },
+   },
+   {
+      id   => 'LIT.001',      # IP as string
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         if ( $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'LIT.002',      # Date not quoted
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         if ( $event->{arg} =~ m/(?<!['"\w-])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
+         if ( $event->{arg} =~ m/(?<!['"\w\d-])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return 0 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
+         return;
+      },
+   },
+   {
+      id   => 'JOI.001',      # comma and ansi joins
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my $comma_join = 0;
+         my $ansi_join  = 0;
+         foreach my $tbl ( @$tbls ) {
+            if ( $tbl->{join} ) {
+               if ( $tbl->{join}->{ansi} ) {
+                  $ansi_join = 1;
+               }
+               else {
+                  $comma_join = 1;
+               }
+            }
+            return 0 if $comma_join && $ansi_join;
+         }
+         return;
+      },
+   },
+   {
+      id   => 'RES.001',      # non-deterministic GROUP BY
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
+         my $groupby = $event->{query_struct}->{group_by};
+         return unless $groupby;
+         my %groupby_col = map { $_ => 1 }
+                           grep { m/^[^\d]+\b/ }
+                           @{$groupby->{columns}};
+         return unless scalar %groupby_col;
+         my $cols = $event->{query_struct}->{columns};
+         foreach my $col ( @$cols ) {
+            return 0 unless $groupby_col{ $col->{name} };
+         }
+         return;
+      },
+   },
+   {
+      id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless $event->{query_struct}->{limit};
+         return unless    $event->{query_struct}->{from}
+                         || $event->{query_struct}->{into}
+                         || $event->{query_struct}->{tables};
+         return 0 unless $event->{query_struct}->{order_by};
+         return;
+      },
+   },
+   {
+      id   => 'STA.001',      # != instead of <>
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return 0 if $event->{arg} =~ m/!=/;
+         return;
+      },
+   },
+   {
+      id   => 'SUB.001',      # IN(<subquery>)
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         if ( $event->{arg} =~ m/\bIN\s*\(\s*SELECT\b/gi ) {
+            return pos $event->{arg};
+         }
+         return;
+      },
+   },
+   {
+      id   => 'JOI.002',      # table joined more than once, but not self-join
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my %tbl_cnt;
+         my $n_tbls = scalar @$tbls;
 
-   my $i = scalar @{$self->{rules}};
+         for my $i ( 0..($n_tbls-1) ) {
+            my $tbl      = $tbls->[$i];
+            my $tbl_name = lc $tbl->{name};
 
-   RULE:
-   foreach my $rule ( $advisor->get_rules() ) {
-      my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{uc $id} ) {
-         MKDEBUG && _d("Ignoring rule", $id);
-         next RULE;
-      }
-      die "Rule $id already exists and cannot be redefined"
-         if defined $self->{rule_index_for}->{$id};
-      push @{$self->{rules}}, $rule;
-      $self->{rule_index_for}->{$id} = $i++;
-   }
+            $tbl_cnt{$tbl_name}->{cnt}++;
+            $tbl_cnt{$tbl_name}->{ansi_join}++
+               if $tbl->{join} && $tbl->{join}->{ansi};
+            $tbl_cnt{$tbl_name}->{comma_join}++
+               if $tbl->{join} && !$tbl->{join}->{ansi};
 
-   return;
-}
-
-sub load_rule_info {
-   my ( $self, $advisor ) = @_;
-   return unless $advisor;
-   MKDEBUG && _d('Loading rule info from', ref $advisor);
-   my $rules = $self->{rules};
-   foreach my $rule ( @$rules ) {
-      my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{uc $id} ) {
-         die "Rule $id was loaded but should be ignored";
-      }
-      my $rule_info = $advisor->get_rule_info($id);
-      next unless $rule_info;
-      die "Info for rule $id already exists and cannot be redefined"
-         if $self->{rule_info}->{$id};
-      $self->{rule_info}->{$id} = $rule_info;
-   }
-   return;
-}
-
-sub run_rules {
-   my ( $self, $event ) = @_;
-   my @matched_rules;
-   my @matched_pos;
-   my $rules = $self->{rules};
-   foreach my $rule ( @$rules ) {
-      if ( defined(my $pos = $rule->{code}->($event)) ) {
-         MKDEBUG && _d('Matches rule', $rule->{id}, 'near pos', $pos);
-         push @matched_rules, $rule->{id};
-         push @matched_pos,   $pos;
-      }
-   }
-   return \@matched_rules, \@matched_pos;
+            if ( $tbl_cnt{$tbl_name}->{cnt} > 1 ) {
+               return 0
+                  if    $tbl_cnt{$tbl_name}->{ansi_join}
+                     && $tbl_cnt{$tbl_name}->{comma_join};
+            }
+         }
+         return;
+      },
+   },
 };
-
-sub get_rule_info {
-   my ( $self, $id ) = @_;
-   return unless $id;
-   return $self->{rule_info}->{$id};
-}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -3431,11 +3504,16 @@ sub _d {
 1;
 
 # ###########################################################################
-# End QueryAdvisor package
+# End QueryAdvisorRules package
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 6025
+# PodParser package 6813
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/PodParser.pm
+#   trunk/common/t/PodParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package PodParser;
 
@@ -3556,7 +3634,7 @@ sub textblock {
 
    $para =~ s/\s+\Z//;
 
-   if ( $para =~ m/\b\w+: / ) {
+   if ( $para =~ m/^\w+[:;] / ) {
       MKDEBUG && _d('Item attributes:', $para);
       map {
          my ($attrib, $val) = split(/: /, $_);
@@ -3593,7 +3671,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 6764
+# SQLParser package 6766
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SQLParser.pm
@@ -4115,7 +4193,7 @@ sub parse_where {
          $op  =~ s/\s+$//;
       }
       $val =~ s/^\s+//;
-      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^(?:any|some)/i;
+      $val =~ s/\)$// if ($op || '') !~ m/in/i && $val !~ m/^\w+\([^\)]+\)$/;
       $val =  lc $val if $val =~ m/NULL|TRUE|FALSE/i;
 
       push @predicates, {
@@ -4371,7 +4449,8 @@ sub main {
    # #########################################################################
    my $p   = new PodParser();
    my $qar = new QueryAdvisorRules(PodParser => $p);
-   my $qa  = new QueryAdvisor(
+   my $adv = new Advisor(
+      match_type   => "pos",
       ignore_rules => $o->get('ignore-rules'),
    );
 
@@ -4379,8 +4458,8 @@ sub main {
       file    => __FILE__,
       section => 'RULES',
    );
-   $qa->load_rules($qar);
-   $qa->load_rule_info($qar);
+   $adv->load_rules($qar);
+   $adv->load_rule_info($qar);
 
    # TODO: load rules from plugins
 
@@ -4535,7 +4614,7 @@ sub main {
       MKDEBUG && _d('callback: check query');
       my $event  = $args{event};
       MKDEBUG && _d('Checking', $event->{arg});
-      my ($advice, $near_pos) = $qa->run_rules($event);
+      my ($advice, $near_pos) = $adv->run_rules(event => $event);
       $event->{advice}   = $advice;
       $event->{near_pos} = $near_pos;
       return $event;
@@ -4552,7 +4631,7 @@ sub main {
          verbose       => $o->get('verbose'),
          print_all     => $o->get('print-all'),
          report_format => $o->get('report-format'),
-         QueryAdvisor  => $qa,
+         Advisor       => $adv,
       );
       return $event;
    };
@@ -4651,7 +4730,7 @@ sub print_advice {
    my $event   = $args{event};
    my $verbose = $args{verbose} || 0;
    my $format  = $args{report_format};
-   my $qa      = $args{QueryAdvisor};
+   my $adv     = $args{Advisor};
    my $seen_id = $args{seen_id};
 
    my $advice   = $event->{advice};
@@ -4669,7 +4748,7 @@ sub print_advice {
    foreach my $i ( 1..$n_advice ) {
       my $id   = $advice->[$i - 1];
       my $pos  = $near_pos->[$i - 1];
-      my $info = $qa->get_rule_info($id);
+      my $info = $adv->get_rule_info($id);
       my $desc = $info->{description} || '';  # shouldn't be blank
       if ( $format eq 'compact' && $seen_id->{$id}++ ) {
          push @seen_ids, $id;
@@ -4798,7 +4877,7 @@ as input.
 
 =head1 RULES
 
-These are the rules that mk-advisor will apply to the queries it
+These are the rules that mk-query-advisor will apply to the queries it
 examines.  Each rule has three bits of information: an ID, a severity
 and a description.
 

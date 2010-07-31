@@ -13,6 +13,9 @@ use Test::More;
 
 use MaatkitTest;
 use Sandbox;
+shift @INC;  # These two shifts are required for tools that use base and
+shift @INC;  # derived classes.  See mk-query-digest/t/101_slowlog_analyses.t
+shift @INC;
 require "$trunk/mk-query-advisor/mk-query-advisor";
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
