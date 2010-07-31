@@ -165,7 +165,8 @@ sub get_rules {
    {
       id   => 'CLA.005',      # ORDER BY col where col=<constant>
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event   = $args{event};
          my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
          my $where   = $event->{query_struct}->{where};
@@ -328,7 +329,8 @@ sub get_rules {
    {
       id   => 'JOI.002',      # table joined more than once, but not self-join
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event  = $args{event};
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
