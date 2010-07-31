@@ -26,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 1;
+   plan tests => 2;
 }
 
 # #############################################################################
@@ -42,6 +42,15 @@ like(
    $output,
    qr/port: The server is listening on a non-default port/,
    "Get variables from host"
+);
+
+$output = output(
+   sub { mk_variable_advisor::main(@args, qw(--source-of-variables MYSQL)) },
+);
+like(
+   $output,
+   qr/port: The server is listening on a non-default port/,
+   "Explicit --source-of-variables MYSQL"
 );
 
 # #############################################################################

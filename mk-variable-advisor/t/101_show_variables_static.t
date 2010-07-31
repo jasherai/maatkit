@@ -25,7 +25,7 @@ my $sample = "$trunk/common/t/samples/show-variables/";
 ok(
    no_diff(
       sub { mk_variable_advisor::main(@args,
-         qw(--show-variables), "$sample/vars001.txt") },
+         qw(--source-of-variables), "$sample/vars001.txt") },
       "mk-variable-advisor/t/samples/vars001.txt",
    ),
    "vars001.txt"
@@ -34,7 +34,7 @@ ok(
 ok(
    no_diff(
       sub { mk_variable_advisor::main(@args,
-         qw(-v --show-variables), "$sample/vars001.txt") },
+         qw(-v --source-of-variables), "$sample/vars001.txt") },
       "mk-variable-advisor/t/samples/vars001-verbose.txt",
    ),
    "vars001.txt --verbose"
@@ -43,7 +43,7 @@ ok(
 ok(
    no_diff(
       sub { mk_variable_advisor::main(@args,
-         qw(-v -v --show-variables), "$sample/vars001.txt") },
+         qw(-v -v --source-of-variables), "$sample/vars001.txt") },
       "mk-variable-advisor/t/samples/vars001-verbose-verbose.txt",
    ),
    "vars001.txt --verbose --verbose"
@@ -52,7 +52,7 @@ ok(
 ok(
    no_diff(
       sub { mk_variable_advisor::main(@args,
-         qw(--show-variables), "$sample/vars001.txt",
+         qw(--source-of-variables), "$sample/vars001.txt",
          qw(--ignore-rules), "sync_binlog,myisam_recover_options") },
       "mk-variable-advisor/t/samples/vars001-ignore-rules.txt",
    ),

@@ -2743,15 +2743,27 @@ sub main {
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   my $vars_from         = lc $o->get('source-of-variables');
+   # my $status_from       = lc $o->get('source-of-status');
+   # my $slave_status_from = lc $o->get('source-of-slave-status');
+
+   my $need_dbh = $vars_from eq 'mysql'; # || $status_from eq 'mysql' etc.
+
    if ( !$o->get('help') ) {
-      if ( @ARGV == 0
-            && (!$o->get('show-variables')) ) {
-         $o->save_error("--show-variables must be specified if "
-            . "a DSN is not given");
+      if ( $vars_from eq 'mysql' && @ARGV == 0 ) {
+         $o->save_error("A DSN must be given when --source-of-variables=mysql");
       }
    }
 
    $o->usage_or_errors();
+
+   # #########################################################################
+   # Check that any files given exit.
+   # #########################################################################
+   if ( $vars_from !~ m/mysql|none/ ) {
+      die "The --source-of-variables file $vars_from does not exist"
+         unless -f $vars_from;
+   }
 
    # #########################################################################
    # Load rules from POD and plugins.
@@ -2785,10 +2797,10 @@ sub main {
    );
 
    # ##########################################################################
-   # Connect to MySQL if a DSN was given.
+   # Connect to MySQL if any of the input sources is mysql.
    # ##########################################################################
    my $dbh;
-   if ( @ARGV ) {
+   if ( $need_dbh ) {
       my $dsn_defaults = $dp->parse_options($o);
       my $dsn          = $dp->parse(shift @ARGV, $dsn_defaults);
 
@@ -2815,7 +2827,8 @@ sub main {
    # Get the variables and other MySQL info to pass to rules.
    # #########################################################################
    my $vars = get_variables(
-      dbh => $dbh,
+      source => $vars_from,
+      dbh    => $dbh,
       %common_modules,
    );
 
@@ -2847,23 +2860,45 @@ sub main {
 # Subroutines
 # ##########################################################################
 
-# Returns hashref of SHOW /*40003 GLOBAL*/ VARIABLES values.
+# Sub: get_variables
+#   Get SHOW VARIABLES from MySQL or a file.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   source - "mysql" or a file name
+#
+# Optional Arguments:
+#   dbh                 - dbh if source=="mysql"
+#   TextResultSetParser - <TextResultSetParser> object if source==file
+#
+# Returns:
+#   hashref of SHOW /*40003 GLOBAL*/ VARIABLES values.
 sub get_variables {
    my ( %args ) = @_;
-   my ($dbh, $o, $trp) = @args{qw(dbh OptionParser TextResultSetParser)};
-   my $vars            = {};
+   my @required_args = qw(source);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($source) = @args{@required_args};
 
-   if ( $dbh ) {
+   $source = lc $source;
+   my $vars;
+   if ( ($source || '') eq 'mysql' ) {
+      my $dbh = $args{dbh};
+      die "I need a dbh argument" unless $dbh;
       MKDEBUG && _d("Getting variables from dbh", $dbh);
       my $sql = "SHOW /*40003 GLOBAL*/ VARIABLES";
       MKDEBUG && _d($dbh, $sql);
       map { $vars->{$_->{variable_name}} = $_->{value}; }
          @{ $dbh->selectall_arrayref($sql, {Slice=>{}}) };
    }
-   elsif ( my $file = $o->get('show-variables') ) {
-      MKDEBUG && _d("Getting variables from", $file);
-      open my $fh, "<", $file
-         or die "Cannot open $file: $OS_ERROR";
+   else {
+      my $trp = $args{TextResultSetParser};
+      die "I need a TextResultSetParser arg" unless $trp;
+      MKDEBUG && _d("Getting variables from", $source);
+      open my $fh, "<", $source or die "Cannot open $source: $OS_ERROR";
       my $contents = do { local $/ = undef; <$fh> };
       close $fh;
       map { $vars->{$_->{Variable_name}} = $_->{Value} }
@@ -2930,7 +2965,7 @@ mk-variable-advisor - Analyze MySQL variables and advise on possible problems.
 
   mk-variable-advisor localhost
 
-  mk-variable-advisor --show-variables vars.txt
+  mk-variable-advisor --source-of-variables vars.txt
 
 =head1 RISKS
 
@@ -3536,17 +3571,19 @@ type: string; default: wait_timeout=10000
 Set these MySQL variables.  Immediately after connecting to MySQL, this string
 will be appended to SET and executed.
 
-=item --show-variables
-
-type: string
-
-Read C<SHOW VARIABLES> from this file.
-
 =item --socket
 
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --source-of-variables
+
+type: string; default: mysql
+
+Read C<SHOW VARIABLES> from this source.  Possible values are "mysql", "none"
+or a file name.  If "mysql" is specified then you must also specify a DSN
+on the command line.
 
 =item --user
 
