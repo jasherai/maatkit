@@ -13,8 +13,9 @@ use Test::More tests => 64;
 
 use MaatkitTest;
 use PodParser;
+use AdvisorRules;
 use QueryAdvisorRules;
-use QueryAdvisor;
+use Advisor;
 use SQLParser;
 
 # This test should just test that the QueryAdvisor module conforms to the
@@ -355,9 +356,9 @@ $qar->load_rule_info(
    section => 'RULES',
 );
 
-my $qa = new QueryAdvisor();
-$qa->load_rules($qar);
-$qa->load_rule_info($qar);
+my $adv = new Advisor(match_type => "pos");
+$adv->load_rules($qar);
+$adv->load_rule_info($qar);
 
 my $sp = new SQLParser();
 
@@ -367,7 +368,7 @@ foreach my $test ( @cases ) {
       arg          => $test->{query},
       query_struct => $query_struct,
    };
-   my ($ids, $pos) = $qa->run_rules($event);
+   my ($ids, $pos) = $adv->run_rules(event=>$event);
    is_deeply(
       $ids,
       $test->{advice},

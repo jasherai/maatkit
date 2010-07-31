@@ -25,4 +25,5 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...hecksum/mk-table-checksum   52.9   34.3   33.0   61.7    n/a  100.0   46.0
 ...-table-sync/mk-table-sync   63.4   44.0   40.2   73.1    n/a  100.0   56.3
 ...kit/mk-upgrade/mk-upgrade   10.2    0.9    4.7   31.2    n/a  100.0    8.9
+...visor/mk-variable-advisor   60.4   39.3   38.0   78.3    n/a  100.0   54.4
 ...explain/mk-visual-explain   49.6   39.0   37.9   66.1    n/a   24.2   46.4

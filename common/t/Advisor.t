@@ -13,7 +13,7 @@ use Test::More tests => 5;
 
 use MaatkitTest;
 use QueryAdvisorRules;
-use QueryAdvisor;
+use Advisor;
 use PodParser;
 
 # This module's purpose is to run rules and return a list of the IDs of the
@@ -21,23 +21,23 @@ use PodParser;
 # modules together.  Their purposes are distinct.)
 my $p   = new PodParser();
 my $qar = new QueryAdvisorRules(PodParser => $p);
-my $qa  = new QueryAdvisor();
+my $adv = new Advisor(match_type=>"pos");
 
 # This should make $qa internally call get_rules() on $qar and save the rules
 # into its own list.  If the user plugs in his own module, we'd call
 # load_rules() on that too, and just append the rules (with checks that they
 # don't redefine any rule IDs).
-$qa->load_rules($qar);
+$adv->load_rules($qar);
 
 # To test the above, we ask it to load the same rules twice.  It should die with
 # an error like "Rule LIT.001 already exists, and cannot be redefined"
 throws_ok (
-   sub { $qa->load_rules($qar) },
+   sub { $adv->load_rules($qar) },
    qr/Rule \S+ already exists and cannot be redefined/,
    'Duplicate rules are caught',
 );
 
-# We'll also load the rule info, so we can test $qa->get_rule_info() after the
+# We'll also load the rule info, so we can test $adv->get_rule_info() after the
 # POD is loaded.
 $qar->load_rule_info(
    rules   => [ $qar->get_rules() ],
@@ -50,20 +50,20 @@ $qar->load_rule_info(
 # shouldn't be able to load a plugin that redefines the severity/desc of a
 # built-in rule.  Maybe we'll provide a way to override that, though by default
 # we want to warn and be strict.
-$qa->load_rule_info($qar);
+$adv->load_rule_info($qar);
 
 # TODO: write a test that the rules are described as defined in the POD of the
 # tool.  Testing one rule should be enough.
 
 # Test that it can't be redefined...
 throws_ok (
-   sub { $qa->load_rule_info($qar) },
+   sub { $adv->load_rule_info($qar) },
    qr/Info for rule \S+ already exists and cannot be redefined/,
    'Duplicate rule info is caught',
 );
 
 is_deeply(
-   $qa->get_rule_info('ALI.001'),
+   $adv->get_rule_info('ALI.001'),
    {
       id          => 'ALI.001',
       severity    => 'note',
@@ -76,13 +76,14 @@ is_deeply(
 # #############################################################################
 # Ignore rules.
 # #############################################################################
-$qa = new QueryAdvisor(
+$adv = new Advisor(
+   match_type   => "pos",
    ignore_rules => { 'LIT.002' => 1 },
 );
-$qa->load_rules($qar);
-$qa->load_rule_info($qar);
+$adv->load_rules($qar);
+$adv->load_rule_info($qar);
 is(
-   $qa->get_rule_info('LIT.002'),
+   $adv->get_rule_info('LIT.002'),
    undef,
    "Didn't load ignored rule"
 );

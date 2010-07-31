@@ -152,7 +152,7 @@ sub textblock {
 
    $para =~ s/\s+\Z//;
 
-   if ( $para =~ m/\b\w+: / ) {
+   if ( $para =~ m/^\w+[:;] / ) {
       MKDEBUG && _d('Item attributes:', $para);
       map {
          my ($attrib, $val) = split(/: /, $_);

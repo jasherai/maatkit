@@ -15,21 +15,21 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# QueryAdvisor package $Revision$
+# Advisor package $Revision$
 # ###########################################################################
-package QueryAdvisor;
+package Advisor;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
+#   * match_type    string: how rules match, bool or pos
 #   * ignore_rules  hashref: rule IDs to ignore
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
+   foreach my $arg ( qw(match_type) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -58,7 +58,7 @@ sub load_rules {
    RULE:
    foreach my $rule ( $advisor->get_rules() ) {
       my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{uc $id} ) {
+      if ( $self->{ignore_rules}->{"$id"} ) {
          MKDEBUG && _d("Ignoring rule", $id);
          next RULE;
       }
@@ -78,7 +78,7 @@ sub load_rule_info {
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
       my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{uc $id} ) {
+      if ( $self->{ignore_rules}->{"$id"} ) {
          # This shouldn't happen.  load_rules() should keep any ignored
          # rules out of $self->{rules}.
          die "Rule $id was loaded but should be ignored";
@@ -93,15 +93,30 @@ sub load_rule_info {
 }
 
 sub run_rules {
-   my ( $self, $event ) = @_;
+   my ( $self, %args ) = @_;
    my @matched_rules;
    my @matched_pos;
-   my $rules = $self->{rules};
+   my $rules      = $self->{rules};
+   my $match_type = lc $self->{match_type};
    foreach my $rule ( @$rules ) {
-      if ( defined(my $pos = $rule->{code}->($event)) ) {
-         MKDEBUG && _d('Matches rule', $rule->{id}, 'near pos', $pos);
-         push @matched_rules, $rule->{id};
-         push @matched_pos,   $pos;
+      eval {
+         my $match = $rule->{code}->(%args);
+         if ( $match_type eq 'pos' ) {
+            if ( defined $match ) {
+               MKDEBUG && _d('Matches rule', $rule->{id}, 'near pos', $match);
+               push @matched_rules, $rule->{id};
+               push @matched_pos,   $match;
+            }
+         }
+         elsif ( $match_type eq 'bool' ) {
+            if ( $match ) {
+               MKDEBUG && _d("Matches rule", $rule->{id});
+               push @matched_rules, $rule->{id};
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Code for rule $rule->{id} caused an error: $EVAL_ERROR";
       }
    }
    return \@matched_rules, \@matched_pos;
@@ -124,5 +139,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End QueryAdvisor package
+# End Advisor package
 # ###########################################################################

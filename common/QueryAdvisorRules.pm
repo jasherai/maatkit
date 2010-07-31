@@ -18,34 +18,19 @@
 # QueryAdvisorRules package $Revision$
 # ###########################################################################
 package QueryAdvisorRules;
+use base 'AdvisorRules';
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(PodParser) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   my @rules = get_rules();
-   MKDEBUG && _d(scalar @rules, 'rules');
-
-   my $self = {
-      %args,
-      rules     => \@rules,
-      rule_info => {},
-   };
-
-   return bless $self, $class;
+   my $self = $class->SUPER::new(%args);
+   @{$self->{rules}} = $self->get_rules();
+   MKDEBUG && _d(scalar @{$self->{rules}}, "rules");
+   return $self;
 }
 
 # Each rules is a hashref with two keys:
@@ -60,7 +45,8 @@ sub get_rules {
    {
       id   => 'ALI.001',      # Implicit alias
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event  = $args{event};
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
@@ -78,8 +64,9 @@ sub get_rules {
    {
       id   => 'ALI.002',      # tbl.* alias
       code => sub {
-         my ( $event ) = @_;
-         my $cols = $event->{query_struct}->{columns};
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $cols  = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
             return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
@@ -90,7 +77,8 @@ sub get_rules {
    {
       id   => 'ALI.003',      # tbl AS tbl
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event  = $args{event};
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
@@ -108,7 +96,8 @@ sub get_rules {
    {
       id   => 'ARG.001',      # col = '%foo'
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return 0 if $event->{arg} =~ m/[\'\"][\%\_]./;
          return;
       },
@@ -116,7 +105,8 @@ sub get_rules {
    {
       id   => 'ARG.002',      # LIKE w/o wildcard
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};        
          # TODO: this pattern doesn't handle spaces.
          my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
          foreach my $arg ( @like_args ) {
@@ -128,7 +118,8 @@ sub get_rules {
    {
       id   => 'CLA.001',      # SELECT w/o WHERE
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return unless ($event->{query_struct}->{type} || '') eq 'select';
          return unless $event->{query_struct}->{from};
          return 0 unless $event->{query_struct}->{where};
@@ -138,7 +129,8 @@ sub get_rules {
    {
       id   => 'CLA.002',      # ORDER BY RAND()
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event   = $args{event};
          my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
          foreach my $col ( @$orderby ) {
@@ -150,7 +142,8 @@ sub get_rules {
    {
       id   => 'CLA.003',      # LIMIT w/ OFFSET
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return unless $event->{query_struct}->{limit};
          return unless defined $event->{query_struct}->{limit}->{offset};
          return 0;
@@ -159,7 +152,8 @@ sub get_rules {
    {
       id   => 'CLA.004',      # GROUP BY <number>
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event   = $args{event};
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
          foreach my $col ( @{$groupby->{columns}} ) {
@@ -192,7 +186,8 @@ sub get_rules {
    {
       id   => 'COL.001',      # SELECT *
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return unless ($event->{query_struct}->{type} || '') eq 'select';
          my $cols = $event->{query_struct}->{columns};
          return unless $cols;
@@ -205,8 +200,9 @@ sub get_rules {
    {
       id   => 'COL.002',      # INSERT w/o (cols) def
       code => sub {
-         my ( $event ) = @_;
-         my $type = $event->{query_struct}->{type} || '';
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $type  = $event->{query_struct}->{type} || '';
          return unless $type eq 'insert' || $type eq 'replace';
          return 0 unless $event->{query_struct}->{columns};
          return;
@@ -215,7 +211,8 @@ sub get_rules {
    {
       id   => 'LIT.001',      # IP as string
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          if ( $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/gc ) {
             return (pos $event->{arg}) || 0;
          }
@@ -225,7 +222,8 @@ sub get_rules {
    {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          # YYYY-MM-DD
          if ( $event->{arg} =~ m/(?<!['"\w-])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
             return (pos $event->{arg}) || 0;
@@ -240,7 +238,8 @@ sub get_rules {
    {
       id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return 0 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
          return;
       },
@@ -248,7 +247,8 @@ sub get_rules {
    {
       id   => 'JOI.001',      # comma and ansi joins
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event  = $args{event};
          my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
@@ -271,7 +271,8 @@ sub get_rules {
    {
       id   => 'RES.001',      # non-deterministic GROUP BY
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return unless ($event->{query_struct}->{type} || '') eq 'select';
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
@@ -293,7 +294,8 @@ sub get_rules {
    {
       id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return unless $event->{query_struct}->{limit};
          # If query doesn't use tables then this check isn't applicable.
          return unless    $event->{query_struct}->{from}
@@ -306,7 +308,8 @@ sub get_rules {
    {
       id   => 'STA.001',      # != instead of <>
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          return 0 if $event->{arg} =~ m/!=/;
          return;
       },
@@ -314,7 +317,8 @@ sub get_rules {
    {
       id   => 'SUB.001',      # IN(<subquery>)
       code => sub {
-         my ( $event ) = @_;
+         my ( %args ) = @_;
+         my $event = $args{event};
          if ( $event->{arg} =~ m/\bIN\s*\(\s*SELECT\b/gi ) {
             return pos $event->{arg};
          }
@@ -359,61 +363,6 @@ sub get_rules {
       },
    },
 };
-
-# Arguments:
-#   * file     scalar: file name with POD to parse rules from
-#   * section  scalar: section name for rule items, should be RULES
-#   * rules    arrayref: optional list of rules to load info for
-# Parses rules from the POD section/subsection in file, adding rule
-# info found therein to %rule_info.  Then checks that rule info
-# was gotten for all the required rules.
-sub load_rule_info {
-   my ( $self, %args ) = @_;
-   foreach my $arg ( qw(file section ) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my $rules = $args{rules} || $self->{rules};
-   my $p     = $self->{PodParser};
-
-   # Parse rules and their info from the file's POD, saving
-   # values to %rule_info.
-   $p->parse_from_file($args{file});
-   my $rule_items = $p->get_items($args{section});
-   my %seen;
-   foreach my $rule_id ( keys %$rule_items ) {
-      my $rule = $rule_items->{$rule_id};
-      die "Rule $rule_id has no description" unless $rule->{desc};
-      die "Rule $rule_id has no severity"    unless $rule->{severity};
-      die "Rule $rule_id is already defined"
-         if exists $self->{rule_info}->{$rule_id};
-      $self->{rule_info}->{$rule_id} = {
-         id          => $rule_id,
-         severity    => $rule->{severity},
-         description => $rule->{desc},
-      };
-   }
-
-   # Check that rule info was gotten for each requested rule.
-   foreach my $rule ( @$rules ) {
-      die "There is no info for rule $rule->{id} in $args{file}"
-         unless $self->{rule_info}->{ $rule->{id} };
-   }
-
-   return;
-}
-
-sub get_rule_info {
-   my ( $self, $id ) = @_;
-   return unless $id;
-   return $self->{rule_info}->{$id};
-}
-
-# Used for testing.
-sub _reset_rule_info {
-   my ( $self ) = @_;
-   $self->{rule_info} = {};
-   return;
-}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
