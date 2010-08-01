@@ -7860,7 +7860,6 @@ or CPU.
 
 See also L<"--chunk-size-limit">.
 
-
 =item --[no]use-index
 
 default: yes
