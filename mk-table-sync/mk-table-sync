@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 6803
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -981,7 +981,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6803
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -1059,7 +1059,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6803
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -1620,7 +1620,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 6803
+# TableParser package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
@@ -2504,7 +2504,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 6803
+# ChangeHandler package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ChangeHandler.pm
@@ -2827,7 +2827,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6803
+# TableChunker package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
