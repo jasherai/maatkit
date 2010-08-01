@@ -7398,23 +7398,6 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
 
-=item --unchunkable-tables
-
-group: Safety
-
-Checksum tables that cannot be chunked when L<"--chunk-size"> is specified.
-
-By default mk-table-checksum will not checksum a table that cannot be chunked
-when L<"--chunk-size"> is specified because this might result in a huge,
-non-chunkable table being checksummed in one huge, memory-intensive chunk.
-
-Specifying this option allows checksumming tables that cannot be chunk.
-Be careful when using this option!  Make sure any non-chunkable tables
-are not so large that they will cause the tool to consume too much memory
-or CPU.
-
-See also L<"--chunk-size-limit">.
-
 =item --offset
 
 type: string; default: 0
@@ -7859,6 +7842,24 @@ This is useful when you don't care about the trailing space differences between
 MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and 
 later all retain trailing spaces in C<VARCHAR>, while previous versions would 
 remove them.
+
+=item --unchunkable-tables
+
+group: Safety
+
+Checksum tables that cannot be chunked when L<"--chunk-size"> is specified.
+
+By default mk-table-checksum will not checksum a table that cannot be chunked
+when L<"--chunk-size"> is specified because this might result in a huge,
+non-chunkable table being checksummed in one huge, memory-intensive chunk.
+
+Specifying this option allows checksumming tables that cannot be chunk.
+Be careful when using this option!  Make sure any non-chunkable tables
+are not so large that they will cause the tool to consume too much memory
+or CPU.
+
+See also L<"--chunk-size-limit">.
+
 
 =item --[no]use-index
 
