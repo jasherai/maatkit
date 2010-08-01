@@ -2911,8 +2911,8 @@ it is having problems with replication.  Don't be too hasty to use it unless you
 need to.  If you use this tool carelessly, you might miss the chance to really
 solve the slave server's problems.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release there is a bug that causes an invalid
+C<CHANGE MASTER TO> statement to be executed.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
