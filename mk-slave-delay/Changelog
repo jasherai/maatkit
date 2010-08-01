@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+   * The tool did not reconnect to the slave (issue 991).
+
 2010-06-08: version 1.0.21
 
    * Connections did not preserve server SQL modes (issue 801).

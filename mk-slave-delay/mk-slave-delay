@@ -1848,6 +1848,90 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Retry package 6810
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Retry.pm
+#   trunk/common/t/Retry.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Retry;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub retry {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(try wait);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   };
+   my ($try, $wait) = @args{@required_args};
+   my $tries = $args{tries} || 3;
+
+   my $tryno = 0;
+   while ( ++$tryno <= $tries ) {
+      MKDEBUG && _d("Retry", $tryno, "of", $tries);
+      my $result;
+      eval {
+         $result = $try->(tryno=>$tryno);
+      };
+
+      if ( defined $result ) {
+         MKDEBUG && _d("Try code succeeded");
+         if ( my $on_success = $args{on_success} ) {
+            MKDEBUG && _d("Calling on_success code");
+            $on_success->(tryno=>$tryno, result=>$result);
+         }
+         return $result;
+      }
+
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Try code died:", $EVAL_ERROR);
+         return unless $args{retry_on_die};
+      }
+
+      if ( $tryno < $tries ) {
+         MKDEBUG && _d("Try code failed, calling wait code");
+         $wait->(tryno=>$tryno);
+      }
+   }
+
+   MKDEBUG && _d("Try code did not succeed");
+   if ( my $on_failure = $args{on_failure} ) {
+      MKDEBUG && _d("Calling on_failure code");
+      $on_failure->();
+   }
+
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Retry package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1858,7 +1942,7 @@ sub _d {
 package mk_slave_delay;
 
 use English qw(-no_match_vars);
-use List::Util qw(max);
+use List::Util qw(min max);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 Transformers->import(qw(ts));
@@ -1915,16 +1999,16 @@ sub main {
    my $end = $now + ( $o->get('run-time') || 0 );    # When we should exit
 
    # Connect before daemonizing, in case --ask-pass is needed.
-   my ( $slave, $master );
-   $slave     = get_dbh($dp, $slave_dsn);
-   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+   my $slave_dbh = get_dbh($dp, $slave_dsn);
+   my $status    = $slave_dbh->selectrow_hashref("SHOW SLAVE STATUS");
    if ( !$status || ! %$status ) {
-      die "No SLAVE STATUS found.\n";
+      die "No SLAVE STATUS found";
    }
 
+   my $master_dbh;
    if ( $master_dsn ) {
       MKDEBUG && _d('Connecting to master via DSN from cmd-line');
-      $master = get_dbh($dp, $master_dsn);
+      $master_dbh = get_dbh($dp, $master_dsn);
    }
    elsif ( $o->get('use-master')
            || $status->{slave_io_state} =~ m/free enough relay log/ )
@@ -1932,8 +2016,8 @@ sub main {
       # Try to connect to the slave's master just by looking at its
       # SLAVE STATUS.
       MKDEBUG && _d('The I/O thread is waiting, connecting to master');
-      my $spec = "h=$status->{master_host},P=$status->{master_port}";
-      $master  = get_dbh($dp, $dp->parse($spec, $slave_dsn));
+      my $spec    = "h=$status->{master_host},P=$status->{master_port}";
+      $master_dbh = get_dbh($dp, $dp->parse($spec, $slave_dsn));
    }
 
    # Daemonize only after (potentially) asking for passwords for --ask-pass.
@@ -1951,7 +2035,7 @@ sub main {
 
    # If the I/O thread isn't running when the program starts,
    # it never knows what to do.  So start it.
-   $slave->do('START SLAVE IO_THREAD');
+   $slave_dbh->do('START SLAVE IO_THREAD');
 
    while (                              # Quit if:
       (!$o->get('run-time') || $now < $end) # time is exceeded
@@ -1960,20 +2044,55 @@ sub main {
 
       $now = time();
 
-      $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+      if ( !$slave_dbh || !$slave_dbh->ping() ) {
+         # Try 10 times, for about 2 minutes, to reconnect to the slave,
+         # increasing wait time from 3 to 15 seconds.
+         $o->set('ask-pass', 0);  # don't ask again
+         my $tries = 10;
+         my $rt    = new Retry();
+         $rt->retry(
+            tries        => $tries,
+            retry_on_die => 1,
+            wait         => sub {
+               my ( %args ) = @_;
+               return unless $oktorun;
+               my $t = min($args{tryno} * 3, 15);
+               info("Could not reconnect to slave, sleeping $t seconds "
+                  . "and trying " . ($tries-$args{tryno}) . " more times")
+                     if $tries - $args{tryno};
+               sleep $t;
+            },
+            try          => sub {
+               return unless $oktorun;
+               info("Lost connection to slave, trying to reconnect");
+               $slave_dbh = get_dbh($dp, $slave_dsn);
+               return $slave_dbh;
+            },
+            on_success   => sub {
+               info("Reconnected to slave");
+            },
+            on_failure   => sub {
+               return unless $oktorun;
+               die "Failed to reconnect to slave";
+            },
+         );
+         last unless $oktorun;  # might have gotten interrupt while waiting
+      }
+      $status = $slave_dbh->selectrow_hashref("SHOW SLAVE STATUS");
       if ( !$status || ! %$status ) {
-         die "No SLAVE STATUS found.\n";
+         die "No SLAVE STATUS found";
       }
 
-      if ( !$master && $status->{slave_io_state} =~ m/free enough relay log/ ) {
+      if ( !$master_dbh
+            && $status->{slave_io_state} =~ m/free enough relay log/ ) {
          MKDEBUG && _d("The I/O thread is stuck, connecting to master");
          # If we're daemonized and --ask-pass is given, there's no way
          # to ask for a password.
          if ( $o->get('daemonize') && $o->get('ask-pass') ) {
             die "Cannot ask for password while daemonized";
          }
-         my $spec = "h=$status->{master_host},P=$status->{master_port}";
-         $master  = get_dbh($dp, $dp->parse($spec, $slave_dsn));
+         my $spec    = "h=$status->{master_host},P=$status->{master_port}";
+         $master_dbh = get_dbh($dp, $dp->parse($spec, $slave_dsn));
       }
 
       if ( defined $status->{seconds_behind_master} ) {
@@ -1981,10 +2100,10 @@ sub main {
       }
 
       # Get binlog position.
-      if ( $master ) {
+      if ( $master_dbh ) {
          MKDEBUG && _d('Getting binlog pos from master');
-         my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
-         die "Binary logging is disabled on the MASTER-HOST.\n"
+         my $res = $master_dbh->selectrow_hashref("SHOW MASTER STATUS");
+         die "Binary logging is disabled on the MASTER-HOST"
             unless $res && %$res && $res->{file};
          my $pos = $positions[-1];
          if ( !@positions || $pos->[$FILE] ne $res->{file}
@@ -2039,7 +2158,7 @@ sub main {
             if ( $position->[$FILE] ne $status->{relay_master_log_file}
                || $position->[$POS] != $status->{exec_master_log_pos} )
             {
-               $slave->do(
+               $slave_dbh->do(
                   "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
                      . "MASTER_LOG_FILE = '$position->[$FILE]', "
                      . "MASTER_LOG_POS = $position->[$POS]"
@@ -2069,7 +2188,7 @@ sub main {
          info("STOP SLAVE until "
             . ts($next_start)
             . " at master position $position->[$FILE]/$position->[$POS]");
-         $slave->do("STOP SLAVE SQL_THREAD");
+         $slave_dbh->do("STOP SLAVE SQL_THREAD");
       }
       else {
          my $position = $positions[-1];
@@ -2081,9 +2200,9 @@ sub main {
       sleep($o->get('interval'));
    }
 
-   if ( $slave && $o->get('continue') ) {
+   if ( $slave_dbh && $o->get('continue') ) {
       info("Setting slave to run normally");
-      $slave->do("START SLAVE SQL_THREAD");
+      $slave_dbh->do("START SLAVE SQL_THREAD");
    }
 
    return 0;
