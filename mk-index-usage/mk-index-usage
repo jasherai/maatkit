@@ -25,18 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -46,7 +49,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -380,13 +382,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -396,7 +399,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
@@ -457,23 +460,23 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -552,7 +555,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -1813,7 +1816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6535
+# QueryRewriter package 6767
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -2071,6 +2074,9 @@ sub distill {
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
@@ -2366,8 +2372,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5980
+# TableParser package 6770
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableParser.pm
+#   trunk/common/t/TableParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package TableParser;
 
 use strict;
@@ -2380,7 +2392,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(Quoter);
@@ -2390,7 +2401,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -2994,7 +3004,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 5266
+# VersionParser package 6667
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -3026,6 +3041,36 @@ sub version_ge {
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
    MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
+}
+
+sub innodb_version {
+   my ( $self, $dbh ) = @_;
+   return unless $dbh;
+   my $innodb_version = "NO";
+
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
+      }
+   }
+
+   MKDEBUG && _d("InnoDB version:", $innodb_version);
+   return $innodb_version;
 }
 
 sub _d {

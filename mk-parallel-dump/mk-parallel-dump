@@ -27,18 +27,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -48,7 +51,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -382,23 +384,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -477,7 +479,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -1335,13 +1337,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5980
+# TableParser package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
 #   trunk/common/t/TableParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package TableParser;
 
 use strict;
@@ -1354,7 +1357,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(Quoter);
@@ -1364,7 +1366,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -2034,15 +2035,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6732
+# TableChunker package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
 #   trunk/common/t/TableChunker.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package TableChunker;
 
+package TableChunker;
 
 use strict;
 use warnings FATAL => 'all';
@@ -2057,6 +2058,12 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
+my %real_types = map { $_ => 1 }
+   qw(decimal double float);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter MySQLDump) ) {
@@ -2065,12 +2072,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
-my $EPOCH      = '1970-01-01';
-my %int_types  = map { $_ => 1 }
-   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
-my %real_types = map { $_ => 1 }
-   qw(decimal double float);
 
 sub find_chunk_columns {
    my ( $self, %args ) = @_;
@@ -2770,13 +2771,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -2786,7 +2788,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 

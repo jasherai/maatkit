@@ -25,18 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -46,7 +49,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -686,13 +688,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5980
+# TableParser package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
 #   trunk/common/t/TableParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package TableParser;
 
 use strict;
@@ -705,7 +708,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(Quoter);
@@ -715,7 +717,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -1079,13 +1080,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -1095,7 +1097,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
@@ -1156,23 +1158,23 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -1251,7 +1253,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -2535,7 +2537,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6590
+# EventAggregator package 6671
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -3093,7 +3095,7 @@ sub top_events {
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, [$groupby, 'top'];
+         push @chosen, [$groupby, 'top', $count+1];
       }
 
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
@@ -3101,15 +3103,15 @@ sub top_events {
       ) {
          my $stats = $self->{class_metrics}->{$groupby}->{$args{ol_attrib}};
          if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
-            push @chosen, [$groupby, 'outlier'];
+            push @chosen, [$groupby, 'outlier', $count+1];
          }
          else {
-            push @other, $groupby;
+            push @other, [$groupby, 'misc', $count+1];
          }
       }
 
       else {
-         push @other, $groupby;
+         push @other, [$groupby, 'misc', $count+1];
       }
 
       $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
@@ -3806,7 +3808,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6535
+# QueryRewriter package 6767
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -4064,6 +4066,9 @@ sub distill {
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
@@ -4360,23 +4365,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 6514
+# ChangeHandler package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ChangeHandler.pm
 #   trunk/common/t/ChangeHandler.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package ChangeHandler;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $DUPE_KEY  = qr/Duplicate entry/;
 our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -4606,10 +4611,12 @@ sub make_where_clause {
    return join(' AND ', @clauses);
 }
 
+
 sub get_changes {
    my ( $self ) = @_;
    return %{$self->{changes}};
 }
+
 
 sub sort_cols {
    my ( $self, $row ) = @_;
@@ -4867,15 +4874,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6732
+# TableChunker package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
 #   trunk/common/t/TableChunker.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package TableChunker;
 
+package TableChunker;
 
 use strict;
 use warnings FATAL => 'all';
@@ -4890,6 +4897,12 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
+my %real_types = map { $_ => 1 }
+   qw(decimal double float);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter MySQLDump) ) {
@@ -4898,12 +4911,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
-my $EPOCH      = '1970-01-01';
-my %int_types  = map { $_ => 1 }
-   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
-my %real_types = map { $_ => 1 }
-   qw(decimal double float);
 
 sub find_chunk_columns {
    my ( $self, %args ) = @_;
@@ -6245,7 +6252,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 6523
+# TableSyncer package 6810
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableSyncer.pm
@@ -6267,7 +6274,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum);
+   my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum Retry);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -6631,9 +6638,58 @@ sub lock_and_wait {
    }
 
    eval {
-      if ( $args{wait} ) {
-         $self->{MasterSlave}->wait_for_master(
-            $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
+      if ( my $timeout = $args{wait} ) {
+         my $wait  = $args{wait_retry_args}->{wait}  || 10;
+         my $tries = $args{wait_retry_args}->{tries} || 3;
+         $self->{Retry}->retry(
+            wait  => sub { sleep $wait; },
+            tries => $tries,
+            try   => sub {
+               my ( %args ) = @_;
+
+               if ( $args{tryno} > 1 ) {
+                  warn "Retrying MASTER_POS_WAIT() for --wait $timeout...";
+               }
+
+               my $wait = $self->{MasterSlave}->wait_for_master(
+                  master_dbh => $src->{misc_dbh},
+                  slave_dbh  => $dst->{dbh},
+                  timeout    => $timeout,
+               );
+               if ( !defined $wait->{result} ) {
+                  my $msg;
+                  if ( $wait->{waited}  ) {
+                     $msg = "The slave was stopped while waiting with "
+                          . "MASTER_POS_WAIT().";
+                  }
+                  else {
+                     $msg = "MASTER_POS_WAIT() returned NULL.  Verify that "
+                          . "the slave is running.";
+                  }
+                  if ( $tries - $args{tryno} ) {
+                     $msg .= "  Sleeping $wait seconds then retrying "
+                           . ($tries - $args{tryno}) . " more times.";
+                  }
+                  warn $msg;
+                  return;
+               }
+               elsif ( $wait->{result} == -1 ) {
+                  die "Slave did not catch up to its master after waiting "
+                     . "$timeout seconds with MASTER_POS_WAIT.  Try inceasing "
+                     . "the --wait time, or disable this feature by specifying "
+                     . "--wait 0.";
+               }
+               else {
+                  return $result;  # slave caught up
+               }
+            },
+            on_failure => sub {
+               die "Slave did not catch up to its master after $tries attempts "
+                  . "of waiting $timeout seconds with MASTER_POS_WAIT.  "
+                  . "Check that the slave is running, increase the --wait "
+                  . "time, or disable this feature by specifying --wait 0.";
+            },
+         );  # retry MasterSlave::wait_for_master()
       }
 
       if ( $args{changing_src} ) {
@@ -6653,7 +6709,6 @@ sub lock_and_wait {
          }
       }
    };
-
    if ( $EVAL_ERROR ) {
       if ( $args{src_sth}->{Active} ) {
          $args{src_sth}->finish();
@@ -7783,7 +7838,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 5266
+# VersionParser package 6667
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/VersionParser.pm
@@ -7820,6 +7875,36 @@ sub version_ge {
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
    MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
+}
+
+sub innodb_version {
+   my ( $self, $dbh ) = @_;
+   return unless $dbh;
+   my $innodb_version = "NO";
+
+   my ($innodb) =
+      grep { $_->{engine} =~ m/InnoDB/i }
+      map  {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         \%hash;
+      }
+      @{ $dbh->selectall_arrayref("SHOW ENGINES", {Slice=>{}}) };
+   if ( $innodb ) {
+      MKDEBUG && _d("InnoDB support:", $innodb->{support});
+      if ( $innodb->{support} =~ m/YES|DEFAULT/i ) {
+         my $vars = $dbh->selectrow_hashref(
+            "SHOW VARIABLES LIKE 'innodb_version'");
+         $innodb_version = !$vars ? "BUILTIN"
+                         :          ($vars->{Value} || $vars->{value});
+      }
+      else {
+         $innodb_version = $innodb->{support};  # probably DISABLED or NO
+      }
+   }
+
+   MKDEBUG && _d("InnoDB version:", $innodb_version);
+   return $innodb_version;
 }
 
 sub _d {
@@ -9220,24 +9305,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareQueryTimes package 5285
+# CompareQueryTimes package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/CompareQueryTimes.pm
 #   trunk/common/t/CompareQueryTimes.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package CompareQueryTimes;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use POSIX qw(floor);
-
-Transformers->import(qw(micro_t));
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+Transformers->import(qw(micro_t));
+use POSIX qw(floor);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -9379,6 +9463,7 @@ sub percentage_increase {
    return sprintf '%.2f', (($y - $x) / $x) * 100;
 }
 
+
 sub report {
    my ( $self, %args ) = @_;
    my @required_args = qw(hosts);
@@ -9490,6 +9575,7 @@ sub samples {
    }
    return @samples;
 }
+
 
 sub reset {
    my ( $self ) = @_;
@@ -9895,6 +9981,90 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Retry package 6810
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Retry.pm
+#   trunk/common/t/Retry.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Retry;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub retry {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(try wait);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   };
+   my ($try, $wait) = @args{@required_args};
+   my $tries = $args{tries} || 3;
+
+   my $tryno = 0;
+   while ( ++$tryno <= $tries ) {
+      MKDEBUG && _d("Retry", $tryno, "of", $tries);
+      my $result;
+      eval {
+         $result = $try->(tryno=>$tryno);
+      };
+
+      if ( defined $result ) {
+         MKDEBUG && _d("Try code succeeded");
+         if ( my $on_success = $args{on_success} ) {
+            MKDEBUG && _d("Calling on_success code");
+            $on_success->(tryno=>$tryno, result=>$result);
+         }
+         return $result;
+      }
+
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Try code died:", $EVAL_ERROR);
+         return unless $args{retry_on_die};
+      }
+
+      if ( $tryno < $tries ) {
+         MKDEBUG && _d("Try code failed, calling wait code");
+         $wait->(tryno=>$tryno);
+      }
+   }
+
+   MKDEBUG && _d("Try code did not succeed");
+   if ( my $on_failure = $args{on_failure} ) {
+      MKDEBUG && _d("Calling on_failure code");
+      $on_failure->();
+   }
+
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Retry package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -10007,6 +10177,7 @@ sub main {
    my $qp       = new QueryParser();
    my $qr       = new QueryRewriter();
    my $du       = new MySQLDump(cache => 0);
+   my $rr       = new Retry();
    my $tp       = new TableParser(Quoter => $q);
    my $chunker  = new TableChunker(Quoter => $q, MySQLDump => $du );
    my $nibbler  = new TableNibbler(Quoter => $q, TableParser => $tp );
@@ -10015,7 +10186,8 @@ sub main {
       MasterSlave   => 1,  # I don't think we need this.
       Quoter        => $q,
       VersionParser => $vp,
-      TableChecksum => $checksum
+      TableChecksum => $checksum,
+      Retry         => $rr,
    );
    my %common_modules  = (
       DSNParser     => $dp,

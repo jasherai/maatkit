@@ -1898,13 +1898,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Advisor package 6813
+# Advisor package 6830
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Advisor.pm
 #   trunk/common/t/Advisor.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Advisor;
 
 use strict;
@@ -1970,6 +1971,7 @@ sub load_rule_info {
    return;
 }
 
+
 sub run_rules {
    my ( $self, %args ) = @_;
    my @matched_rules;
@@ -1999,6 +2001,7 @@ sub run_rules {
    }
    return \@matched_rules, \@matched_pos;
 };
+
 
 sub get_rule_info {
    my ( $self, $id ) = @_;

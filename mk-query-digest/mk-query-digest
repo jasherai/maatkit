@@ -25,18 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6366
+# DSNParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
 #   trunk/common/t/DSNParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package DSNParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -46,7 +49,6 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -380,13 +382,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -396,7 +399,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
@@ -457,23 +460,23 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6762
+# OptionParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -7575,13 +7578,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5980
+# TableParser package 6770
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
 #   trunk/common/t/TableParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package TableParser;
 
 use strict;
@@ -7594,7 +7598,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(Quoter);
@@ -7604,7 +7607,6 @@ sub new {
    my $self = { %args };
    return bless $self, $class;
 }
-
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -8826,25 +8828,29 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5358
+# BinaryLogParser package 6785
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/BinaryLogParser.pm
 #   trunk/common/t/BinaryLogParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package BinaryLogParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+my $binlog_line_1 = qr/at (\d+)$/m;
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
+my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -8855,9 +8861,6 @@ sub new {
    return bless $self, $class;
 }
 
-my $binlog_line_1 = qr/at (\d+)$/m;
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
-my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
    my ( $self, %args ) = @_;
@@ -9827,25 +9830,25 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6452
+# MasterSlave package 6810
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
 #   trunk/common/t/MasterSlave.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
 
 package MasterSlave;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -10118,26 +10121,38 @@ sub get_master_status {
 }
 
 sub wait_for_master {
-   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(master_dbh slave_dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($master_dbh, $slave_dbh) = @args{@required_args};
+   my $timeout       = $args{timeout} || 60;
+   my $master_status = $args{master_status}
+                       || $self->get_master_status($master_dbh);
+
    my $result;
-   $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
-      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
-   $ms ||= $self->get_master_status($master);
-   if ( $ms ) {
-      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      MKDEBUG && _d($slave, $query);
-      ($result) = $slave->selectrow_array($query);
-      my $stat = defined $result ? $result : 'NULL';
-      MKDEBUG && _d('Result of waiting:', $stat);
-      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-         die "MASTER_POS_WAIT returned $stat";
-      }
+   my $waited;
+   if ( $master_status ) {
+      my $sql = "SELECT MASTER_POS_WAIT('$master_status->{file}', "
+              . "$master_status->{position}, $timeout)";
+      MKDEBUG && _d($slave_dbh, $sql);
+      my $start  = time;
+      ($result)  = $slave_dbh->selectrow_array($sql);
+
+      $waited = time - $start;
+
+      MKDEBUG && _d('Result of waiting:', $result);
+      MKDEBUG && _d("Waited", $waited, "seconds");
    }
    else {
       MKDEBUG && _d('Not waiting: this server is not a master');
    }
-   return $result;
+
+   return {
+      result => $result,
+      waited => $waited,
+   };
 }
 
 sub stop_slave {
@@ -10174,35 +10189,41 @@ sub catchup_to_master {
    my $master_pos    = $self->repl_posn($master_status);
    MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
       'Slave position:', $self->pos_to_string($slave_pos));
+
+   my $result;
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       MKDEBUG && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
-      eval {
-         $self->wait_for_master($master, $slave, $time, 0, $master_status);
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d($EVAL_ERROR);
-         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
-            $slave_status = $self->get_slave_status($slave);
-            if ( !$self->slave_is_running($slave_status) ) {
-               MKDEBUG && _d('Master position:',
-                  $self->pos_to_string($master_pos),
-                  'Slave position:', $self->pos_to_string($slave_pos));
-               $slave_pos = $self->repl_posn($slave_status);
-               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
-                  die "$EVAL_ERROR but slave has not caught up to master";
-               }
-               MKDEBUG && _d('Slave is caught up to master and stopped');
+
+      $result = $self->wait_for_master(
+            master_dbh    => $master,
+            slave_dbh     => $slave,
+            timeout       => $time,
+            master_status => $master_status
+      );
+      if ( !defined $result ) {
+         $slave_status = $self->get_slave_status($slave);
+         if ( !$self->slave_is_running($slave_status) ) {
+            MKDEBUG && _d('Master position:',
+               $self->pos_to_string($master_pos),
+               'Slave position:', $self->pos_to_string($slave_pos));
+            $slave_pos = $self->repl_posn($slave_status);
+            if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+               die "MASTER_POS_WAIT() returned NULL but slave has not "
+                  . "caught up to master";
             }
-            else {
-               die "$EVAL_ERROR but slave was still running";
-            }
+            MKDEBUG && _d('Slave is caught up to master and stopped');
          }
          else {
-            die $EVAL_ERROR;
+            die "Slave has not caught up to master and it is still running";
          }
       }
    }
+   else {
+      MKDEBUG && _d("Slave is already caught up to master");
+   }
+
+   return $result;
 }
 
 sub catchup_to_same_pos {
