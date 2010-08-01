@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2010-08-01: version 1.0.30
+
    * The tool did not retry MASTER_POS_WAIT for --wait (issue 748).
 
 2010-07-01: version 1.0.29

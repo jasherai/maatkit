@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+2010-08-01: version 1.0.13
+
    * Added "InnoDB version" to summary report format (issue 1079).
 
 2010-06-08: version 1.0.12

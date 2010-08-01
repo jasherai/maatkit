@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+2010-08-01: version 1.0.22
+
    * The tool did not reconnect to the slave (issue 991).
 
 2010-06-08: version 1.0.21

@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2010-08-01: version 1.0.20
+
    * mysqlbinlog was not killed before closing relay log file.
    * Tool crashed if server did not have query cache (issue 992).
 
