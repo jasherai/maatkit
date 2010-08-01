@@ -17,6 +17,9 @@
 # ###########################################################################
 # Advisor package $Revision$
 # ###########################################################################
+
+# Package: Advisor
+# Advisor loads, checks, and runs rules for the various mk-*-advisor tools.
 package Advisor;
 
 use strict;
@@ -24,9 +27,17 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# Arguments:
-#   * match_type    string: how rules match, bool or pos
-#   * ignore_rules  hashref: rule IDs to ignore
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   match_type   - How rules match: "bool" or "pos"
+#   ignore_rules - Hashref with rule IDs to ignore
+#
+# Returns:
+#   Advisor object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(match_type) ) {
@@ -43,8 +54,12 @@ sub new {
    return bless $self, $class;
 }
 
-# Load rules from the given advisor module.  Will die on duplicate
-# rule IDs.
+# Sub: load_rules
+#   Load rules from the given advisor module.  Will die on duplicate
+#   rule IDs.
+#
+# Parameters:
+#   $advisor - An *AdvisorRules module, like <QueryAdvisorRules>
 sub load_rules {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
@@ -71,6 +86,12 @@ sub load_rules {
    return;
 }
 
+# Sub: load_rule_info
+#   Load rule information (severity and description) from the given advisor
+#   module.
+#
+# Parameters:
+#   $advisor - An *AdvisorRules module, like <QueryAdvisorRules>
 sub load_rule_info {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
@@ -92,6 +113,16 @@ sub load_rule_info {
    return;
 }
 
+
+# Sub: run_rules
+#   Run all rules from all advisors loaded ealier.
+#
+# Parameters:
+#   %args - Arguments passed through to each rule's coderef
+#
+# Returns:
+#   An arrayref of rule IDs that matched and arrayref of pos
+#   where those rules matched (if <new()> match_type is "bool").
 sub run_rules {
    my ( $self, %args ) = @_;
    my @matched_rules;
@@ -122,6 +153,15 @@ sub run_rules {
    return \@matched_rules, \@matched_pos;
 };
 
+
+# Sub: get_rule_info
+#   Get the information for a rule by ID.
+#
+# Parameters:
+#   $id - Rule ID
+#
+# Returns:
+#   Hashref with the rule's information (id, severity, description)
 sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
