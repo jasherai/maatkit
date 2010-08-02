@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 64;
+use Test::More tests => 70;
 
 use MaatkitTest;
 use PodParser;
@@ -344,6 +344,31 @@ my @cases = (
    # Now col3 is not a constant, it's the string '5'.
    {  name   => "CLA.005 not tricked by '5'",
       query  => "select col1, col2 from tbl where col3='5' order by col3, col4",
+      advice => [],
+   },
+   {  name   => "JOI.003",
+      query  => "select c from L left join R using(c) where L.a=5 and R.b=10",
+      advice => [qw(JOI.003)],
+   },
+   {  name   => "JOI.003 ok with IS NULL",
+      query  => "select c from L left join R using(c) where L.a=5 and R.b is null",
+      advice => [],
+   },
+   {  name   => "JOI.003 ok without outer table column",
+      query  => "select c from L left join R using(c) where L.a=5",
+      advice => [],
+   },
+   
+   {  name   => "JOI.003 RIGHT",
+      query  => "select c from L right join R using(c) where R.a=5 and L.b=10",
+      advice => [qw(JOI.003)],
+   },
+   {  name   => "JOI.003 RIGHT ok with IS NULL",
+      query  => "select c from L right join R using(c) where R.a=5 and L.b is null",
+      advice => [],
+   },
+   {  name   => "JOI.003 RIGHT ok without outer table column",
+      query  => "select c from L right join R using(c) where R.a=5",
       advice => [],
    },
 );

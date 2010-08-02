@@ -332,6 +332,7 @@ sub get_rules {
          my ( %args ) = @_;
          my $event  = $args{event};
          my $struct = $event->{query_struct};
+         return unless $struct;
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          my %tbl_cnt;
@@ -364,7 +365,69 @@ sub get_rules {
          return;
       },
    },
+   {
+      id   => 'JOI.003',  # OUTER JOIN converted to INNER JOIN
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         return unless $struct;
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my $where  = $struct->{where};
+         return unless $where;
+
+         # Good LEFT OUTER JOIN:
+         #   select * from L left join R using(c) where L.a=5;
+         # Converts to INNER JOIN when:
+         #   select * from L left join R using(c) where L.a=5 and R.b=10;
+         # To detect this condition we need to see if there's an OUTER
+         # join then see if there's a column from the outer table in the
+         # WHERE clause that is anything but "IS NULL".  So in the example
+         # above, R.b=10 is this culprit.
+         my %outer_tbls = map { $_ => 1 } get_outer_tables($tbls);
+         MKDEBUG && _d("Outer tables:", keys %outer_tbls);
+         return unless %outer_tbls;
+
+         foreach my $pred ( @$where ) {
+            next unless $pred->{column};  # skip constants like 1 in "WHERE 1"
+            my ($tbl, $col) = split /\./, $pred->{column};
+            if ( $tbl && $col && $outer_tbls{$tbl} ) {
+               # Only outer_tbl.col IS NULL is permissible.
+               if ( $pred->{operator} ne 'is' || $pred->{value} !~ m/null/i ) {
+                  MKDEBUG && _d("Predicate prevents OUTER JOIN:",
+                     map { $pred->{$_} } qw(column operator value));
+                  return 0;
+               }
+            }
+         }
+
+         return;
+      }
+   },
 };
+
+
+# Sub: get_outer_tables
+#   Get the outer tables in joins.
+#
+# Parameters:
+#   $tbls - Arrayref of hashrefs with table info
+#
+# Returns:
+#   Array of outer table names
+sub get_outer_tables {
+   my ( $tbls ) = @_;
+   return unless $tbls;
+   my @outer_tbls;
+   foreach my $tbl ( @$tbls ) {
+      next unless $tbl->{join} && $tbl->{join}->{type} =~ m/left|right/i;
+      push @outer_tbls,
+         $tbl->{join}->{type} =~ m/left/i ? $tbl->{name} : $tbl->{join}->{to};
+   }
+   return @outer_tbls;
+}
+
 
 sub _d {
    my ($package, undef, $line) = caller 0;

@@ -5034,6 +5034,13 @@ severity: crit
 A table is joined twice.  The same table appears at least twice in the
 FROM clause.
 
+=item JOI.003
+
+severity: warn
+
+Reference to outer table column in WHERE clause prevents OUTER JOIN,
+implicitly converts to INNER JOIN.
+
 =item RES.001
 
 severity: warn
