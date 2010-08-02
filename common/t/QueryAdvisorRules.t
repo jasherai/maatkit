@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 70;
+use Test::More tests => 72;
 
 use MaatkitTest;
 use PodParser;
@@ -358,7 +358,6 @@ my @cases = (
       query  => "select c from L left join R using(c) where L.a=5",
       advice => [],
    },
-   
    {  name   => "JOI.003 RIGHT",
       query  => "select c from L right join R using(c) where R.a=5 and L.b=10",
       advice => [qw(JOI.003)],
@@ -369,6 +368,14 @@ my @cases = (
    },
    {  name   => "JOI.003 RIGHT ok without outer table column",
       query  => "select c from L right join R using(c) where R.a=5",
+      advice => [],
+   },
+   {  name   => "JOI.003 ok with INNER JOIN",
+      query  => "select c from L inner join R using(c) where R.a=5 and L.b=10",
+      advice => [],
+   },
+   {  name   => "JOI.003 ok with JOIN",
+      query  => "select c from L join R using(c) where R.a=5 and L.b=10",
       advice => [],
    },
 );
