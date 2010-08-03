@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 72;
+use Test::More tests => 78;
 
 use MaatkitTest;
 use PodParser;
@@ -351,7 +351,7 @@ my @cases = (
       advice => [qw(JOI.003)],
    },
    {  name   => "JOI.003 ok with IS NULL",
-      query  => "select c from L left join R using(c) where L.a=5 and R.b is null",
+      query  => "select c from L left join R using(c) where L.a=5 and R.c is null",
       advice => [],
    },
    {  name   => "JOI.003 ok without outer table column",
@@ -363,7 +363,7 @@ my @cases = (
       advice => [qw(JOI.003)],
    },
    {  name   => "JOI.003 RIGHT ok with IS NULL",
-      query  => "select c from L right join R using(c) where R.a=5 and L.b is null",
+      query  => "select c from L right join R using(c) where R.a=5 and L.c is null",
       advice => [],
    },
    {  name   => "JOI.003 RIGHT ok without outer table column",
@@ -377,6 +377,63 @@ my @cases = (
    {  name   => "JOI.003 ok with JOIN",
       query  => "select c from L join R using(c) where R.a=5 and L.b=10",
       advice => [],
+   },
+   {  name   => "JOI.004",
+      query  => "select c from L left join R on a=b where L.a=5 and R.c is null",
+      tbl_structs => [
+         { name   => 'L',
+           is_col => {a=>1},
+         },
+         { name   => 'R',
+           is_col => {b=>1, c=>1},
+         },
+      ],
+      advice => [qw(JOI.004)],
+   },
+   {  name   => "JOI.004 USING (b)",
+      query  => "select c from L left join R using(b) where L.a=5 and R.c is null",
+      advice => [qw(JOI.004)],
+   },
+   # JOI.004 requires tbl info with ON, without it it should be skipped silently
+   {  name   => "JOI.004 without table info",
+      query  => "select c from L left join R on a=b where L.a=5 and R.c is null",
+      advice => [],
+   },
+   {  name   => "JOI.004 good exclusion join",
+      query  => "select c from L left join R on a=b where L.a=5 and R.b is null",
+      tbl_structs => [
+         { name   => 'L',
+           is_col => {a=>1},
+         },
+         { name   => 'R',
+           is_col => {b=>1, c=>1},
+         },
+      ],
+      advice => [],
+   },
+   {  name   => "JOI.004 RIGHT",
+      query  => "select c from L right join R on a=b where R.a=5 and L.c is null",
+      tbl_structs => [
+         { name   => 'L',
+           is_col => {a=>1, c=>1},
+         },
+         { name   => 'R',
+           is_col => {b=>1},
+         },
+      ],
+      advice => [qw(JOI.004)],
+   },
+   {  name   => "JOI.004 can table-qualify cols from WHERE",
+      query  => "select c from L left join R on a=b where a=5 and c is null",
+      tbl_structs => [
+         { name   => 'L',
+           is_col => {a=>1},
+         },
+         { name   => 'R',
+           is_col => {b=>1, c=>1},
+         },
+      ],
+      advice => [qw(JOI.004)],
    },
 );
 
@@ -400,7 +457,10 @@ foreach my $test ( @cases ) {
       arg          => $test->{query},
       query_struct => $query_struct,
    };
-   my ($ids, $pos) = $adv->run_rules(event=>$event);
+   my ($ids, $pos) = $adv->run_rules(
+      event       => $event,
+      tbl_structs => $test->{tbl_structs},
+   );
    is_deeply(
       $ids,
       $test->{advice},

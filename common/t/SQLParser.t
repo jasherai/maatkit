@@ -539,9 +539,16 @@ test_from(
          name => 't2',
          join => {
             to         => 't1',
-            type       => '',
+            type       => 'inner',
             condition  => 'on',
-            predicates => 't1.id=t2.id ',
+            where      => [
+               {
+                  predicate => undef,
+                  column    => 't1.id',
+                  operator  => '=',
+                  value     => 't2.id',
+               },
+            ],
             ansi       => 1,
          },
       }
@@ -561,9 +568,9 @@ test_from(
          explicit_alias => 1,
          join  => {
             to         => 't1',
-            type       => '',
+            type       => 'inner',
             condition  => 'using',
-            predicates => '(id) ',
+            columns    => ['id'],
             ansi       => 1,
          },
       },
@@ -580,9 +587,16 @@ test_from(
          name  => 't2',
          join  => {
             to         => 't1',
-            type       => '',
+            type       => 'inner',
             condition  => 'on',
-            predicates => 't1.id=t2.id ',
+            where      => [
+               {
+                  predicate => undef,
+                  column    => 't1.id',
+                  operator  => '=',
+                  value     => 't2.id',
+               },
+            ],
             ansi       => 1,
          },
       },
@@ -590,9 +604,16 @@ test_from(
          name  => 't3',
          join  => {
             to         => 't2',
-            type       => '',
+            type       => 'inner',
             condition  => 'on',
-            predicates => 't1.id=t3.id ',
+            where      => [
+               {
+                  predicate => undef,
+                  column    => 't1.id',
+                  operator  => '=',
+                  value     => 't3.id',
+               },
+            ],
             ansi       => 1,
          },
       },
@@ -614,7 +635,14 @@ test_from(
             to         => 't1',
             type       => 'left',
             condition  => 'on',
-            predicates => 'a.id = b.id ',
+            where      => [
+               {
+                  predicate => undef,
+                  column    => 'a.id',
+                  operator  => '=',
+                  value     => 'b.id',
+               },
+            ],
             ansi       => 1,
          },
       },
@@ -661,7 +689,14 @@ test_from(
             to         => 'b',
             type       => 'left',
             condition  => 'on',
-            predicates => 'c.c = a.a ',
+            where      => [
+               {
+                  predicate => undef,
+                  column    => 'c.c',
+                  operator  => '=',
+                  value     => 'a.a',
+               },
+            ],
             ansi       => 1, 
          },
       },
@@ -696,7 +731,7 @@ test_from(
             to         => 'c',
             type       => 'cross',
             condition  => 'using',
-            predicates => '(id) ',
+            columns    => ['id'],
             ansi       => 1, 
          },
       },
@@ -1381,7 +1416,14 @@ my @cases = (
                   to        => 'tbl1',
                   type      => 'left',
                   condition => 'on',
-                  predicates=> 't1.id = t2.id  ',
+                  where      => [
+                     {
+                        predicate => undef,
+                        column    => 't1.id',
+                        operator  => '=',
+                        value     => 't2.id',
+                     },
+                  ],
                   ansi      => 1,
                },
             },
@@ -1441,9 +1483,16 @@ my @cases = (
                explicit_alias => 1,
                join  => {
                   to        => 'tbl1',
-                  type      => '',
+                  type      => 'inner',
                   condition => 'on',
-                  predicates=> '(t1.id = t2.id) ',
+                  where      => [
+                     {
+                        predicate => undef,
+                        column    => 't1.id',
+                        operator  => '=',
+                        value     => 't2.id',
+                     },
+                  ],
                   ansi      => 1,
                },
             },
@@ -1452,9 +1501,9 @@ my @cases = (
                alias => 't3',
                join  => {
                   to        => 'tbl2',
-                  type      => '',
+                  type      => 'inner',
                   condition => 'using',
-                  predicates=> '(id)  ',
+                  columns   => ['id'],
                   ansi      => 1,
                },
             },
@@ -1582,8 +1631,8 @@ my @cases = (
                join  => {
                   to   => 't2',
                   ansi => 1,
-                  type => '',
-                  predicates => '(`select`) ',
+                  type => 'inner',
+                  columns    => ['`select`'],
                   condition  => 'using',
                },
             },
@@ -1592,8 +1641,15 @@ my @cases = (
                join => {
                   to   => '__SQ2__',
                   ansi => 1,
-                  type => '',
-                  predicates => 't4.id=t3.id  ',
+                  type => 'inner',
+                  where      => [
+                     {
+                        predicate => undef,
+                        column    => 't4.id',
+                        operator  => '=',
+                        value     => 't3.id',
+                     },
+                  ],
                   condition  => 'on',
                },
             },
@@ -1729,7 +1785,14 @@ my @cases = (
             join => {
               ansi => 1,
               condition => 'on',
-              predicates => '`w_chapter`.`series_id` = `w_chapter__series`.`id` ',
+               where      => [
+                  {
+                     predicate => undef,
+                     column    => '`w_chapter`.`series_id`',
+                     operator  => '=',
+                     value     => '`w_chapter__series`.`id`',
+                  },
+               ],
               to => 'w_chapter',
               type => 'inner'
             },

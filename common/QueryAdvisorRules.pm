@@ -385,7 +385,8 @@ sub get_rules {
          # join then see if there's a column from the outer table in the
          # WHERE clause that is anything but "IS NULL".  So in the example
          # above, R.b=10 is this culprit.
-         my %outer_tbls = map { $_ => 1 } get_outer_tables($tbls);
+         # http://code.google.com/p/maatkit/issues/detail?id=950
+         my %outer_tbls = map { $_->{name} => 1 } get_outer_tables($tbls);
          MKDEBUG && _d("Outer tables:", keys %outer_tbls);
          return unless %outer_tbls;
 
@@ -405,6 +406,119 @@ sub get_rules {
          return;
       }
    },
+   {
+      id   => 'JOI.004',  # broken exclusion join
+      code => sub {
+         my ( %args ) = @_;
+         my $event  = $args{event};
+         my $struct = $event->{query_struct};
+         return unless $struct;
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my $where  = $struct->{where};
+         return unless $where;
+
+         # For joins like "a LEFT JOIN b ON foo=bar" we need table info
+         # to determine to which tables foo and bar belong.  Table info
+         # isn't needed if at least one column is table-qualified.
+         my $dbh           = $args{dbh};
+         my $db            = $args{database};
+         my $tbl_structs   = $args{tbl_structs};
+         my $have_tbl_info = ($dbh && $db) || $tbl_structs ? 1 : 0;
+
+         my %outer_tbls;
+         my %outer_tbl_join_cols;
+         foreach my $outer_tbl ( get_outer_tables($tbls) ) {
+            $outer_tbls{$outer_tbl->{name}} = 1;
+
+            # For "L LEFT JOIN R" R is the outer table and since it follows
+            # L its table struct will have the join struct with the join
+            # condition.  But for "L RIGHT JOIN R" L is the outer table and
+            # will not have the join struct because it precedes R.  This
+            # is due to how parse_from() works.  So if the outer table doesn't
+            # have the join struct, we need to get it from the inner table.
+            my $join = $outer_tbl->{join};
+            if ( !$join ) {
+               my ($inner_tbl) = grep { 
+                  exists $_->{join} 
+                  && $_->{join}->{to} eq $outer_tbl->{name}
+               } @$tbls;
+               $join = $inner_tbl->{join}; 
+               die "Cannot find join structure for $outer_tbl->{name}"
+                  unless $join;
+            }
+
+            # Get the outer table columns used in the jon condition.
+            if ( $join->{condition} eq 'using' ) {
+               %outer_tbl_join_cols = map { $_ => 1 } @{$join->{columns}};
+            }
+            else {
+               my $where = $join->{where};
+               die "Join structure for ON condition has no where structure"
+                  unless $where;
+               my @join_cols;
+               foreach my $pred ( @$where ) {
+                  next unless $pred->{operator} eq '=';
+                  # Assume all equality comparisons are like tbl1.col=tbl2.col.
+                  # Thus join conditions like tbl1.col<tbl2.col aren't handled.
+                  push @join_cols, $pred->{column}, $pred->{value};
+               }
+               MKDEBUG && _d("Join columns:", @join_cols);
+               foreach my $join_col ( @join_cols ) {
+                  my ($tbl, $col) = split /\./, $join_col;
+                  if ( !$col ) {
+                     $col = $tbl;
+                     $tbl = determine_table_for_column(
+                        %args,
+                        column => $col,
+                     );
+                  }
+                  if ( !$tbl ) {
+                     MKDEBUG && _d("Cannot determine the table for join column",
+                        $col);
+                     return;
+                  }
+                  $outer_tbl_join_cols{$col} = 1 if $tbl eq $outer_tbl->{name};
+               }
+            }
+         }
+         MKDEBUG && _d("Outer table join columns:", keys %outer_tbl_join_cols);
+         return unless keys %outer_tbl_join_cols;
+
+         # Here's a problem query:
+         #   select c from L left join R on L.a=R.b where L.a=5 and R.c is null
+         # The problem is "R.c is null" will not allow one to determine if
+         # a null row from the outer table is null due to not matching the
+         # inner table or due to R.c actually having a null value.  So we
+         # need to check every outer table column in the WHERE clause for
+         # ones that are 1) not in the JOIN expression and 2) "IS NULL'.
+         # http://code.google.com/p/maatkit/issues/detail?id=950
+         foreach my $pred ( @$where ) {
+            next unless $pred->{column};  # skip constants like 1 in "WHERE 1"
+            my ($tbl, $col) = split /\./, $pred->{column};
+            if ( !$col ) {
+               # A col in the WHERE clause isn't table-qualified.  Try to
+               # determine its table.  If we can, great, if not "return 0 if"
+               # below will immediately fail because $tbl will be undef still.
+               # That's ok; it just means this test tries as best it can and
+               # gets skipped silently when we can't tbl-qualify cols.
+               $col = $tbl;
+               $tbl = determine_table_for_column(
+                  %args,
+                  column => $col,
+               );
+            }
+            return 0 if                       # This rule matches if
+               $tbl                           # we know the table and
+               && $outer_tbls{$tbl}           # it's an outer table but
+               && !$outer_tbl_join_cols{$col} # the col isn't in the join and
+               && $pred->{operator} eq 'is'   # the col IS NULL
+               && $pred->{value} =~ m/NULL/i;
+         }
+
+         return;  # rule does not match, as best as we can determine
+      }
+   },
 };
 
 
@@ -415,19 +529,64 @@ sub get_rules {
 #   $tbls - Arrayref of hashrefs with table info
 #
 # Returns:
-#   Array of outer table names
+#   Array of hashref to the outer tables
 sub get_outer_tables {
    my ( $tbls ) = @_;
    return unless $tbls;
    my @outer_tbls;
-   foreach my $tbl ( @$tbls ) {
+   my $n_tbls = scalar @$tbls;
+   for my $i( 0..($n_tbls-1) ) {
+      my $tbl = $tbls->[$i];
       next unless $tbl->{join} && $tbl->{join}->{type} =~ m/left|right/i;
       push @outer_tbls,
-         $tbl->{join}->{type} =~ m/left/i ? $tbl->{name} : $tbl->{join}->{to};
+         $tbl->{join}->{type} =~ m/left/i ? $tbl
+                                          : $tbls->[$i - 1];
    }
    return @outer_tbls;
 }
 
+
+# Sub: determine_table_for_column
+#   Determine which table a column belongs to.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   column - column name, not quoted
+#
+# Optional Arguments:
+#   dbh         - dbh used if a db and TableParser arg are also given
+#   db          - database name used if a dbh and TableParser arg are also given
+#   TableParser - <TableParser> object used if a dbh and db arg are also given
+#   tbl_structs - arrayref of tbl_struct hashrefs returned by
+#                 <TableParser::parse()>, used if no dbh, db and TableParser
+#                 args are given
+#
+# Returns:
+#   Table name, not quoted
+sub determine_table_for_column {
+   my ( %args ) = @_;
+   my ($col, $dbh, $db, $tp, $tbl_structs)
+      = @args{qw(column dbh db TableParser tbl_structs)};
+   die "I need a column argument" unless $col;
+
+   my $tbl;
+   if ( $tbl_structs ) {
+      foreach my $tbl_struct ( @{$tbl_structs} ) {
+         if ( $tbl_struct->{is_col}->{$col} ) {
+            $tbl = $tbl_struct->{name};
+            last;
+         }
+      }
+   }
+   elsif ( $dbh && $db && $tp ) {
+      # TODO
+   }
+
+   MKDEBUG && _d($col, "column belongs to table", $tbl);
+   return $tbl;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;

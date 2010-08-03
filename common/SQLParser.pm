@@ -17,28 +17,44 @@
 # ###########################################################################
 # SQLParser package $Revision$
 # ###########################################################################
+
+# Package: SQLParser
+# SQLParser parses common MySQL SQL statements into data structures.
+# This parser is MySQL-specific and intentionally meant to handle only
+# "common" cases.  Although there are many limiations (like UNION, CASE,
+# etc.), many complex cases are handled that no other free, Perl SQL
+# parser at the time of writing can parse, notably subqueries in all their
+# places and varieties.
+#
+# This package has not been profiled and since it relies heavily on
+# mildly complex regex, do not expect amazing performance.
+#
+# In Maatkit, SQLParser is primarily used by <QueryAdvisorRules> which
+# is used by <mk-query-advisor>.
+#
+# See SQLParser.t for examples of the various data structures.  There are
+# many and they vary a lot depending on the statment parsed, so documentation
+# in this file is not exhaustive.
 package SQLParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-# Only these types of statements are parsed.
-my $allowed_types = qr/(?:
-    DELETE
-   |INSERT
-   |REPLACE
-   |SELECT
-   |UPDATE
-)/xi;
-
+# Sub: new
+#   Create a SQLParser object.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Returns:
+#   SQLParser object
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
@@ -46,26 +62,43 @@ sub new {
    return bless $self, $class;
 }
 
-# Parse the query and return a hashref struct of its parts (keywords,
-# clauses, subqueries, etc.).  Only queries of $allowed_types are
-# parsed.  All keys and almost all  vals are lowercase for consistency.
-# The struct is roughly:
-# 
-#   * type       => '',     # one of $allowed_types
-#   * clauses    => {},     # raw, unparsed text of clauses
-#   * <clause>   => struct  # parsed clause struct, e.g. from => [<tables>]
-#   * keywords   => {},     # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
-#   * functions  => {},     # MAX(), SUM(), NOW(), etc.
-#   * select     => {},     # SELECT struct for INSERT/REPLACE ... SELECT
-#   * subqueries => [],     # pointers to subquery structs
+# Sub: parse
+#   Parse a SQL statment.   Only statements of $allowed_types are parsed.
+#   This sub recurses to parse subqueries.
 #
-# It varies, of course, depending on the query.  If something is missing
-# it means the query doesn't have that part.  E.g. INSERT has an INTO clause
-# but DELETE does not, and only DELETE and SELECT have FROM clauses.  Each
-# clause struct is different; see their respective parse_CLAUSE subs.
+# Parameters:
+#   $query - SQL statement
+#
+# Returns:
+#   A complex hashref of the parsed SQL statment.  All keys and almost all
+#   values are lowercase for consistency.  The struct is roughly:
+#   (start code)
+#   {
+#     type       => '',     # one of $allowed_types
+#     clauses    => {},     # raw, unparsed text of clauses
+#     <clause>   => struct  # parsed clause struct, e.g. from => [<tables>]
+#     keywords   => {},     # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
+#     functions  => {},     # MAX(), SUM(), NOW(), etc.
+#     select     => {},     # SELECT struct for INSERT/REPLACE ... SELECT
+#     subqueries => [],     # pointers to subquery structs
+#   }
+#   (end code)
+#   It varies, of course, depending on the query.  If something is missing
+#   it means the query doesn't have that part.  E.g. INSERT has an INTO clause
+#   but DELETE does not, and only DELETE and SELECT have FROM clauses.  Each
+#   clause struct is different; see their respective parse_CLAUSE subs.
 sub parse {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   # Only these types of statements are parsed.
+   my $allowed_types = qr/(?:
+       DELETE
+      |INSERT
+      |REPLACE
+      |SELECT
+      |UPDATE
+   )/xi;
 
    # Flatten and clean query.
    $query = $self->clean_query($query);
@@ -122,6 +155,15 @@ sub parse {
    return $struct;
 }
 
+
+# Sub: _parse_clauses
+#   Parse raw text of clauses into data structures.  This sub recurses
+#   to parse the clauses of subqueries.  The clauses are read from
+#   and their data structures saved into the $struct parameter.
+#
+# Parameters:
+#   $struct - Hashref from which clauses are read (%{$struct->{clauses}})
+#             and into which data structs are saved (e.g. $struct->{from}=...).
 sub _parse_clauses {
    my ( $self, $struct ) = @_;
    # Parse raw text of clauses and functions.
@@ -145,6 +187,15 @@ sub _parse_clauses {
    return;
 }
 
+
+# Sub: clean_query
+#   Remove spaces, flatten, and normalize some patterns for easier parsing.
+#
+# Parameters:
+#   $query - SQL statement
+#
+# Returns:
+#   Cleaned $query
 sub clean_query {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -167,14 +218,24 @@ sub clean_query {
    return $query;
 }
 
-# This sub is called by the parse_TYPE subs except parse_insert.
-# It does two things: remove, save the given keywords, all of which
-# should appear at the beginning of the query; and, save (but not
-# remove) the given clauses.  The query should start with the values
-# for the first clause because the query's first word was removed
-# in parse().  So for "SELECT cols FROM ...", the query given here
-# is "cols FROM ..." where "cols" belongs to the first clause "columns".
-# Then the query is walked clause-by-clause, saving each.
+# Sub: _parse_query
+#    This sub is called by the parse_TYPE subs except parse_insert.
+#    It does two things: remove, save the given keywords, all of which
+#    should appear at the beginning of the query; and, save (but not
+#    remove) the given clauses.  The query should start with the values
+#    for the first clause because the query's first word was removed
+#    in parse().  So for "SELECT cols FROM ...", the query given here
+#    is "cols FROM ..." where "cols" belongs to the first clause "columns".
+#    Then the query is walked clause-by-clause, saving each.
+#
+# Parameters:
+#   $query        - SQL statement with first word (SELECT, INSERT, etc.) removed
+#   $keywords     - Compiled regex of keywords that can appear in $query
+#   $first_clause - First clause word to expect in $query
+#   $clauses      - Compiled regex of clause words that can appear in $query
+#
+# Returns:
+#   Hashref with raw text of clauses
 sub _parse_query {
    my ( $self, $query, $keywords, $first_clause, $clauses ) = @_;
    return unless $query;
@@ -327,38 +388,56 @@ sub parse_update {
 
 }
 
-# Parse a FROM clause, a.k.a. the table references.  Returns an arrayref
-# of hashrefs, one hashref for each table.  Each hashref is like:
+# Sub: parse_from
+#   Parse a FROM clause, a.k.a. the table references.  Does not handle
+#   nested joins.  See http://dev.mysql.com/doc/refman/5.1/en/join.html
 #
+# Parameters:
+#   $from - FROM clause (with the word "FROM")
+#
+# Returns:
+#   Arrayref of hashrefs, one hashref for each table in the order that
+#   the tables appear, like:
+#   (start code)
 #   {
-#     name           => 't2',  -- this table's real name
+#     name           => 't2',  -- table's real name
 #     alias          => 'b',   -- table's alias, if any
 #     explicit_alias => 1,     -- if explicitly aliased with AS
 #     join  => {               -- if joined to another table, all but first
 #                              -- table are because comma implies INNER JOIN
-#       to         => 't1',    -- table name on left side of join  
-#       type       => '',      -- right, right, inner, outer, cross, natural
-#       condition  => 'using', -- on or using, if applicable
-#       predicates => '(id) ', -- stuff after on or using, if applicable
-#       ansi       => 1,       -- true of ANSI JOIN, i.e. true if not implicit
-#     },                       -- INNER JOIN due to follow a comma
+#       to        => 't1',     -- table name on left side of join, if this is
+#                              -- LEFT JOIN then this is the inner table, if
+#                              -- RIGHT JOIN then this is outer table
+#       type      => '',       -- left, right, inner, outer, cross, natural
+#       condition => 'using',  -- on or using, if applicable
+#       columns   => ['id'],   -- columns for USING condition, if applicable
+#       ansi      => 1,        -- true of ANSI JOIN, i.e. true if not implicit
+#                              -- INNER JOIN due to following a comma
+#     },
 #   },
-#
-# Tables are listed in the order that they appear.  Currently, subqueries
-# and nested joins are not handled.
+#   {
+#     name => 't3',
+#     join => {
+#       to        => 't2',
+#       type      => 'left',
+#       condition => 'on',     -- an ON condition is like a WHERE clause so
+#       where     => [...]     -- this arrayref of predicates appears, see
+#                              -- <parse_where()> for its structure
+#     },
+#   },
+#  (end code)
 sub parse_from {
    my ( $self, $from ) = @_;
    return unless $from;
    MKDEBUG && _d('FROM clause:', $from);
 
-   # This method tokenize the FROM clause into "things".  Each thing
-   # is one of either a:
+   # This method tokenizes the FROM clause into "things".  Each thing
+   # is one of:
    #   * table ref, including alias
    #   * JOIN syntax word
    #   * ON or USING (condition)
-   #   * ON|USING predicates text
+   #   * ON|USING expression (WHERE-like expression for ON, columns for USING)
    # So it is not word-by-word; it's thing-by-thing in one pass.
-   # Currently, the ON|USING predicates are not parsed further.
 
    my @tbls;  # All parsed tables.
    my $tbl;   # This gets pushed to @tbls when it's set.  It may not be
@@ -366,10 +445,10 @@ sub parse_from {
 
    # These vars are used when parsing an explicit/ANSI JOIN statement.
    my $pending_tbl;         
-   my $state      = undef;  
-   my $join       = '';  # JOIN syntax words, without JOIN; becomes type
-   my $joinno     = 0;   # join number for debugging
-   my $redo       = 0;   # save $pending_tbl, redo loop for new JOIN
+   my $state  = undef;  
+   my $join   = '';  # JOIN syntax words, without JOIN; becomes type
+   my $joinno = 0;   # join number for debugging
+   my $redo   = 0;   # save $pending_tbl, redo loop for new JOIN
 
    # These vars help detect "comma joins", e.g. "tbl1, tbl2", which are
    # treated by MySQL as implicit INNER JOIN.  See below.
@@ -388,7 +467,7 @@ sub parse_from {
       if ( !$state && $thing !~ m/$join_delim/i ) {
          MKDEBUG && _d('Table factor');
          $tbl = { $self->parse_identifier($thing) };
-         
+
          # Non-ANSI implicit INNER join to previous table, e.g. "tbl1, tbl2".
          # Manual says: "INNER JOIN and , (comma) are semantically equivalent
          # in the absence of a join condition".
@@ -409,7 +488,7 @@ sub parse_from {
                   . "JOIN without preceding table reference" unless $last_tbl;
                $pending_tbl->{join} = {
                   to   => $last_tbl->{name},
-                  type => $join,
+                  type => $join || 'inner',
                   ansi => 1,
                };
                $join    = '';
@@ -434,7 +513,20 @@ sub parse_from {
             }
             else {
                MKDEBUG && _d('JOIN', $joinno, 'predicate');
-               $pending_tbl->{join}->{predicates} .= "$thing ";
+               if ( $pending_tbl->{join}->{condition} eq 'on' ) {
+                  # The manual says: "The conditional_expr used with ON is any
+                  # conditional expression of the form that can be used in a
+                  # WHERE clause."
+                  $pending_tbl->{join}->{where} = $self->parse_where($thing);
+               }
+               else {
+                  # Although calling parse_columns() works, it's overkill.
+                  # This is not a columns def as in "SELECT col1, col2", it's
+                  # a simple csv list of column names without aliases, etc.
+                  $thing =~ s/^\s*\(//;
+                  $thing =~ s/\)\s*$//;
+                  $pending_tbl->{join}->{columns} = $self->parse_csv($thing);
+               }
             }
          }
          else {
@@ -444,6 +536,7 @@ sub parse_from {
 
       $last_thing = $thing;
 
+      # Done parsing a table, save it unless we have to join back.
       if ( $tbl ) {
          if ( $join_back ) {
             my $prev_tbl = $tbls[-1];
@@ -457,7 +550,10 @@ sub parse_from {
                ansi => 0,
             }
          }
-         push @tbls, $tbl;
+
+         push @tbls, $tbl;  # save table
+
+         # Reset for next table.
          $tbl         = undef;
          $state       = undef;
          $pending_tbl = undef;
