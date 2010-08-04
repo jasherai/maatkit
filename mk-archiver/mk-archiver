@@ -4083,12 +4083,14 @@ sub main {
                   $dst->{plugin}->before_bulk_insert(
                      first_row => $first_row,
                      last_row  => $lastrow,
+                     filename  => $bulkins_file->filename(),
                   );
                });
                trace('custom_sth', sub {
                   $ins_sth = $dst->{plugin}->custom_sth_bulk(
                      first_row => $first_row,
                      last_row  => $lastrow,
+                     filename  => $bulkins_file->filename(),
                      sql       => $ins_sql,
                   );
                });
