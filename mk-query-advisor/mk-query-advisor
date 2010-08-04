@@ -5041,6 +5041,16 @@ severity: warn
 Reference to outer table column in WHERE clause prevents OUTER JOIN,
 implicitly converts to INNER JOIN.
 
+=item JOI.004
+
+severity: warn
+
+Exclusion join uses wrong column in WHERE.  The exclusion join (LEFT
+OUTER JOIN with a WHERE clause that is satisfied only if there is no row in
+the right-hand table) seems to use the wrong column in the WHERE clause.  A
+query such as "... FROM l LEFT OUTER JOIN r ON l.l=r.r WHERE r.z IS NULL"
+probably ought to list r.r in the WHERE IS NULL clause.
+
 =item RES.001
 
 severity: warn
