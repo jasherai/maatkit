@@ -976,13 +976,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6549
+# Quoter package 6850
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
 #   trunk/common/t/Quoter.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Quoter;
 
 use strict;
@@ -992,7 +993,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
+   my ( $class, %args ) = @_;
    return bless {}, $class;
 }
 
@@ -1009,7 +1010,7 @@ sub quote_val {
 
    return 'NULL' unless defined $val;          # undef = NULL
    return "''" if $val eq '';                  # blank string = ''
-   return $val if $val =~ m/0x[0-9a-fA-F]+$/;  # hex data
+   return $val if $val =~ m/^0x[0-9a-fA-F]+$/;  # hex data
 
    $val =~ s/(['\\])/\\$1/g;
    return "'$val'";
