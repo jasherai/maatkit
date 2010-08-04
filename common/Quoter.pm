@@ -70,7 +70,7 @@ sub quote_val {
 
    return 'NULL' unless defined $val;          # undef = NULL
    return "''" if $val eq '';                  # blank string = ''
-   return $val if $val =~ m/0x[0-9a-fA-F]+$/;  # hex data
+   return $val if $val =~ m/^0x[0-9a-fA-F]+$/;  # hex data
 
    # Quote and return non-numeric vals.
    $val =~ s/(['\\])/\\$1/g;
