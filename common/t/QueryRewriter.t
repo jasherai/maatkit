@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 257;
+use Test::More tests => 261;
 
 use QueryRewriter;
 use QueryParser;
@@ -599,6 +599,18 @@ is($qr->convert_to_select(
    'update with no space between quoted string and where (issue 168)'
 );
 
+is(
+   $qr->convert_to_select("UPDATE LOW_PRIORITY db.tbl SET field='new' WHERE id=1"),
+   "select  field='new' from db.tbl where  id=1",
+   "update with LOW_PRIORITY"
+);
+
+is(
+   $qr->convert_to_select("UPDATE ignore db.tbl SET field='new' WHERE id=1"),
+   "select  field='new' from db.tbl where  id=1",
+   "update with IGNORE"
+);
+
 # convert DELETE ##############################################################
 
 is(
@@ -613,6 +625,18 @@ is(
    $qr->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
    'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
    'Do not select * from a join',
+);
+
+is(
+   $qr->convert_to_select("DELETE LOW_PRIORITY FROM tbl WHERE id=1"),
+   "select * from  tbl WHERE id=1",
+   "delete with LOW_PRIORITY"
+);
+
+is(
+   $qr->convert_to_select("delete ignore from tbl WHERE id=1"),
+   "select * from  tbl WHERE id=1",
+   "delete with IGNORE"
 );
 
 # do not convert subqueries ###################################################

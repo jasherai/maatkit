@@ -377,7 +377,7 @@ sub convert_to_select {
 
    $query =~ s{
                  \A.*?
-                 update\s+(.*?)
+                 update(?:\s+(?:low_priority|ignore))?\s+(.*?)
                  \s+set\b(.*?)
                  (?:\s*where\b(.*?))?
                  (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
