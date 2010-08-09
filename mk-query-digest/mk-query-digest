@@ -12435,6 +12435,22 @@ server with the Percona patches).
 For a full list of attributes, see
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
+With creative use of L<"--filter">, you can create new attributes derived
+from existing attributes.  For example, to create an attribute called
+C<Row_ratio> for examining the ratio of C<Rows_sent> to C<Rows_examined>,
+specify a filter like:
+
+  --filter '($event->{Row_ratio} = $event->{Rows_sent} / ($event->{Rows_examined})) && 1'
+
+The C<&& 1> trick is needed to create a valid one-line syntax that is always
+true, even if the assignment happens to evalute false.  The new attribute will
+automatically appears in the output:
+
+  # Row ratio           1.00    0.00       1    0.50       1    0.71    0.50
+
+Attributes created this way can be specified for L<"--order-by"> or any
+option that requires an attribute.
+
 =head2 memcached
 
 memcached events have additional attributes related to the memcached protocol:
@@ -13017,7 +13033,7 @@ This is compiled into a subroutine like the following:
 
   sub { $event = shift; ( $event->{arg} =~ m/^select/i ) && return $event; }
 
-It is permissible for the code to have side effects (to alter $event).
+It is permissible for the code to have side effects (to alter C<$event>).
 
 You can find an explanation of the structure of $event at
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
@@ -13054,6 +13070,9 @@ check both.
 --filter '$event->{bytes} >= 1_048_576'
 
 =back
+
+Since L<"--filter"> allows you to alter C<$event>, you can use it to do other
+things, like create new attributes.  See L<"ATTRIBUTES"> for an example.
 
 =item --fingerprints
 
@@ -13252,7 +13271,8 @@ the C<cnt> aggregate makes sense because all query times are zero.
 
 If you specify an attribute that doesn't exist in the events, then
 mk-query-digest falls back to the default C<Query_time:sum> and prints a notice
-at the beginning of the report for each query class.
+at the beginning of the report for each query class.  You can create attributes
+with L<"--filter"> and order by them; see L<"ATTRIBUTES"> for an example.
 
 =item --outliers
 
