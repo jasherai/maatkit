@@ -2742,14 +2742,14 @@ sub main {
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   my $vars_from         = lc $o->get('source-of-variables');
+   my $vars_from         = $o->get('source-of-variables');
    # my $status_from       = lc $o->get('source-of-status');
    # my $slave_status_from = lc $o->get('source-of-slave-status');
 
-   my $need_dbh = $vars_from eq 'mysql'; # || $status_from eq 'mysql' etc.
+   my $need_dbh = $vars_from =~ m/^mysql$/i; # || $status_from eq 'mysql' etc.
 
    if ( !$o->get('help') ) {
-      if ( $vars_from eq 'mysql' && @ARGV == 0 ) {
+      if ( $vars_from =~ m/^mysql$/i && @ARGV == 0 ) {
          $o->save_error("A DSN must be specified when --source-of-variables=mysql");
       }
    }
@@ -2759,7 +2759,7 @@ sub main {
    # #########################################################################
    # Check that any files given exit.
    # #########################################################################
-   if ( $vars_from !~ m/mysql|none/ ) {
+   if ( $vars_from !~ m/^mysql|none^/i ) {
       die "The --source-of-variables file $vars_from does not exist"
          unless -f $vars_from;
    }
@@ -2882,9 +2882,8 @@ sub get_variables {
    }
    my ($source) = @args{@required_args};
 
-   $source = lc $source;
    my $vars;
-   if ( ($source || '') eq 'mysql' ) {
+   if ( ($source || '') =~ m/^mysql$/i ) {
       my $dbh = $args{dbh};
       die "I need a dbh argument" unless $dbh;
       MKDEBUG && _d("Getting variables from dbh", $dbh);
