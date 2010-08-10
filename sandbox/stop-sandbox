@@ -25,14 +25,14 @@ fi
 
 exit_status=0
 
-ls /tmp/1234* >/dev/null 2>&1
-if [ $? -eq 0 ]; then
-   for port in $@; do
-      if [ "$port" = "remove" ]; then
-         continue
-      fi
+for port in $@; do
+   if [ "$port" = "remove" ]; then
+      continue
+   fi
 
-      if [ "$port" = "all" ]; then
+   if [ "$port" = "all" ]; then
+      ls /tmp/1234* >/dev/null 2>&1
+      if [ $? -eq 0 ]; then
          for a in /tmp/123[0-9]*; do 
             $a/stop
             if [ $? -ne 0 ]; then
@@ -44,17 +44,17 @@ if [ $? -eq 0 ]; then
          done
          break
       fi
+   fi
 
-      if [ -d "/tmp/$port" ]; then
-         /tmp/$port/stop
-         if [ $? -ne 0 ]; then
-            exit_status=1
-         fi
-         if [ $1 = "remove" ]; then
-            rm -rf /tmp/$port
-         fi
+   if [ -d "/tmp/$port" ]; then
+      /tmp/$port/stop
+      if [ $? -ne 0 ]; then
+         exit_status=1
       fi
-   done
-fi
+      if [ $1 = "remove" ]; then
+         rm -rf /tmp/$port
+      fi
+   fi
+done
 
 exit $exit_status
