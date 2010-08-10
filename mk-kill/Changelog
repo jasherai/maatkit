@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+   * Slave replication threads in "init" or "end" state were killed (issue 1121)
+
 2010-06-08: version 0.9.6
 
    * Connections did not preserve server SQL modes (issue 801).
