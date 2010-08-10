@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More;
 
 use Quoter;
 use QueryParser;
@@ -22,10 +22,16 @@ use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh1 = $sb->get_dbh_for('master', {no_lc=>1})
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh = $sb->get_dbh_for('master', {no_lc=>1});
 
-$sb->create_dbs($dbh1, ['test']);
+if ( !$dbh ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+else {
+   plan tests => 20;
+}
+
+$sb->create_dbs($dbh, ['test']);
 
 Transformers->import(qw(make_checksum));
 
@@ -40,8 +46,8 @@ my $cw;
 my $report;
 my @events;
 my $hosts = [
-   { dbh => $dbh1, name => 'dbh-1' },
-   { dbh => $dbh1, name => 'dbh-2'  },
+   { dbh => $dbh, name => 'dbh-1' },
+   { dbh => $dbh, name => 'dbh-2'  },
 ];
 
 sub proc {
@@ -94,7 +100,7 @@ isa_ok($cw, 'CompareWarnings');
 eval {
    $cw->before_execute(
       event => $events[0],
-      dbh   => $dbh1,
+      dbh   => $dbh,
    );
 };
 
@@ -113,7 +119,7 @@ $cw = new CompareWarnings(
 eval {
    $cw->before_execute(
       event => { arg => 'select * from bad.db' },
-      dbh   => $dbh1,
+      dbh   => $dbh,
    );
 };
 
@@ -353,5 +359,5 @@ like(
    qr/Complete test coverage/,
    '_d() works'
 );
-$sb->wipe_clean($dbh1);
+$sb->wipe_clean($dbh);
 exit;

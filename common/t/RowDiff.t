@@ -33,10 +33,8 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
 
-
 throws_ok( sub { new RowDiff() }, qr/I need a dbh/, 'DBH required' );
 $d = new RowDiff(dbh => 1);
-
 
 # #############################################################################
 # Test key_cmp().
@@ -286,30 +284,33 @@ is_deeply(
    'Identical with numeric columns',
 );
 
-$d = new RowDiff(dbh => $master_dbh);
-$s = new MockSync();
-$d->compare_sets(
-   left_sth   => new MockSth(
-      { a => 'A', b => 2, c => 3 },
-   ),
-   right_sth  => new MockSth(
-      # The difference is the lowercase 'a', which in a _ci collation will
-      # sort the same.  So the rows are really identical, from MySQL's point
-      # of view.
-      { a => 'a', b => 2, c => 3 },
-   ),
-   syncer     => $s,
-   tbl_struct => { collation_for => { a => 'utf8_general_ci' } },
-);
-is_deeply(
-   $s,
-   [
-      'same',
-      'done',
-   ],
-   'Identical with utf8 columns',
-);
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $master_dbh;
 
+   $d = new RowDiff(dbh => $master_dbh);
+   $s = new MockSync();
+   $d->compare_sets(
+      left_sth   => new MockSth(
+         { a => 'A', b => 2, c => 3 },
+      ),
+      right_sth  => new MockSth(
+         # The difference is the lowercase 'a', which in a _ci collation will
+         # sort the same.  So the rows are really identical, from MySQL's point
+         # of view.
+         { a => 'a', b => 2, c => 3 },
+      ),
+      syncer     => $s,
+      tbl_struct => { collation_for => { a => 'utf8_general_ci' } },
+   );
+   is_deeply(
+      $s,
+      [
+         'same',
+         'done',
+      ],
+      'Identical with utf8 columns',
+   );
+}
 # #############################################################################
 # Test that the callbacks work.
 # #############################################################################

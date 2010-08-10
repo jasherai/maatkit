@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More;
 
 use KeySize;
 use TableParser;
@@ -20,8 +20,15 @@ use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh = $sb->get_dbh_for('master');
+
+if ( !$dbh ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+else {
+   plan tests => 18;
+}
+
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter => $q);
 my $ks = new KeySize(Quoter=>$q);

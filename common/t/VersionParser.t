@@ -29,7 +29,7 @@ my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {
-   skip 'Cannot connect to MySQL', 1 unless $dbh;
+   skip 'Cannot connect to MySQL', 2 unless $dbh;
    ok($vp->version_ge($dbh, '3.23.00'), 'Version is > 3.23');
 
    unlike(

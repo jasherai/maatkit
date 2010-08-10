@@ -33,7 +33,7 @@ my $slave_dbh  = $sb->get_dbh_for('slave1');
 #diag(`$trunk/sandbox/make_sandbox 12347`);
 #diag(`/tmp/12347/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=12346"`);
 #diag(`/tmp/12347/use -e "start slave"`);
-my $slave_2_dbh = $sb->get_dbh_for('slave2');
+# my $slave_2_dbh = $sb->get_dbh_for('slave2');
 #   or BAIL_OUT('Cannot connect to sandbox slave2');
 
 # Make slave2 slave of master.
@@ -549,7 +549,7 @@ SKIP: {
    diag(`mv /tmp/12345/orig.cnf /tmp/12345/my.sandbox.cnf`);
    diag(`/tmp/12345/start >/dev/null`);
    diag(`/tmp/12346/start >/dev/null`);
-}
+};
 
 # #############################################################################
 # Done.

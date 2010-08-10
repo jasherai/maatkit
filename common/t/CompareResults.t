@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 56;
+use Test::More;
 
 use Quoter;
 use MySQLDump;
@@ -34,10 +34,18 @@ use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh1 = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $dbh2 = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave1');
+my $dbh1 = $sb->get_dbh_for('master');
+my $dbh2 = $sb->get_dbh_for('slave1');
+
+if ( !$dbh1 ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+elsif ( !$dbh2 ) {
+   plan skip_all => "Cannot connect to sandbox slave";
+}
+else {
+   plan tests => 56;
+}
 
 $sb->create_dbs($dbh1, ['test']);
 

@@ -57,129 +57,136 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More;
 use English qw(-no_match_vars);
 use DBI;
 use DBD::mysql;  # so we can print $DBD::mysql::VERSION
 use MaatkitTest;
 
-SKIP: {
-   skip "MK_PERL_LIB env var is not set", 4 unless defined $ENV{MK_PERL_LIB};
+plan skip_all => "MK_PERL_LIB env var is not set", 4
+   unless defined $ENV{MK_PERL_LIB};
 
-   print "# DBI v$DBI::VERSION\n"
-      . "# DBD::mysql v$DBD::mysql::VERSION\n";
+print "# DBI v$DBI::VERSION\n"
+   . "# DBD::mysql v$DBD::mysql::VERSION\n";
+
+use RowDiff;
+use Sandbox;
+use DSNParser;
+use TableParser;
+use MySQLDump;
+use Quoter;
+
+my $d  = new RowDiff(dbh => 1);
+my $s  = new MockSync();
+my $q  = new Quoter();
+my $du = new MySQLDump();
+my $tp = new TableParser(Quoter => $q);
+my $dp = new DSNParser(opts=>$dsn_opts);
+
+# Connect to sandbox now to make sure it's running.
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
+if ( !$master_dbh ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+elsif ( !$slave_dbh ) {
+   plan skip_all => "Cannot connect to sandbox slave";
+}
+else {
+   plan tests => 4;
+}
 
 
-   use RowDiff;
-   use Sandbox;
-   use DSNParser;
-   use TableParser;
-   use MySQLDump;
-   use Quoter;
+$sb->create_dbs($master_dbh, [qw(test)]);
+$sb->load_file('master', 'common/t/samples/issue_11.sql');
 
-   my $d  = new RowDiff(dbh => 1);
-   my $s  = new MockSync();
-   my $q  = new Quoter();
-   my $du = new MySQLDump();
-   my $tp = new TableParser(Quoter => $q);
-   my $dp = new DSNParser(opts=>$dsn_opts);
+my $tbl = $tp->parse(
+   $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
 
-   # Connect to sandbox now to make sure it's running.
-   my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-   my $master_dbh = $sb->get_dbh_for('master')
-      or BAIL_OUT('Cannot connect to sandbox master');
-   my $slave_dbh  = $sb->get_dbh_for('slave1')
-      or BAIL_OUT('Cannot connect to sandbox slave');
+my $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+my $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left  => $left_sth,
+   right => $right_sth,
+   syncer => $s,
+   tbl => $tbl,
+);
+is_deeply(
+   $s,
+   ['done',],
+   'no rows (real DBI sth)',
+);
 
-   $sb->create_dbs($master_dbh, [qw(test)]);
-   $sb->load_file('master', 'common/t/samples/issue_11.sql');
+$slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      ['not in left', { a => 1, b => 2, c => 3 },],
+      'done',
+   ],
+   'right only (real DBI sth)',
+);
 
-   my $tbl = $tp->parse(
-      $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
+$slave_dbh->do('TRUNCATE TABLE test.issue_11');
+$master_dbh->do('SET SQL_LOG_BIN=0;');
+$master_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      [ 'not in right', { a => 1, b => 2, c => 3 },],
+      'done',
+   ],
+   'left only (real DBI sth)',
+);
 
-   my $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
-   my $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
-   $left_sth->execute();
-   $right_sth->execute();
-   $s = new MockSync();
-   $d->compare_sets(
-      left  => $left_sth,
-      right => $right_sth,
-      syncer => $s,
-      tbl => $tbl,
-   );
-   is_deeply(
-      $s,
-      ['done',],
-      'no rows (real DBI sth)',
-   );
+$slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      'same',
+      'done',
+   ],
+   'one identical row (real DBI sth)',
+);
 
-   $slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
-   $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
-   $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
-   $left_sth->execute();
-   $right_sth->execute();
-   $s = new MockSync();
-   $d->compare_sets(
-      left   => $left_sth,
-      right  => $right_sth,
-      syncer => $s,
-      tbl    => $tbl,
-   );
-   is_deeply(
-      $s,
-      [
-         ['not in left', { a => 1, b => 2, c => 3 },],
-         'done',
-      ],
-      'right only (real DBI sth)',
-   );
+$sb->wipe_clean($master_dbh);
+$sb->wipe_clean($slave_dbh);
 
-   $slave_dbh->do('TRUNCATE TABLE test.issue_11');
-   $master_dbh->do('SET SQL_LOG_BIN=0;');
-   $master_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
-   $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
-   $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
-   $left_sth->execute();
-   $right_sth->execute();
-   $s = new MockSync();
-   $d->compare_sets(
-      left   => $left_sth,
-      right  => $right_sth,
-      syncer => $s,
-      tbl    => $tbl,
-   );
-   is_deeply(
-      $s,
-      [
-         [ 'not in right', { a => 1, b => 2, c => 3 },],
-         'done',
-      ],
-      'left only (real DBI sth)',
-   );
-
-   $slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
-   $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
-   $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
-   $left_sth->execute();
-   $right_sth->execute();
-   $s = new MockSync();
-   $d->compare_sets(
-      left   => $left_sth,
-      right  => $right_sth,
-      syncer => $s,
-      tbl    => $tbl,
-   );
-   is_deeply(
-      $s,
-      [
-         'same',
-         'done',
-      ],
-      'one identical row (real DBI sth)',
-   );
-
-   $sb->wipe_clean($master_dbh);
-   $sb->wipe_clean($slave_dbh);
-};
 exit;

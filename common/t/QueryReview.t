@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More;
 
 use Transformers;
 use QueryReview;
@@ -25,8 +25,15 @@ use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master', {no_lc=>1})
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh = $sb->get_dbh_for('master', {no_lc=>1});
+
+if ( !$dbh ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+else {
+   plan tests => 6;
+}
+
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', "common/t/samples/query_review.sql");
 

@@ -84,8 +84,7 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 SKIP: {
-   skip 'Cannot connect to sandbox mater', 1
-      unless $dbh;
+   skip 'Cannot connect to sandbox mater', 2 unless $dbh;
 
    diag(`/tmp/12345/use -e 'CREATE DATABASE test' 2>/dev/null`);
    diag(`/tmp/12345/use < $trunk/common/t/samples/col_types.sql`);

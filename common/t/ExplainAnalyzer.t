@@ -15,7 +15,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use Test::More tests => 10;
+use Test::More;
 
 use ExplainAnalyzer;
 use QueryRewriter;
@@ -26,8 +26,15 @@ use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master', {no_lc=>1})
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh = $sb->get_dbh_for('master', {no_lc=>1});
+
+if ( !$dbh ) {
+   plan skip_all => "Cannot connect to sandbox master";
+}
+else {
+   plan tests => 10;
+}
+
 $dbh->do('use sakila');
 
 my $qr  = new QueryRewriter();

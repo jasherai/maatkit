@@ -377,7 +377,7 @@ is_deeply(
 # Online tests.
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   skip 'Cannot connect to sandbox master', 2 unless $dbh;
 
    $config = new MySQLConfig();
    $config->set_config(from=>'show_variables', dbh=>$dbh);
