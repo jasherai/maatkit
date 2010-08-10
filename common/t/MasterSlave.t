@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 47;
+use Test::More tests => 51;
 
 use MasterSlave;
 use DSNParser;
@@ -466,6 +466,36 @@ ok(
 ok(
    $ms->is_replication_thread($query, 'slave_sql'),
    'Slave sql thd is a slave sql thd',
+);
+
+# Issue 1121: mk-kill Occasionally Kills Slave Replication Threads
+$query = {
+   Command  => 'Connect',
+   Host     => '',
+   Id       => '466963',
+   Info     => 'delete from my_table where l_id=217263 and s_id=1769',
+   State    => 'init',
+   Time     => '0',
+   User     => 'system user',
+   db       => 'mydatabase',
+};
+ok(
+   $ms->is_replication_thread($query),
+   'Slave thread in init state matches all (issue 1121)',
+);
+ok(
+   $ms->is_replication_thread($query, 'slave_io'),
+   'Slave thread in init state matches slave_io (issue 1121)',
+);
+ok(
+   $ms->is_replication_thread($query, 'slave_sql'),
+   'Slave thread in init state matches slave_sql (issue 1121)',
+);
+
+throws_ok(
+   sub { $ms->is_replication_thread($query, 'foo') },
+   qr/Invalid type: foo/,
+   "Invalid repl thread type"
 );
 
 # #############################################################################

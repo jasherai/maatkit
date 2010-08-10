@@ -801,11 +801,18 @@ sub pos_cmp {
    return $self->pos_to_string($a) cmp $self->pos_to_string($b);
 }
 
-# Simplifies a hostname as much as possible.  For purposes of replication, a
-# hostname is really just the combination of hostname and port, since
-# replication always uses TCP connections (it does not work via sockets).  If
-# the port is the default 3306, it is omitted.  As a convenience, this sub
-# accepts either SHOW SLAVE STATUS or a DSN.
+# Sub: short_host
+#   Simplify a hostname as much as possible.  For purposes of replication, a
+#   hostname is really just the combination of hostname and port, since
+#   replication always uses TCP connections (it does not work via sockets).  If
+#   the port is the default 3306, it is omitted.  As a convenience, this sub
+#   accepts either SHOW SLAVE STATUS or a DSN.
+#
+# Parameters:
+#   $dsn - DSN hashref
+#
+# Returns:
+#   Short hostname string
 sub short_host {
    my ( $self, $dsn ) = @_;
    my ($host, $port);
@@ -819,18 +826,24 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
-   
-# Arguments:
-#   * query   hashref: a processlist item
-#   * type    scalar: all, binlog_dump, slave_io or slave_sql
-# Returns true if the query is the given type of replication thread.
+
+# Sub: is_replication_thread
+#   Determine if a processlist item is a replication thread.
+#
+# Parameters:
+#   $query - Hashref of a processlist item
+#   $type  - Which kind of repl thread to match: all, binlog_dump (master),
+#            slave_io, or slave_sql
+#
+# Returns:
+#   True if the proclist item is the given type of replication thread.
 sub is_replication_thread {
    my ( $self, $query, $type ) = @_; 
    return unless $query;
 
-   $type ||= 'all';
+   $type = lc $type || 'all';
    die "Invalid type: $type"
-      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+      unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
    my $match = 0;
    if ( $type =~ m/binlog_dump|all/i ) {
@@ -840,42 +853,64 @@ sub is_replication_thread {
    if ( !$match ) {
       # On a slave, there are two threads.  Both have user="system user".
       if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
-         my $state = $query->{State} || $query->{state} || '';
-         # These patterns are abbreviated because if the first few words
-         # match chances are very high it's the full slave thd state.
-         if ( $type =~ m/slave_io|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\smaster\supdate
-                |Connecting\sto\smaster
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\sbinlog
-                |Waiting\sfor\smaster\sto\ssend\sevent
-                |Queueing\smaster\sevent\sto\sthe\srelay
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\smaster
-                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         MKDEBUG && _d("Slave replication thread");
+         if ( $type ne 'all' ) { 
+            # Match a particular slave thread.
+            my $state = $query->{State} || $query->{state} || '';
+
+            if ( $state =~ m/^init|end$/ ) {
+               # http://code.google.com/p/maatkit/issues/detail?id=1121
+               MKDEBUG && _d("Special state:", $state);
+               $match = 1;
+            }
+            else {
+               # These patterns are abbreviated because if the first few words
+               # match chances are very high it's the full slave thd state.
+               my ($slave_sql) = $state =~ m/
+                  ^(Waiting\sfor\sthe\snext\sevent
+                   |Reading\sevent\sfrom\sthe\srelay\slog
+                   |Has\sread\sall\srelay\slog;\swaiting
+                   |Making\stemp\sfile
+                   |Waiting\sfor\sslave\smutex\son\sexit)/xi; 
+
+               # Type is either "slave_sql" or "slave_io".  The second line
+               # implies that if this isn't the sql thread then it must be
+               # the io thread, so match is true if we were supposed to match
+               # the io thread.
+               $match = $type eq 'slave_sql' &&  $slave_sql ? 1
+                      : $type eq 'slave_io'  && !$slave_sql ? 1
+                      :                                       0;
+            }
          }
-         if ( !$match && $type =~ m/slave_sql|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\sthe\snext\sevent
-                |Reading\sevent\sfrom\sthe\srelay\slog
-                |Has\sread\sall\srelay\slog;\swaiting
-                |Making\stemp\sfile)/xi; 
+         else {
+            # Type is "all" and it's not a master (binlog_dump) thread,
+            # else we wouldn't have gotten here.  It's either of the 2
+            # slave threads and we don't care which.
+            $match = 1;
          }
       }
       else {
          MKDEBUG && _d('Not system user');
       }
    }
-   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
-      '; match:', $match);
+   MKDEBUG && _d('Matches', $type, 'replication thread:',
+      ($match ? 'yes' : 'no'), '; match:', $match);
    return $match;
 }
 
-# Arguments:
-#   dbh    dbh to check, either a master or slave
-# Returns a hashref of any replication filters.  If none are set,
-# an empty hashref is returned.
+
+# Sub: get_replication_filters
+#   Get any replication filters set on the host.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh - dbh, master or slave
+#
+# Returns:
+#   Hashref of any replication filters.  If none are set, an empty hashref
+#   is returned.
 sub get_replication_filters {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh);
@@ -919,7 +954,15 @@ sub get_replication_filters {
    return \%filters; 
 }
 
-# Stringifies a position in a way that's string-comparable.
+
+# Sub: pos_to_string
+#   Stringify a position in a way that's string-comparable.
+#
+# Parameters:
+#   $pos - Hashref with file and position
+#
+# Returns:
+#   String like "file/posNNNNN"
 sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
