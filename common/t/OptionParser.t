@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 147;
+use Test::More tests => 148;
 
 use OptionParser;
 use DSNParser;
@@ -2116,6 +2116,21 @@ like(
    $o->print_usage(),
    qr/z\s+no\s+/,
    'copy: no'
+);
+
+# #############################################################################
+# Issue 1123: OptionParser type: string; default: 0 doesn't work
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->get_specs("$trunk/mk-table-checksum/mk-table-checksum");
+@ARGV = ();
+$o->get_opts();
+is(
+   $o->get('offset'),
+   0,
+   "type: string; default: 0 (issue 1123)"
 );
 
 # #############################################################################
