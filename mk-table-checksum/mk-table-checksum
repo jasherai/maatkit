@@ -5269,12 +5269,15 @@ sub checksum_tables {
             }
 
             # Clean out the replication table entry for this table.
+            # http://code.google.com/p/maatkit/issues/detail?id=304
             if ( (my $replicate_table = $final_o->get('replicate'))
                  && !$final_o->get('explain') ) {
                use_repl_db(%args);  # USE the proper replicate db
-               my $del_sql = "DELETE FROM $replicate_table WHERE db=? AND tbl=?";
-               MKDEBUG && _d($dbh, $del_sql, $db, $table->{table});
-               $dbh->do($del_sql, {}, $db, $table->{table});
+               my $max_chunkno = scalar @{$table->{chunks}} - 1;
+               my $del_sql     = "DELETE FROM $replicate_table "
+                               . "WHERE db=? AND tbl=? AND chunk > ?";
+               MKDEBUG && _d($dbh, $del_sql, $db, $table->{table},$max_chunkno);
+               $dbh->do($del_sql, {}, $db, $table->{table}, $max_chunkno);
             }
 
             # If --since is given, figure out either
@@ -6954,6 +6957,45 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
 
+=head1 REPLICATE TABLE MAINTENANCE
+
+If you use L<"--replicate"> to store and replicate checksums, you may need to
+perform maintenance on the replicate table from time to time to remove old
+checksums.  This section describes when checksums in the replicate table are
+deleted automatically by mk-table-checksum and when you must manually delete
+them.
+
+Before starting, mk-table-checksum calculates chunks for each table, even
+if L<"--chunk-size"> is not specified (in that case there is one chunk: "1=1").
+Then, before checksumming each table, the tool deletes checksum chunks in the
+replicate table greater than the current number of chunks.  For example,
+if a table is chunked into 100 chunks, 0-99, then mk-table-checksum does:
+
+  DELETE FROM replicate table WHERE db=? AND tbl=? AND chunk > 99
+
+That removes any high-end chunks from preivous runs which no longer exist.
+Currently, this operation cannot be disabled.
+
+If you use L<"--resume">, L<"--resume-replicate">, or L<"--modulo">, then
+you need to be careful that the number of rows in a table does not decrease
+so much that the number of chunks decreases too, else some checksum chunks may
+be deleted.  The one exception is if only rows at the high end of the range
+are deleted.  In that case, the high-end chunks are deleted and lower chunks
+remain unchanged.  An increasing number of rows or chunks should not cause
+any adverse affects.
+
+Changing the L<"--chunk-size"> between runs with L<"--resume">,
+L<"--resume-replicate">, or L<"--modulo"> can cause odd or invalid checksums.
+You should not do this.  It won't work with the resume options.  With
+L<"--modulo">, the safest thing to do is manually delete all the rows in
+the replicate table for the table in question and start over.
+
+If the replicate table becomes cluttered with old or invalid checksums
+and the auto-delete opration is not deleting them, then you will need to
+manually clean up the replicate table.  Alternatively, if you specify
+L<"--empty-replicate-table">, then the tool deletes every row in the
+replicate table.
+
 =head1 EXIT STATUS
 
 A successful exit status is 0.  If there is an error checksumming any table,
@@ -6981,6 +7023,8 @@ checksumming chunk 2 of 5 in table test.test_tbl.
 =head1 OPTIONS
 
 L<"--schema"> is restricted to option groups Connection, Filter, Output, Help, Config, Safety.
+
+L<"--empty-replicate-table">, L<"--resume"> and L<"--resume-replicate"> are mutually exclusive.
 
 =over
 
@@ -7257,12 +7301,15 @@ pathname.
 
 =item --empty-replicate-table
 
-Empty table given by L<"--replicate"> before starting.
+DELETE all rows in the L<"--replicate"> table before starting.
 
 Issues a DELETE against the table given by L<"--replicate"> before beginning
 work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
 remove entries related to tables that no longer exist, or just to clean out the
 results of a previous run.
+
+If you want to delete entries for specific databases or tables you must
+do this manually.
 
 =item --engines
 
