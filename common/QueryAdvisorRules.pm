@@ -428,6 +428,7 @@ sub get_rules {
 
          my %outer_tbls;
          my %outer_tbl_join_cols;
+         my @unknown_join_cols;
          foreach my $outer_tbl ( get_outer_tables($tbls) ) {
             $outer_tbls{$outer_tbl->{name}} = 1;
 
@@ -476,14 +477,17 @@ sub get_rules {
                   if ( !$tbl ) {
                      MKDEBUG && _d("Cannot determine the table for join column",
                         $col);
-                     return;
+                     push @unknown_join_cols, $col;
                   }
-                  $outer_tbl_join_cols{$col} = 1 if $tbl eq $outer_tbl->{name};
+                  else {
+                     $outer_tbl_join_cols{$col} = 1
+                        if $tbl eq $outer_tbl->{name};
+                  }
                }
             }
          }
          MKDEBUG && _d("Outer table join columns:", keys %outer_tbl_join_cols);
-         return unless keys %outer_tbl_join_cols;
+         MKDEBUG && _d("Unknown join columns:", @unknown_join_cols);
 
          # Here's a problem query:
          #   select c from L left join R on L.a=R.b where L.a=5 and R.c is null
@@ -495,6 +499,8 @@ sub get_rules {
          # http://code.google.com/p/maatkit/issues/detail?id=950
          foreach my $pred ( @$where ) {
             next unless $pred->{column};  # skip constants like 1 in "WHERE 1"
+            next unless $pred->{operator} eq 'is' && $pred->{value} =~ m/NULL/i;
+
             my ($tbl, $col) = split /\./, $pred->{column};
             if ( !$col ) {
                # A col in the WHERE clause isn't table-qualified.  Try to
@@ -508,12 +514,20 @@ sub get_rules {
                   column => $col,
                );
             }
-            return 0 if                       # This rule matches if
-               $tbl                           # we know the table and
-               && $outer_tbls{$tbl}           # it's an outer table but
-               && !$outer_tbl_join_cols{$col} # the col isn't in the join and
-               && $pred->{operator} eq 'is'   # the col IS NULL
-               && $pred->{value} =~ m/NULL/i;
+            next unless $tbl;               # can't check tbl if tbl is unknown
+            next unless $outer_tbls{$tbl};  # only want outer tbl cols
+
+            # At this point we know col is from outer table and "IS NULL".
+            # If we got outer tbl join cols from above, that's the simplest
+            # check...
+            return 0 if $outer_tbl_join_cols{$col};
+
+            # ...but even if we didn't get any outer tbl join cols, we may
+            # still be able to check a query like:
+            #   select c from L left join R on a=b where L.a=5 and R.c is null
+            # We don't know if a or b belong to L or R but we know c is from
+            # the outer table and is neither a nor b.
+            return 0 unless grep { $col eq $_ } @unknown_join_cols;
          }
 
          return;  # rule does not match, as best as we can determine
