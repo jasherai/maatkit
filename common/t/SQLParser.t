@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 102;
+use Test::More tests => 106;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -473,7 +473,7 @@ sub test_from {
       $sp->parse_from($from),
       $struct,
       "FROM $from"
-   );
+   ) or print Dumper($struct);
 };
 
 test_from(
@@ -790,6 +790,50 @@ test_from(
          index_hint     => 'FORCE KEY(foo)',
       }
    ]
+);
+
+# Database-qualified tables.
+test_from(
+   'db.tbl',
+   [{
+      db   => 'db',
+      name => 'tbl',
+   }],
+);
+
+test_from(
+   '`db`.`tbl`',
+   [{
+      db   => 'db',
+      name => 'tbl',
+   }],
+);
+
+test_from(
+   '`ryan likes`.`to break stuff`',
+   [{
+      db   => 'ryan likes',
+      name => 'to break stuff',
+   }],
+);
+
+test_from(
+   '`db`.`tbl` LEFT JOIN `foo`.`bar` USING (glue)',
+   [
+      {  db   => 'db',
+         name => 'tbl',
+      },
+      {  db   => 'foo',
+         name => 'bar',
+         join => {
+            to        => 'tbl',
+            type      => 'left',
+            ansi      => 1,
+            condition => 'using',
+            columns   => ['glue'],
+         },
+      },
+   ],
 );
 
 # #############################################################################
