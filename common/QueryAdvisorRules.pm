@@ -566,7 +566,10 @@ sub get_outer_tables {
 
 
 # Sub: determine_table_for_column
-#   Determine which table a column belongs to.
+#   Determine which table a column belongs to.  No extensive, online effort
+#   is made to determine the column's table.  The caller is responsible for
+#   using the parsed SQL structure to get its db/tables and their tbl structs
+#   and providing a list of them.
 #
 # Parameters:
 #   %args - Arguments
@@ -575,23 +578,20 @@ sub get_outer_tables {
 #   column - column name, not quoted
 #
 # Optional Arguments:
-#   dbh         - dbh used if a db and TableParser arg are also given
-#   db          - database name used if a dbh and TableParser arg are also given
-#   TableParser - <TableParser> object used if a dbh and db arg are also given
-#   tbl_structs - arrayref of tbl_struct hashrefs returned by
-#                 <TableParser::parse()>, used if no dbh, db and TableParser
-#                 args are given
+#   tbl_structs - arrayref hashrefs returned by <TableParser::parse()>
 #
 # Returns:
 #   Table name, not quoted
 sub determine_table_for_column {
    my ( %args ) = @_;
-   my ($col, $dbh, $db, $tp, $tbl_structs)
-      = @args{qw(column dbh db TableParser tbl_structs)};
-   die "I need a column argument" unless $col;
-
+   my @required_args = qw(column);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($col)       = @args{@required_args};
+   my $tbl_structs = $args{tbl_structs};
    my $tbl;
-   if ( $tbl_structs ) {
+   if ( $tbl_structs ) { 
       foreach my $tbl_struct ( @{$tbl_structs} ) {
          if ( $tbl_struct->{is_col}->{$col} ) {
             $tbl = $tbl_struct->{name};
@@ -599,10 +599,6 @@ sub determine_table_for_column {
          }
       }
    }
-   elsif ( $dbh && $db && $tp ) {
-      # TODO
-   }
-
    MKDEBUG && _d($col, "column belongs to table", $tbl);
    return $tbl;
 }
