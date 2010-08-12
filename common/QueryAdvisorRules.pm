@@ -418,14 +418,6 @@ sub get_rules {
          my $where  = $struct->{where};
          return unless $where;
 
-         # For joins like "a LEFT JOIN b ON foo=bar" we need table info
-         # to determine to which tables foo and bar belong.  Table info
-         # isn't needed if at least one column is table-qualified.
-         my $dbh           = $args{dbh};
-         my $db            = $args{database};
-         my $tbl_structs   = $args{tbl_structs};
-         my $have_tbl_info = ($dbh && $db) || $tbl_structs ? 1 : 0;
-
          my %outer_tbls;
          my %outer_tbl_join_cols;
          my @unknown_join_cols;
@@ -470,8 +462,8 @@ sub get_rules {
                   if ( !$col ) {
                      $col = $tbl;
                      $tbl = determine_table_for_column(
-                        %args,
-                        column => $col,
+                        column      => $col,
+                        tbl_structs => $event->{tbl_structs},
                      );
                   }
                   if ( !$tbl ) {
@@ -510,8 +502,8 @@ sub get_rules {
                # gets skipped silently when we can't tbl-qualify cols.
                $col = $tbl;
                $tbl = determine_table_for_column(
-                  %args,
-                  column => $col,
+                  column      => $col,
+                  tbl_structs => $event->{tbl_structs},
                );
             }
             next unless $tbl;               # can't check tbl if tbl is unknown
@@ -588,19 +580,22 @@ sub determine_table_for_column {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($col)       = @args{@required_args};
+   my ($col) = @args{@required_args};
+
    my $tbl_structs = $args{tbl_structs};
-   my $tbl;
-   if ( $tbl_structs ) { 
-      foreach my $tbl_struct ( @{$tbl_structs} ) {
-         if ( $tbl_struct->{is_col}->{$col} ) {
-            $tbl = $tbl_struct->{name};
-            last;
+   return unless $tbl_structs;
+
+   foreach my $db ( keys %$tbl_structs ) {
+      foreach my $tbl ( keys %{$tbl_structs->{$db}} ) {
+         if ( $tbl_structs->{$db}->{$tbl}->{is_col}->{$col} ) {
+            MKDEBUG && _d($col, "column belongs to", $db, $tbl);
+            return $tbl;
          }
       }
    }
-   MKDEBUG && _d($col, "column belongs to table", $tbl);
-   return $tbl;
+
+   MKDEBUG && _d("Cannot determine table for column", $col);
+   return;
 }
 
 sub _d {

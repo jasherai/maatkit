@@ -380,14 +380,12 @@ my @cases = (
    },
    {  name   => "JOI.004",
       query  => "select c from L left join R on a=b where L.a=5 and R.c is null",
-      tbl_structs => [
-         { name   => 'L',
-           is_col => {a=>1},
+      tbl_structs => {
+         db => {
+            L => { name => 'L', is_col => { a => 1         } },
+            R => { name => 'R', is_col => { b => 1, c => 1 } },
          },
-         { name   => 'R',
-           is_col => {b=>1, c=>1},
-         },
-      ],
+      },
       advice => [qw(JOI.004)],
    },
    {  name   => "JOI.004 USING (b)",
@@ -401,38 +399,32 @@ my @cases = (
    },
    {  name   => "JOI.004 good exclusion join",
       query  => "select c from L left join R on a=b where L.a=5 and R.b is null",
-      tbl_structs => [
-         { name   => 'L',
-           is_col => {a=>1},
+      tbl_structs => {
+         db => {
+            L => { name => 'L', is_col => { a => 1         } },
+            R => { name => 'R', is_col => { b => 1, c => 1 } },
          },
-         { name   => 'R',
-           is_col => {b=>1, c=>1},
-         },
-      ],
+      },
       advice => [],
    },
    {  name   => "JOI.004 RIGHT",
       query  => "select c from L right join R on a=b where R.a=5 and L.c is null",
-      tbl_structs => [
-         { name   => 'L',
-           is_col => {a=>1, c=>1},
+      tbl_structs => {
+         db => {
+            L => { name => 'L', is_col => { a => 1, c => 1 } },
+            R => { name => 'R', is_col => { b => 1,        } },
          },
-         { name   => 'R',
-           is_col => {b=>1},
-         },
-      ],
+      },
       advice => [qw(JOI.004)],
    },
    {  name   => "JOI.004 can table-qualify cols from WHERE",
       query  => "select c from L left join R on a=b where a=5 and c is null",
-      tbl_structs => [
-         { name   => 'L',
-           is_col => {a=>1},
+      tbl_structs => {
+         db => {
+            L => { name => 'L', is_col => { a => 1         } },
+            R => { name => 'R', is_col => { b => 1, c => 1 } },
          },
-         { name   => 'R',
-           is_col => {b=>1, c=>1},
-         },
-      ],
+      },
       advice => [qw(JOI.004)],
    },
 );
@@ -456,10 +448,10 @@ foreach my $test ( @cases ) {
    my $event = {
       arg          => $test->{query},
       query_struct => $query_struct,
+      tbl_structs  => $test->{tbl_structs},
    };
    my ($ids, $pos) = $adv->run_rules(
       event       => $event,
-      tbl_structs => $test->{tbl_structs},
    );
    is_deeply(
       $ids,
