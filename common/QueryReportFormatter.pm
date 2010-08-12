@@ -384,7 +384,7 @@ sub query_report {
                $report .= "$samp_query\\G\n";
             }
             else {
-               $report .= "# EXPLAIN\n$samp_query\\G\n"; 
+               $report .= "# EXPLAIN /*!50100 PARTITIONS*/\n$samp_query\\G\n"; 
                $report .= $self->explain_report($samp_query, $default_db);
             }
          }
@@ -395,7 +395,7 @@ sub query_report {
                  && $converted
                  && $converted =~ m/^[\(\s]*select/i ) {
                # It converted OK to a SELECT
-               $report .= "# Converted for EXPLAIN\n# EXPLAIN\n$converted\\G\n";
+               $report .= "# Converted for EXPLAIN\n# EXPLAIN /*!50100 PARTITIONS*/\n$converted\\G\n";
             }
          }
       }

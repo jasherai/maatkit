@@ -28,7 +28,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `foodb` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `foodb`.`tbl`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select col from tbl where id=42\G
 
 # Profile
