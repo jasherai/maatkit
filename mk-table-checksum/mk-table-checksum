@@ -7096,7 +7096,7 @@ L<"--modulo">, the safest thing to do is manually delete all the rows in
 the replicate table for the table in question and start over.
 
 If the replicate table becomes cluttered with old or invalid checksums
-and the auto-delete opration is not deleting them, then you will need to
+and the auto-delete operation is not deleting them, then you will need to
 manually clean up the replicate table.  Alternatively, if you specify
 L<"--empty-replicate-table">, then the tool deletes every row in the
 replicate table.
