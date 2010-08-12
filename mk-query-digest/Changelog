@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added /*!50100 PARTITIONS*/ to EXPLAIN line (issue 1114).
+
 2010-08-01: version 0.9.20
 
    * --outliers did not work (issue 1087).

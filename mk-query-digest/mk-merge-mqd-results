@@ -3231,7 +3231,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6672
+# QueryReportFormatter package 6878
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3532,7 +3532,7 @@ sub query_report {
                $report .= "$samp_query\\G\n";
             }
             else {
-               $report .= "# EXPLAIN\n$samp_query\\G\n"; 
+               $report .= "# EXPLAIN /*!50100 PARTITIONS*/\n$samp_query\\G\n"; 
                $report .= $self->explain_report($samp_query, $default_db);
             }
          }
@@ -3542,7 +3542,7 @@ sub query_report {
             if ( $o->get('for-explain')
                  && $converted
                  && $converted =~ m/^[\(\s]*select/i ) {
-               $report .= "# Converted for EXPLAIN\n# EXPLAIN\n$converted\\G\n";
+               $report .= "# Converted for EXPLAIN\n# EXPLAIN /*!50100 PARTITIONS*/\n$converted\\G\n";
             }
          }
       }
