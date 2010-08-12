@@ -518,12 +518,17 @@ sub get_rules {
             next unless $outer_tbls{$tbl};  # only want outer tbl cols
 
             # At this point we know col is from outer table and "IS NULL".
-            # If we got outer tbl join cols from above, that's the simplest
-            # check...
-            return 0 if $outer_tbl_join_cols{$col};
+            # "outer_tbl.join_col IS NULL" is ok, but...
+            next if $outer_tbl_join_cols{$col};
 
-            # ...but even if we didn't get any outer tbl join cols, we may
-            # still be able to check a query like:
+            # ...this rule could match here for two reasons.  First, if
+            # we know the outer tbl join cols and this col isn't one of them
+            # (hence the statement above passed and we got here), then
+            # @unknown_join_cols will be empty and we'll match.  This is like
+            # "outer_tbl.NON_join_col IS NULL".  Or second, we don't know
+            # the outer tbl join cols and @unknown_join_cols will have cols
+            # and we'll match if this col isn't one of the unknown join cols.
+            # This is for cases like:
             #   select c from L left join R on a=b where L.a=5 and R.c is null
             # We don't know if a or b belong to L or R but we know c is from
             # the outer table and is neither a nor b.
