@@ -7292,6 +7292,12 @@ short form: -d; type: hash; group: Filter
 
 Only checksum this comma-separated list of databases.
 
+=item --databases-regex
+
+type: string
+
+Only checksum databases whose names match this Perl regex.
+
 =item --defaults-file
 
 short form: -F; type: string; group: Connection
@@ -7384,6 +7390,12 @@ type: hash; group: Filter
 
 Ignore this comma-separated list of databases.
 
+=item --ignore-databases-regex
+
+type: string
+
+Ignore databases whose names match this Perl regex.
+
 =item --ignore-engines
 
 type: Hash; default: FEDERATED,MRG_MyISAM; group: Filter
@@ -7397,6 +7409,12 @@ type: hash; group: Filter
 Ignore this comma-separated list of tables.
 
 Table names may be qualified with the database name.
+
+=item --ignore-tables-regex
+
+type: string
+
+Ignore tables whose names match the Perl regex.
 
 =item --lock
 
@@ -7862,6 +7880,12 @@ short form: -t; type: hash; group: Filter
 Do only this comma-separated list of tables.
 
 Table names may be qualified with the database name.
+
+=item --tables-regex
+
+type: string
+
+Only checksum tables whose names match this Perl regex.
 
 =item --throttle-method
 

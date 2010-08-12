@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 1;
+   plan tests => 4;
 }
 
 my $output;
@@ -46,6 +46,37 @@ is(
 "test     t2    CHECKSUM TABLE `test`.`t2`
 ",
    '--engines'
+);
+
+
+$output = output(
+   sub { mk_table_checksum::main(@args,
+         qw(--explain -d mysql --tables-regex user)) },
+);
+like(
+   $output,
+   qr/^mysql\s+user\s+/,
+   "--tables-regex"
+);
+
+$output = output(
+   sub { mk_table_checksum::main(@args,
+         qw(--explain -d mysql --ignore-tables-regex user)) },
+);
+unlike(
+   $output,
+   qr/user/,
+   "--ignore-tables-regex"
+);
+
+$output = output(
+   sub { mk_table_checksum::main(@args,
+         qw(--explain -d mysql --ignore-databases-regex mysql)) },
+);
+is(
+   $output,
+   "",
+   "--ignore-databases-regex"
 );
 
 # #############################################################################

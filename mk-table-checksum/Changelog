@@ -1,5 +1,10 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --databases-regex (issue 1112).
+   * Added --tables-regex (issue 1112).
+   * Added --ignore-databases-regex (issue 1112).
+   * Added --ignore-tables-regex (issue 1112).
+
 2010-08-01: version 1.2.17
 
    * Added --chunk-size-limit (issue 796).
