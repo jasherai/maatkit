@@ -801,7 +801,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6785
+# OptionParser package 6875
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -1022,7 +1022,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -3315,7 +3315,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6810
+# MasterSlave package 6865
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -3955,14 +3955,14 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
-   
+
 sub is_replication_thread {
    my ( $self, $query, $type ) = @_; 
    return unless $query;
 
-   $type ||= 'all';
+   $type = lc $type || 'all';
    die "Invalid type: $type"
-      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+      unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
    my $match = 0;
    if ( $type =~ m/binlog_dump|all/i ) {
@@ -3971,35 +3971,40 @@ sub is_replication_thread {
    }
    if ( !$match ) {
       if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
-         my $state = $query->{State} || $query->{state} || '';
-         if ( $type =~ m/slave_io|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\smaster\supdate
-                |Connecting\sto\smaster
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\sbinlog
-                |Waiting\sfor\smaster\sto\ssend\sevent
-                |Queueing\smaster\sevent\sto\sthe\srelay
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\smaster
-                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         MKDEBUG && _d("Slave replication thread");
+         if ( $type ne 'all' ) { 
+            my $state = $query->{State} || $query->{state} || '';
+
+            if ( $state =~ m/^init|end$/ ) {
+               MKDEBUG && _d("Special state:", $state);
+               $match = 1;
+            }
+            else {
+               my ($slave_sql) = $state =~ m/
+                  ^(Waiting\sfor\sthe\snext\sevent
+                   |Reading\sevent\sfrom\sthe\srelay\slog
+                   |Has\sread\sall\srelay\slog;\swaiting
+                   |Making\stemp\sfile
+                   |Waiting\sfor\sslave\smutex\son\sexit)/xi; 
+
+               $match = $type eq 'slave_sql' &&  $slave_sql ? 1
+                      : $type eq 'slave_io'  && !$slave_sql ? 1
+                      :                                       0;
+            }
          }
-         if ( !$match && $type =~ m/slave_sql|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\sthe\snext\sevent
-                |Reading\sevent\sfrom\sthe\srelay\slog
-                |Has\sread\sall\srelay\slog;\swaiting
-                |Making\stemp\sfile)/xi; 
+         else {
+            $match = 1;
          }
       }
       else {
          MKDEBUG && _d('Not system user');
       }
    }
-   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
-      '; match:', $match);
+   MKDEBUG && _d('Matches', $type, 'replication thread:',
+      ($match ? 'yes' : 'no'), '; match:', $match);
    return $match;
 }
+
 
 sub get_replication_filters {
    my ( $self, %args ) = @_;
@@ -4042,6 +4047,7 @@ sub get_replication_filters {
 
    return \%filters; 
 }
+
 
 sub pos_to_string {
    my ( $self, $pos ) = @_;
@@ -4539,6 +4545,90 @@ sub _d {
 
 # ###########################################################################
 # End SchemaIterator package
+# ###########################################################################
+
+# ###########################################################################
+# Retry package 6810
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Retry.pm
+#   trunk/common/t/Retry.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Retry;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub retry {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(try wait);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   };
+   my ($try, $wait) = @args{@required_args};
+   my $tries = $args{tries} || 3;
+
+   my $tryno = 0;
+   while ( ++$tryno <= $tries ) {
+      MKDEBUG && _d("Retry", $tryno, "of", $tries);
+      my $result;
+      eval {
+         $result = $try->(tryno=>$tryno);
+      };
+
+      if ( defined $result ) {
+         MKDEBUG && _d("Try code succeeded");
+         if ( my $on_success = $args{on_success} ) {
+            MKDEBUG && _d("Calling on_success code");
+            $on_success->(tryno=>$tryno, result=>$result);
+         }
+         return $result;
+      }
+
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Try code died:", $EVAL_ERROR);
+         return unless $args{retry_on_die};
+      }
+
+      if ( $tryno < $tries ) {
+         MKDEBUG && _d("Try code failed, calling wait code");
+         $wait->(tryno=>$tryno);
+      }
+   }
+
+   MKDEBUG && _d("Try code did not succeed");
+   if ( my $on_failure = $args{on_failure} ) {
+      MKDEBUG && _d("Calling on_failure code");
+      $on_failure->();
+   }
+
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Retry package
 # ###########################################################################
 
 # ###########################################################################
@@ -5417,6 +5507,8 @@ sub checksum_chunks {
    my @hosts   = @{$args{hosts}};
    my $tbl     = $args{tbl}; 
 
+   my $retry = new Retry();
+
    # ##################################################################
    # This loop may seem suboptimal, because it causes a new child to be
    # forked for each table, for each host, for each chunk.  It also
@@ -5521,7 +5613,8 @@ sub checksum_chunks {
          do_tbl_replicate(
             $chunk_num,
             %args,
-            host => $hosts[0],
+            host  => $hosts[0],
+            retry => $retry,
          );
       }
       else {
@@ -6058,7 +6151,7 @@ sub already_checksummed {
 
 sub do_tbl_replicate {
    my ( $chunk_num, %args ) = @_;
-   foreach my $arg ( qw(q host query tbl hdr explain final_o ch) ) {
+   foreach my $arg ( qw(q host query tbl hdr explain final_o ch retry) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $ch      = $args{ch};
@@ -6068,6 +6161,7 @@ sub do_tbl_replicate {
    my $hdr     = $args{hdr};
    my $explain = $args{explain};
    my $tbl     = $args{tbl};
+   my $retry   = $args{retry};
 
    MKDEBUG && _d('Replicating chunk', $chunk_num,
       'of table', $tbl->{database}, '.', $tbl->{table},
@@ -6107,9 +6201,20 @@ sub do_tbl_replicate {
    }
 
    # Actually run the checksum query
-   $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
-          . '@@binlog_format := "STATEMENT"*/');
-   $dbh->do($sql, {}, @{$tbl}{qw(database table)}, $where);
+   $retry->retry(
+      tries        => 2,
+      wait         => sub { return; },
+      retry_on_die => 1,
+      try          => sub {
+         $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
+                  . '@@binlog_format := "STATEMENT"*/');
+         $dbh->do($sql, {}, @{$tbl}{qw(database table)}, $where);
+         return 1;
+      },
+      on_failure   => sub {
+         die $EVAL_ERROR;  # caught in checksum_tables()
+      },
+   );
 
    # Catch any warnings thrown....
    my $sql_warn = 'SHOW WARNINGS';

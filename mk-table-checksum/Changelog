@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Lock timeouts were not retried (issue 345).
    * Added --databases-regex (issue 1112).
    * Added --tables-regex (issue 1112).
    * Added --ignore-databases-regex (issue 1112).
