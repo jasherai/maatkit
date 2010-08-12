@@ -30,7 +30,7 @@
 #    SHOW CREATE TABLE `db3`.`forest`\G
 DELETE FROM forest WHERE animal = 'dead'\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select * from  forest WHERE animal = 'dead'\G
 
 # Query 2: 0.00 QPS, 0.00x concurrency, ID 0xAC1BF726F2AB10C5 at byte 916
@@ -59,7 +59,7 @@ select * from  forest WHERE animal = 'dead'\G
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
 #    SHOW CREATE TABLE `db1`.`foo`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM foo\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xB79802214165F670 at byte 1243 _____
@@ -113,7 +113,7 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `db1`.`tbl`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT id FROM tbl WHERE id = 1\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0x3F1024B96D9D469E at byte 613 ______
@@ -143,7 +143,7 @@ SELECT id FROM tbl WHERE id = 1\G
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'blah'\G
 #    SHOW CREATE TABLE `db1`.`blah`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT COUNT(*) FROM blah WHERE col > 2\G
 
 # Profile

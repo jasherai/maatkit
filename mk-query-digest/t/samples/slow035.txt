@@ -75,7 +75,7 @@ INSERT INTO db.v (m, b) VALUES ('', 'Exact')\G
 # Tables
 #    SHOW TABLE STATUS LIKE 'blah'\G
 #    SHOW CREATE TABLE `blah`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM blah WHERE something = 'important'\G
 
 # Profile

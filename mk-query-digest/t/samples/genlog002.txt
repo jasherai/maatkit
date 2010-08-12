@@ -26,7 +26,7 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'auction_category_map'\G
 #    SHOW CREATE TABLE `auction_category_map`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT category_id
                 FROM auction_category_map 
                 WHERE auction_id = '3015563'\G
@@ -51,7 +51,7 @@ SELECT category_id
 # Tables
 #    SHOW TABLE STATUS LIKE 'auction_search'\G
 #    SHOW CREATE TABLE `auction_search`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT auction_id, auction_title_en AS title, close_time,
                                          number_of_items_per_lot, 
                                          replace (replace (thumbnail_url,  'sm_thumb', 'carousel'), 'small_thumb', 'carousel') as thumbnail_url,

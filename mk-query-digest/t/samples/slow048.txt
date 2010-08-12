@@ -22,7 +22,7 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'products'\G
 #    SHOW CREATE TABLE `products`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM `products` ORDER BY name, shape asc\G
 
 # Profile

@@ -26,7 +26,7 @@
 #    SHOW CREATE TABLE `d`.`t`\G
 PREPARE SELECT i FROM d.t WHERE i=?\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT i FROM d.t WHERE i=?\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x3F79759E7FA2F117 at byte 1106 _____
@@ -57,7 +57,7 @@ SELECT i FROM d.t WHERE i=?\G
 #    SHOW CREATE TABLE `d`.`t`\G
 EXECUTE SELECT i FROM d.t WHERE i="3"\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT i FROM d.t WHERE i="3"\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xAA353644DE4C4CB4 at byte 1850 _____

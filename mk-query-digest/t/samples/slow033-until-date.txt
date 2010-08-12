@@ -25,5 +25,5 @@
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
 #    SHOW CREATE TABLE `db1`.`foo`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM foo\G

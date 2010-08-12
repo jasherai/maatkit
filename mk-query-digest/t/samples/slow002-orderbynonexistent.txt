@@ -33,7 +33,7 @@ update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) \G
 
@@ -73,7 +73,7 @@ UPDATE db4.vab3concept1upload
 SET    vab3concept1id = '91848182522'
 WHERE  vab3concept1upload='6994465'\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   vab3concept1upload='6994465'\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xB211BA2B8D6D065C at byte 2363 _____
@@ -111,7 +111,7 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 UPDATE foo.bar
 SET    biz = '91848182522'\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select     biz = '91848182522' from foo.bar \G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0x6969975466519B81 at byte 2825 _____
@@ -150,7 +150,7 @@ UPDATE bizzle.bat
 SET    boop='bop: 899'
 WHERE  fillze='899'\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0xC22D235B07D1D774 at byte 1840 _____

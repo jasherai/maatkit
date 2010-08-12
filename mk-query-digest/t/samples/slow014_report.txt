@@ -25,5 +25,5 @@
 # Tables
 #    SHOW TABLE STATUS FROM `test` LIKE 'n'\G
 #    SHOW CREATE TABLE `test`.`n`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select sleep(2) from n\G

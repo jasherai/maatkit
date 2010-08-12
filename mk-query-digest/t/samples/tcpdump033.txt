@@ -37,7 +37,7 @@
 #    SHOW CREATE TABLE `d`.`t`\G
 EXECUTE select * from d.t where name="adam"\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select * from d.t where name="adam"\G
 
 # Query 2: 1.17k QPS, 0.19x concurrency, ID 0xECBCD0412B5E497A at byte 9215
@@ -67,7 +67,7 @@ select * from d.t where name="adam"\G
 #    SHOW CREATE TABLE `d`.`t`\G
 PREPARE select * from d.t where name="daniel"\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select * from d.t where name="daniel"\G
 
 # Query 3: 1.70k QPS, 0x concurrency, ID 0x559914DA8A7B7F28 at byte 8202 _

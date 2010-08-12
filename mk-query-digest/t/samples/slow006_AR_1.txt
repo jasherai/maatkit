@@ -32,7 +32,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `foo` LIKE 'foo_tbl'\G
 #    SHOW CREATE TABLE `foo`.`foo_tbl`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT col FROM foo_tbl\G
 
 # Query 2: 0.30 QPS, 0.00x concurrency, ID 0xD4CD74934382A184 at byte 1445
@@ -68,5 +68,5 @@ SELECT col FROM foo_tbl\G
 # Tables
 #    SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
 #    SHOW CREATE TABLE `bar`.`bar_tbl`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT col FROM bar_tbl\G

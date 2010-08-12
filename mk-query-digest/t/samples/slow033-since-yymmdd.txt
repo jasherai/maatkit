@@ -25,7 +25,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `db2` LIKE 'bar'\G
 #    SHOW CREATE TABLE `db2`.`bar`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM bar\G
 
 # Query 2: 0.00 QPS, 0.00x concurrency, ID 0xAC1BF726F2AB10C5 at byte 861
@@ -54,5 +54,5 @@ SELECT * FROM bar\G
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
 #    SHOW CREATE TABLE `db1`.`foo`\G
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM foo\G

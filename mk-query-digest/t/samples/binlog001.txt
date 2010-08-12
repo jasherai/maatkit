@@ -77,7 +77,7 @@ update test3.tblo as o
           e.col3 = o.col3
       where e.tblo is null\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select  e.tblo = o.tblo,
           e.col3 = o.col3 from test3.tblo as o
          inner join test3.tbl2 as e on o.animal = e.animal and o.oid = e.oid where  e.tblo is null\G
@@ -111,7 +111,7 @@ update test3.tblo as o inner join test3.tbl2 as e
           e.col9 = now()
       where o.tbl2 is null\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select  o.tbl2 = e.tbl2,
           e.col9 = now() from test3.tblo as o inner join test3.tbl2 as e
  on o.animal = e.animal and o.oid = e.oid where  o.tbl2 is null\G
@@ -170,7 +170,7 @@ update test2.tbl8
          last0metric1 = ondeckmetric1, last0time = now()
       where tbl8 in (10800712)\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select  last2metric1 = last1metric1, last2time = last1time,
          last1metric1 = last0metric1, last1time = last0time,
          last0metric1 = ondeckmetric1, last0time = now() from test2.tbl8 where  tbl8 in (10800712)\G

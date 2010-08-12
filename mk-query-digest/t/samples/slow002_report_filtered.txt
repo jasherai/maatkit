@@ -36,5 +36,5 @@ UPDATE bizzle.bat
 SET    boop='bop: 899'
 WHERE  fillze='899'\G
 # Converted for EXPLAIN
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select     boop='bop: 899' from bizzle.bat where   fillze='899'\G

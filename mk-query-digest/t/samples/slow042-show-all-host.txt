@@ -23,6 +23,6 @@
 # 100ms
 #    1s
 #  10s+
-# EXPLAIN
+# EXPLAIN /*!50100 PARTITIONS*/
 select foo
 \G
