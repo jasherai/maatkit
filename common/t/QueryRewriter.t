@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 261;
+use Test::More tests => 262;
 
 use QueryRewriter;
 use QueryParser;
@@ -340,6 +340,12 @@ is(
    ),
    "select * from t where i=? order by a, b, d desc, e",
    "Remove ASC from spacey ORDER BY"
+);
+
+is(
+   $qr->fingerprint("LOAD DATA INFILE '/tmp/foo.txt'"),
+   "load data infile ?",
+   "Fingerprint LOAD DATA INFILE"
 );
 
 # #############################################################################
