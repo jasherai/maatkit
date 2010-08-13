@@ -343,8 +343,8 @@ is(
 );
 
 is(
-   $qr->fingerprint("LOAD DATA INFILE '/tmp/foo.txt'"),
-   "load data infile ?",
+   $qr->fingerprint("LOAD DATA INFILE '/tmp/foo.txt' INTO db.tbl"),
+   "load data infile ? into db.tbl",
    "Fingerprint LOAD DATA INFILE"
 );
 
