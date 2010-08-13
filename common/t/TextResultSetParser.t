@@ -9,13 +9,24 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 13;
 
 use TextResultSetParser;
 use MaatkitTest;
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 my $r = new TextResultSetParser();
 isa_ok($r, 'TextResultSetParser');
+
+throws_ok(
+   sub { $r->parse(load_file('common/t/samples/slow002.txt')) },
+   qr/Cannot determine if text is/,
+   "Dies if output type cannot be determined"
+);
 
 is_deeply(
    $r->parse( load_file('common/t/samples/pl/recset001.txt') ),
@@ -88,10 +99,103 @@ is_deeply(
          Command => 'Sleep',
          Time  => '17',
          State => undef,
-         Info  => 'NULL',
+         Info  => undef,
       }
    ],
    '1 vertical row, No State value'
+);
+
+is_deeply(
+   $r->parse( load_file('common/t/samples/pl/recset009.txt') ),
+   [
+      {
+         Id      => '21',
+         User    => 'msandbox',
+         Host    => 'localhost:54732',
+         db      => undef,
+         Command => 'Binlog Dump',
+         Time    => '3081',
+         State   => 'Has sent all binlog to slave; waiting for binlog to be updated',
+         Info    => undef,
+      },
+      {
+         Id      => '41',
+         User    => 'msandbox',
+         Host    => 'localhost',
+         db      => undef,
+         Command => 'Query',
+         Time    => '0',
+         State   => undef,
+         Info    => 'show full processlist',
+      }
+   ],
+   'Horizontal, tab-separated'
+);
+
+$recset = $r->parse(load_file('common/t/samples/show-variables/vars001.txt'));
+# Should only get the var once.
+my $got_var = grep { $_->{Variable_name} eq 'warning_count' } @$recset;
+is(
+   $got_var,
+   1,
+   "vars001.txt"
+);
+
+$recset = $r->parse(load_file('common/t/samples/show-variables/vars002.txt'));
+$got_var = grep { $_->{Variable_name} eq 'warning_count' } @$recset;
+is(
+   $got_var,
+   1,
+   "vars002.txt"
+);
+
+
+# #############################################################################
+# Parse with NAME_lc for lowercase key/col names.
+# #############################################################################
+$r = new TextResultSetParser(NAME_lc => 1);
+
+$recset = $r->parse(load_file('common/t/samples/show-variables/vars001.txt'));
+$got_var = grep { $_->{variable_name} eq 'warning_count' } @$recset;
+is(
+   $got_var,
+   1,
+   "NAME_lc tabular"
+);
+
+$recset = $r->parse(load_file('common/t/samples/show-variables/vars002.txt'));
+$got_var = grep { $_->{variable_name} eq 'warning_count' } @$recset;
+is(
+   $got_var,
+   1,
+   "NAME_lc tab-separated"
+);
+
+is_deeply(
+   $r->parse( load_file('common/t/samples/pl/recset002.txt') ),
+   [
+      {
+         time     => '4',
+         command  => 'Query',
+         db       => 'foo',
+         id       => '1',
+         info     => 'select * from foo1;',
+         user     => 'user1',
+         state    => 'Locked',
+         host     => '1.2.3.4:3333'
+      },
+      {
+         time     => '5',
+         command  => 'Query',
+         db       => 'foo',
+         id       => '2',
+         info     => 'select * from foo2;',
+         user     => 'user1',
+         state    => 'Locked',
+         host     => '1.2.3.4:5455'
+      },
+   ],
+   "NAME_lc vertical"
 );
 
 # #############################################################################

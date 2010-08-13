@@ -459,7 +459,7 @@ is_deeply(
          Command => 'Sleep',
          Time  => '17',
          State => undef,
-         Info  => 'NULL',
+         Info  => undef,
       }
    ],
    'idle_time'
