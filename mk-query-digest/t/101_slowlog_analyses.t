@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 39;
+use Test::More tests => 40;
 
 use MaatkitTest;
 
@@ -388,6 +388,17 @@ ok(
       "mk-query-digest/t/samples/slow050.txt",
    ),
    'Analysis for slow050 (issue 347)',
+);
+
+# #############################################################################
+# Issue 918: mk-query-digest does not fingerprint LOAD DATA
+# #############################################################################
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, '--report-format', 'query_report,profile',  $sample.'slow051.txt') },
+      "mk-query-digest/t/samples/slow051.txt",
+   ),
+   'Analysis for slow051 (issue 918)',
 );
 
 # #############################################################################
