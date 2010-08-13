@@ -153,6 +153,16 @@ sub date {
    return "# Current date: " . (scalar localtime) . "\n";
 }
 
+sub hostname {
+   my ( $self ) = @_;
+   my $hostname = `hostname`;
+   if ( $hostname ) {
+      chomp $hostname;
+      return "# Hostname: $hostname\n";
+   }
+   return;
+}
+
 sub files {
    my ( $self, %args ) = @_;
    if ( $args{files} ) {

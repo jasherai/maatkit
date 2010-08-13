@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 31;
 
 use Transformers;
 use QueryReportFormatter;
@@ -1108,6 +1108,12 @@ is(
    $qrf->files(files=>[qw(foo bar)]),
    "# Files: foo, bar\n",
    "files report"
+);
+
+like(
+   $qrf->hostname(),
+   qr/# Hostname: .+?/,
+   "hostname report"
 );
 
 # #############################################################################
