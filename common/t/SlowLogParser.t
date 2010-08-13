@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 48;
 
 use SlowLogParser;
 use MaatkitTest;
@@ -1256,6 +1256,41 @@ test_log_parser(
          pos_in_log    => '0',
          ts            => '071218 11:48:27',
          Client        => '127.0.0.1:12345',
+      }
+   ],
+);
+
+# #############################################################################
+# Issue 1104: Schema isn't parsed right
+# #############################################################################
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/slow044.txt',
+   result => [
+      {  Lock_time     => '0.000048',
+         Query_time    => '0.000173',
+         Rows_examined => '18',
+         Rows_sent     => '18',
+         arg           => 'select /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo',
+         bytes         => length('select /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo'),
+         cmd           => 'Query',
+         pos_in_log    => '0',
+         ts            => '100525 10:22:00',
+         Thread_id     => '342',
+         Last_errno    => 1,
+         Killed        => 2,
+      },
+      {  Lock_time     => '0.000048',
+         Query_time    => '0.000173',
+         Rows_examined => '19',
+         Rows_sent     => '19',
+         arg           => 'select /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo',
+         bytes         => length('select /*this is only parsable by slowlog-to-outfile, not by mqd*/ foo'),
+         cmd           => 'Query',
+         pos_in_log    => '253',
+         Thread_id     => '342',
+         Last_errno    => 3,
+         Killed        => 4,
       }
    ],
 );

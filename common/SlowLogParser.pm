@@ -185,6 +185,14 @@ sub parse_event {
             # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
+
+               # http://code.google.com/p/maatkit/issues/detail?id=1104
+               if ( $line =~ m/Schema:\s+\w+: / ) {
+                  MKDEBUG && _d('Removing empty Schema attrib');
+                  $line =~ s/Schema:\s+//;
+                  MKDEBUG && _d($line);
+               }
+
                # I tried using split, but coping with the above bug makes it
                # slower than a complex regex match.
                my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
