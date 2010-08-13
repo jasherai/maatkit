@@ -613,11 +613,12 @@ sub _packet_from_server {
          if ( $session->{state} eq 'client_auth' ) {
             MKDEBUG && _d('Connection failed');
             $event = {
-               cmd       => 'Admin',
-               arg       => 'administrator command: Connect',
-               ts        => $packet->{ts},
-               Error_no  => $error->{errno},
+               cmd      => 'Admin',
+               arg      => 'administrator command: Connect',
+               ts       => $packet->{ts},
+               Error_no => $error->{errno},
             };
+            $session->{attribs}->{Error_msg} = $error->{message};
             $session->{closed} = 1;  # delete session when done
             return $self->_make_event($event, $packet, $session);
          }
@@ -643,6 +644,7 @@ sub _packet_from_server {
                ts        => $packet->{ts},
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
+            $session->{attribs}->{Error_msg} = $error->{message};
             return $self->_make_event($event, $packet, $session);
          }
          else {

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 70;
+use Test::More tests => 72;
 
 use MySQLProtocolParser;
 use TcpdumpParser;
@@ -149,6 +149,7 @@ test_protocol_parser(
          bytes      => length('administrator command: Connect'),
          cmd        => 'Admin',
          Error_no   => 1045,
+         Error_msg  => 'Access denied for user \'msandbox\'@\'localhost\' (using password: YES)',
          Rows_affected => 0,
          Warning_count      => 0,
          No_good_index_used => 'No',
@@ -177,6 +178,7 @@ test_protocol_parser(
          bytes      => length('select 5 from foo'),
          cmd        => 'Query',
          Error_no   => "#1046",
+         Error_msg  => 'No database selected',
          Rows_affected => 0,
          Warning_count      => 0,
          No_good_index_used => 'No',
@@ -1635,6 +1637,63 @@ like(
    $e->[0]->{arg},
    qr/--THE END--'\)$/,
    '2nd, fragmented client query (issue 832)',
+);
+warn "WOW";
+# #############################################################################
+# Issue 670: Make mk-query-digest capture the error message from tcpdump
+# #############################################################################
+$protocol = new MySQLProtocolParser(
+   server => '127.0.0.1',
+   port   => '3306',
+);
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => "$sample/tcpdump040.txt",
+   desc     => 'Error (issue 670)',
+   result =>
+   [
+      {
+         Error_msg          => "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1",
+         Error_no           => '#1064',
+         No_good_index_used => 'No',
+         No_index_used      => 'No',
+         Query_time         => '0.000316',
+         Rows_affected      => 0,
+         Thread_id          => '4294967296',
+         Warning_count      => 0,
+         arg                => 'select',
+         bytes              => 6,
+         cmd                => 'Query',
+         db                 => undef,
+         host               => '127.0.0.1',
+         ip                 => '127.0.0.1',
+         port               => '39640',
+         pos_in_log         => 0,
+         ts                 => '091101 14:54:44.293453',
+         user               => undef,
+      },
+      {
+         Error_msg          => 'Unknown system variable \'nono\'',
+         Error_no           => '#1193',
+         No_good_index_used => 'No',
+         No_index_used      => 'No',
+         Query_time         => '0.000329',
+         Rows_affected      => 0,
+         Thread_id          => '4294967296',
+         Warning_count      => 0,
+         arg                => 'set global nono = 2',
+         bytes              => 19,
+         cmd                => 'Query',
+         db                 => undef,
+         host               => '127.0.0.1',
+         ip                 => '127.0.0.1',
+         port               => '39640',
+         pos_in_log         => 1250,
+         ts                 => '091101 14:54:52.813941',
+         user               => undef,
+      },
+   ],
 );
 
 # #############################################################################
