@@ -10,6 +10,7 @@
 # Databases              1
 # Time range 2009-04-12 12:41:46.357853 to 2009-04-12 12:41:46.357853
 # bytes        100      30      30      30      30      30       0      30
+# Error msg              1 Access denied for user 'msandbox'@'localhost...
 # Errors                 1    1045
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0

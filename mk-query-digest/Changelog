@@ -3,6 +3,7 @@ Changelog for mk-query-digest:
    * Empty Schema attribute was not parsed correctly in some cases (issue 1104).
    * Added /*!50100 PARTITIONS*/ to EXPLAIN line (issue 1114).
    * Added hostname to --report-format (issue 1117).
+   * Added MySQL error messages from tcpdump events (issue 670).
 
 2010-08-01: version 0.9.20
 
