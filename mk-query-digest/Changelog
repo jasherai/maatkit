@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Empty Schema attribute was not parsed correctly in some cases (issue 1104).
    * Added /*!50100 PARTITIONS*/ to EXPLAIN line (issue 1114).
 
 2010-08-01: version 0.9.20
