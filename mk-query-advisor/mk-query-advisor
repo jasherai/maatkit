@@ -5799,6 +5799,9 @@ mk-query-advisor - Analyze queries and advise on possible problems.
    # Get queries from tcpdump using mk-query-digest
    mk-query-digest --type tcpdump.txt --print --no-report | mk-query-advisor
 
+   # Get queries from a general log
+   mk-query-advisor --type genlog mysql.log
+
 =head1 RISKS
 
 The following section is included to inform users about the potential risks,
