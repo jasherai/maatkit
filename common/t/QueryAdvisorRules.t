@@ -392,7 +392,6 @@ my @cases = (
       query  => "select c from L left join R using(b) where L.a=5 and R.c is null",
       advice => [qw(JOI.004)],
    },
-   # JOI.004 requires tbl info with ON, without it it should be skipped silently
    {  name   => "JOI.004 without table info",
       query  => "select c from L left join R on a=b where L.a=5 and R.c is null",
       advice => [qw(JOI.004)],
