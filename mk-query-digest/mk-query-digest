@@ -5843,7 +5843,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6878
+# QueryReportFormatter package 6903
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -5953,6 +5953,16 @@ sub rusage {
 sub date {
    my ( $self ) = @_;
    return "# Current date: " . (scalar localtime) . "\n";
+}
+
+sub hostname {
+   my ( $self ) = @_;
+   my $hostname = `hostname`;
+   if ( $hostname ) {
+      chomp $hostname;
+      return "# Hostname: $hostname\n";
+   }
+   return;
 }
 
 sub files {
@@ -11867,7 +11877,7 @@ sub main {
                   print_header => $print_header,
                   explain_why  => $explain_why,
                   files        => \@read_files,
-                  group        => {map {$_=>1} qw(rusage date files header)}
+                  group        => {map {$_=>1} qw(rusage date hostname files header)}
                );
             }
 
@@ -13396,14 +13406,15 @@ Include all queries, even if they have already been reviewed.
 
 =item --report-format
 
-type: Array; default: rusage,date,files,header,profile,query_report,prepared
+type: Array; default: rusage,date,hostname,files,header,profile,query_report,prepared
 
 Print these sections of the query analysis report.
 
   SECTION      PRINTS
-  ============ ==============================================================
+  ============ ======================================================
   rusgae       CPU times and memory usage reported by ps
   date         Current local date and time
+  hostname     Hostname of machine on which mk-query-digest was run
   files        Input files read/parse
   header       Summary of the entire analysis run
   profile      Compact table of queries for a quick view of the report

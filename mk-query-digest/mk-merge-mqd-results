@@ -3231,7 +3231,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6878
+# QueryReportFormatter package 6903
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3341,6 +3341,16 @@ sub rusage {
 sub date {
    my ( $self ) = @_;
    return "# Current date: " . (scalar localtime) . "\n";
+}
+
+sub hostname {
+   my ( $self ) = @_;
+   my $hostname = `hostname`;
+   if ( $hostname ) {
+      chomp $hostname;
+      return "# Hostname: $hostname\n";
+   }
+   return;
 }
 
 sub files {
