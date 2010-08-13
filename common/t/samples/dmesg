@@ -1,6 +1,0 @@
-#!/usr/bin/perl -W
-print << "[EOF]";
-scsi0 : LSI Logic SAS based MegaRAID driver
-scsi1 : aacraid
-scsi2 : 3ware 9000 Storage Controller
-[EOF]

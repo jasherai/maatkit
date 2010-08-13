@@ -1,5 +1,0 @@
-#!/usr/bin/perl -w
-print << 'END';
-VG      #PV #LV #SN Attr   VSize   VFree
-dataVol   1   6   0 wz--n- 129.28G 22.41G
-END

@@ -1,5 +1,0 @@
-503       0.0  1028  10772 /bin/bash /home/spamassassin/bin/spamfilter -f root@mysql2.broadviewnet.net -- akuzminsky@sl1.percona.com
-503       0.0  2220  54116 /usr/sbin/sendmail -i -f root@mysql2.broadviewnet.net -- akuzminsky@sl1.percona.com
-531       0.0  7924 122932 /usr/bin/php -q /www/mon.percona.com/htdocs/cacti/scripts/mysql_stats.php innodb caw1.clickaider.com cacti cactipasswd
-root      0.0  1268  65888 /bin/sh /usr/bin/mysqld_safe --datadir=/mnt/data/mysql --socket=/mnt/data/mysql/mysql.sock --log-error=/var/log/mysqld.log --pid-file=/var/run/mysqld/mysqld.pid
-mysql     0.4 65032 626604 /usr/libexec/mysqld --basedir=/usr --datadir=/mnt/data/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-external-locking --socket=/mnt/data/mysql/mysql.sock
