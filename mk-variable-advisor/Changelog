@@ -1,6 +1,7 @@
 Changelog for mk-variable-advisor:
 
    * The --source-of-variables filename was made lowercase (issue 1115).
+   * Parsing tab-separated output failed (issue 1116).
 
 2010-08-01: version 1.0.0
 

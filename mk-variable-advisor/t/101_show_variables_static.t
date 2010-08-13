@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use MaatkitTest;
 shift @INC;  # These two shifts are required for tools that use base and
@@ -29,6 +29,15 @@ ok(
       "mk-variable-advisor/t/samples/vars001.txt",
    ),
    "vars001.txt"
+);
+
+ok(
+   no_diff(
+      sub { mk_variable_advisor::main(@args,
+         qw(--source-of-variables), "$sample/vars002.txt") },
+      "mk-variable-advisor/t/samples/vars002.txt",
+   ),
+   "vars002.txt"
 );
 
 ok(
