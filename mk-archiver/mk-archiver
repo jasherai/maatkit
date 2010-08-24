@@ -5133,46 +5133,18 @@ Socket file to use for connection.
 
 type: DSN
 
-DSN specifying the table to archive from (required).
+DSN specifying the table to archive from (required).  This argument is a DSN.
+See L<DSN OPTIONS> for the syntax.  Most options control how mk-archiver
+connects to MySQL, but there are some extended DSN options in this tool's
+syntax.  The D, t, and i options select a table to archive:
 
-This argument is specially formatted as a key=value,key=value string.  Keys are
-a single letter.  Most options control how mk-archiver connects to MySQL:
+  --source h=my_server,D=my_database,t=my_tbl
 
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-
-The following options select a table to archive:
-
-   KEY MEANING
-   === =======
-   D   Database to archive
-   t   Table to archive
-   i   Index to use
-
-The following options specify pluggable actions, which an external Perl module
-can provide:
-
-   KEY MEANING
-   === =======
-   m   Package name of an external Perl module (see EXTENDING).
-
-The following actions set other options:
-
-   KEY MEANING
-   === =======
-   a   Database to set as the connection's default with USE
-   b   Disable binary logging with SET SQL_LOG_BIN=0
-
+The a option specifies the database to set as the connection's default with USE.
+If the b option is true, it disables binary logging with SQL_LOG_BIN.  The m
+option specifies pluggable actions, which an external Perl module can provide.
 The only required part is the table; other parts may be read from various
-places in the environment (such as options files).  Here is an example:
-
-   --source h=my_server,D=my_database,t=my_tbl
+places in the environment (such as options files).
 
 The 'i' part deserves special mention.  This tells mk-archiver which index
 it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
@@ -5203,7 +5175,7 @@ B<WARNING>: Using a default options file (F) DSN option that defines a
 socket for L<"--source"> causes mk-archiver to connect to L<"--dest"> using
 that socket unless another socket for L<"--dest"> is specified.  This
 means that mk-archiver may incorrectly connect to L<"--source"> when it
-connects to L<"--dest">.  For example:
+is meant to connect to L<"--dest">.  For example:
 
   --source F=host1.cnf,D=db,t=tbl --dest h=host2
 
@@ -5349,7 +5321,7 @@ Default character set.
 
 copy: no
 
-Disable binlog with SET SQL_LOG_BIN=0.
+If true, disable binlog with SQL_LOG_BIN.
 
 =item * D
 

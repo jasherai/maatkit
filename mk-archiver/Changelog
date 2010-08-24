@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+   * The DSN documentation was ambiguous and redundant.
+
 2010-06-08: version 1.0.23
 
    * Connections did not preserve server SQL modes (issue 801).
