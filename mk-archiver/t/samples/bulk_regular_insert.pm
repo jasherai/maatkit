@@ -66,18 +66,24 @@ sub before_begin {
 #   return 1;
 # }
 
+# Reads rows from the LOAD DATA INFILE file, and instead of inserting them
+# with LOAD DATA INFILE, builds a big conventional SQL INSERT... VALUES(),(),..
+# Supports --replace and --ignore, just like the normal bulk insert.
 sub before_bulk_insert {
    my ( $self, %args ) = @_;
 
    my $dbh    = $self->{dbh};
    my $q      = $self->{Quoter};
+   my $o      = $self->{OptionParser};
    my $db_tbl = $q->quote($self->{db}, $self->{tbl});
 
    my $file = $args{filename};
    open my $fh, '<', $file 
       or die "Cannot open bulk insert file $file: $OS_ERROR";
 
-   my $sql = "INSERT INTO $db_tbl ("
+   my $verb   = $o->get('replace') ? 'REPLACE' : 'INSERT';
+   my $ignore = $o->get('ignore')  ? ' IGNORE' : '';
+   my $sql = "$verb$ignore INTO $db_tbl ("
            . join(", ", map { $q->quote($_) } @{$self->{cols}})
            . ") VALUES ";
 
