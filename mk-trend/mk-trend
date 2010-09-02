@@ -1835,10 +1835,12 @@ sub main {
    return 0;
 }
 
+Transformers->import(qw(any_unix_timestamp));
 sub print_report {
    my ( $stats ) = @_;
-   printf "%s %5d %10.6f %10.6f %10.6f %10.6f %10.6f\n",
-      @${stats}{qw(ts cnt sum min max avg stdev)};
+   my $ts = any_unix_timestamp($stats->{ts});
+   printf "%d %10.6f %10.6f %10.6f %10.6f %10.6f\n",
+      $ts, @${stats}{qw(cnt sum min max avg stdev)};
 }
 
 sub _d {
