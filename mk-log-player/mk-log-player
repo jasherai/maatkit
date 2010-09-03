@@ -2967,7 +2967,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-log-player - Split and play MySQL slow logs.
+mk-log-player - Replay MySQL query logs.
 
 =head1 SYNOPSIS
 
@@ -2990,7 +2990,7 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-L<"--play"> is meant to load a server as much as possible, for stress-testing
+This tool is meant to load a server as much as possible, for stress-testing
 purposes.  It is not designed to be used on production servers.
 
 At the time of this release there is a bug which causes mk-log-player to
@@ -3005,13 +3005,13 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-log-player does two things: it splits MySQL slow logs into session files
+mk-log-player does two things: it splits MySQL query logs into session files
 and it plays (executes) queries in session files on a MySQL server.  Only
 session files can be played; slow logs cannot be played directly without
 being split.
 
 A session is a group of queries from the slow log that all share a common
-attribute, usually Thead_id.  The common attribute is specified with
+attribute, usually Thread_id.  The common attribute is specified with
 L<"--split">.  Multiple sessions are saved into a single sesssion file.
 See L<"--session-files">, L<"--max-sessions">, L<"--base-file-name"> and
 L<"--base-dir">.  These session files are played with L<"--play">.
