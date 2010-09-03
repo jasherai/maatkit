@@ -13414,7 +13414,7 @@ Print these sections of the query analysis report.
 
   SECTION      PRINTS
   ============ ======================================================
-  rusgae       CPU times and memory usage reported by ps
+  rusage       CPU times and memory usage reported by ps
   date         Current local date and time
   hostname     Hostname of machine on which mk-query-digest was run
   files        Input files read/parse
