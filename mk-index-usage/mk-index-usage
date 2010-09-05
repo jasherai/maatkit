@@ -460,7 +460,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6785
+# OptionParser package 6875
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -681,7 +681,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -2186,7 +2186,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6590
+# SlowLogParser package 6900
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -2301,6 +2301,13 @@ sub parse_event {
 
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
+
+               if ( $line =~ m/Schema:\s+\w+: / ) {
+                  MKDEBUG && _d('Removing empty Schema attrib');
+                  $line =~ s/Schema:\s+//;
+                  MKDEBUG && _d($line);
+               }
+
                my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
@@ -3769,25 +3776,25 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExplainAnalyzer package 6326
+# ExplainAnalyzer package 6916
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ExplainAnalyzer.pm
 #   trunk/common/t/ExplainAnalyzer.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package ExplainAnalyzer;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3802,14 +3809,21 @@ sub new {
 
 sub explain_query {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh sql) ) {
+   foreach my $arg ( qw(dbh query) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($sql, $dbh) = @args{qw(sql dbh)};
-   if ( $sql !~ m/^\s*select/i ) {
-      $sql = $self->{QueryRewriter}->convert_to_select($sql);
+   my ($query, $dbh) = @args{qw(query dbh)};
+   $query = $self->{QueryRewriter}->convert_to_select($query);
+   if ( $query !~ m/^\s*select/i ) {
+      MKDEBUG && _d("Cannot EXPLAIN non-SELECT query:",
+         (length $query <= 100 ? $query : substr($query, 0, 100) . "..."));
+      return;
    }
-   return $dbh->selectall_arrayref("EXPLAIN $sql", { Slice => {} });
+   my $sql = "EXPLAIN $query";
+   MKDEBUG && _d($dbh, $sql);
+   my $explain = $dbh->selectall_arrayref($sql, { Slice => {} });
+   MKDEBUG && _d("Result of EXPLAIN:", Dumper($explain));
+   return $explain;
 }
 
 sub normalize {
@@ -3852,13 +3866,13 @@ sub get_alternate_indexes {
 
 sub get_index_usage {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(sql explain) ) {
+   foreach my $arg ( qw(query explain) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($sql, $explain) = @args{qw(sql explain)};
+   my ($query, $explain) = @args{qw(query explain)};
    my @result;
 
-   my $lookup = $self->{QueryParser}->get_aliases($sql);
+   my $lookup = $self->{QueryParser}->get_aliases($query);
 
    foreach my $row ( @$explain ) {
 
@@ -3876,20 +3890,25 @@ sub get_index_usage {
       };
    }
 
+   MKDEBUG && _d("Index usage for",
+      (length $query <= 100 ? $query : substr($query, 0, 100) . "..."),
+      ":", Dumper(\@result));
    return \@result;
 }
 
 sub get_usage_for {
    my ( $self, $checksum, $db ) = @_;
    die "I need a checksum and db" unless defined $checksum && defined $db;
+   my $usage;
    if ( exists $self->{usage}->{$db} # Don't auto-vivify
      && exists $self->{usage}->{$db}->{$checksum} )
    {
-      return $self->{usage}->{$db}->{$checksum};
+      $usage = $self->{usage}->{$db}->{$checksum};
    }
-   else {
-      return undef;
-   }
+   MKDEBUG && _d("Usage for",
+      (length $checksum <= 100 ? $checksum : substr($checksum, 0, 100) . "..."),
+      "on", $db, ":", Dumper($usage));
+   return $usage;
 }
 
 sub save_usage_for {
@@ -4371,11 +4390,11 @@ sub main {
                # because then we will keep burning cycles on it trying to
                # explain it over and over.
                my $explain = $exa->explain_query(
-                  dbh => $dbh,
-                  sql => $arg,
+                  dbh   => $dbh,
+                  query => $arg,
                );
                $access = $exa->get_index_usage(
-                  sql     => $arg,
+                  query   => $arg,
                   db      => $cur_db,
                   explain => $exa->normalize($explain),
                );
