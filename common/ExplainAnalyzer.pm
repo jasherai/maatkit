@@ -17,22 +17,23 @@
 # ###########################################################################
 # ExplainAnalyzer package $Revision$
 # ###########################################################################
+
+# Package: ExplainAnalyzer
+# ExplainAnalyzer contains utility methods for getting and manipulating
+# EXPLAIN data.  It also has methods to save and retrieve information,
+# so it actually has state itself if used in this way -- it is not a data-less
+# collection of methods.
 package ExplainAnalyzer;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-
-# This class is a container for some utility methods for getting and
-# manipulating EXPLAIN data to find out interesting things about it.  It also
-# has methods to save and retrieve information, so it actually has state itself
-# if used in this way -- it is not a data-less collection of methods.
 
 sub new {
    my ( $class, %args ) = @_;
@@ -48,19 +49,26 @@ sub new {
 # Gets an EXPLAIN plan for a query.  The arguments are:
 #  dbh   The $dbh, which should already have the correct default database.  This
 #        module does not run USE to select a default database.
-#  sql   The query text.
+#  query The query text.
 # The return value is an arrayref of hash references gotten from EXPLAIN.  If
-# the sql is not a SELECT, we try to convert it into one.
+# the query is not a SELECT, we try to convert it into one.
 sub explain_query {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh sql) ) {
+   foreach my $arg ( qw(dbh query) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($sql, $dbh) = @args{qw(sql dbh)};
-   if ( $sql !~ m/^\s*select/i ) {
-      $sql = $self->{QueryRewriter}->convert_to_select($sql);
+   my ($query, $dbh) = @args{qw(query dbh)};
+   $query = $self->{QueryRewriter}->convert_to_select($query);
+   if ( $query !~ m/^\s*select/i ) {
+      MKDEBUG && _d("Cannot EXPLAIN non-SELECT query:",
+         (length $query <= 100 ? $query : substr($query, 0, 100) . "..."));
+      return;
    }
-   return $dbh->selectall_arrayref("EXPLAIN $sql", { Slice => {} });
+   my $sql = "EXPLAIN $query";
+   MKDEBUG && _d($dbh, $sql);
+   my $explain = $dbh->selectall_arrayref($sql, { Slice => {} });
+   MKDEBUG && _d("Result of EXPLAIN:", Dumper($explain));
+   return $explain;
 }
 
 # Normalizes raw EXPLAIN into a format that's easier to work with.  For example,
@@ -116,7 +124,7 @@ sub get_alternate_indexes {
 
 # Returns a data structure that shows which indexes were used and considered for
 # a given query and EXPLAIN plan.  Input parameters are:
-#  sql      The SQL of the query.
+#  query    The SQL of the query.
 #  db       The default database.  When a table's database is not explicitly
 #           qualified in the SQL itself, it defaults to this (optional) value.
 #  explain  The normalized EXPLAIN plan: the output from $self->normalize().
@@ -128,15 +136,15 @@ sub get_alternate_indexes {
 #  alt   =>    An arrayref of indexes considered but not accessed
 sub get_index_usage {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(sql explain) ) {
+   foreach my $arg ( qw(query explain) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($sql, $explain) = @args{qw(sql explain)};
+   my ($query, $explain) = @args{qw(query explain)};
    my @result;
 
    # First we must get a lookup data structure to translate the possibly aliased
    # names back into real table names.
-   my $lookup = $self->{QueryParser}->get_aliases($sql);
+   my $lookup = $self->{QueryParser}->get_aliases($query);
 
    foreach my $row ( @$explain ) {
 
@@ -159,6 +167,9 @@ sub get_index_usage {
       };
    }
 
+   MKDEBUG && _d("Index usage for",
+      (length $query <= 100 ? $query : substr($query, 0, 100) . "..."),
+      ":", Dumper(\@result));
    return \@result;
 }
 
@@ -174,14 +185,16 @@ sub get_index_usage {
 sub get_usage_for {
    my ( $self, $checksum, $db ) = @_;
    die "I need a checksum and db" unless defined $checksum && defined $db;
+   my $usage;
    if ( exists $self->{usage}->{$db} # Don't auto-vivify
      && exists $self->{usage}->{$db}->{$checksum} )
    {
-      return $self->{usage}->{$db}->{$checksum};
+      $usage = $self->{usage}->{$db}->{$checksum};
    }
-   else {
-      return undef;
-   }
+   MKDEBUG && _d("Usage for",
+      (length $checksum <= 100 ? $checksum : substr($checksum, 0, 100) . "..."),
+      "on", $db, ":", Dumper($usage));
+   return $usage;
 }
 
 # This methods saves the query's index usage patterns for later retrieval with

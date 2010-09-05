@@ -32,7 +32,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 10;
+   plan tests => 11;
 }
 
 $dbh->do('use sakila');
@@ -47,8 +47,8 @@ my $exa = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
 
 is_deeply(
    $exa->explain_query(
-      dbh => $dbh,
-      sql => 'select * from actor where actor_id = 5',
+      dbh   => $dbh,
+      query => 'select * from actor where actor_id = 5',
    ),
    [
       { id            => 1,
@@ -68,8 +68,8 @@ is_deeply(
 
 is_deeply(
    $exa->explain_query(
-      dbh => $dbh,
-      sql => 'delete from actor where actor_id = 5',
+      dbh   => $dbh,
+      query => 'delete from actor where actor_id = 5',
    ),
    [
       { id            => 1,
@@ -85,6 +85,15 @@ is_deeply(
       },
    ],
    'Got EXPLAIN result for a DELETE',
+);
+
+is(
+   $exa->explain_query(
+      dbh   => $dbh,
+      query => 'insert into t values (1)',
+   ),
+   undef,
+   "Doesn't EXPLAIN non-convertable non-SELECT"
 );
 
 # #############################################################################
@@ -233,10 +242,10 @@ is_deeply(
 # the query used.
 is_deeply(
    $exa->get_index_usage(
-      sql => "select * from film_actor as fa inner join sakila.actor as a "
-           . "on a.actor_id = fa.actor_id and a.last_name is not null "
-           . "where a.actor_id = 5 or film_id = 5",
-      db  => 'sakila',
+      query => "select * from film_actor as fa inner join sakila.actor as a "
+             . "on a.actor_id = fa.actor_id and a.last_name is not null "
+             . "where a.actor_id = 5 or film_id = 5",
+      db    => 'sakila',
       explain => $exa->normalize(
          [
             { id            => 1,
@@ -281,8 +290,8 @@ is_deeply(
 # This is kind of a pathological case.
 is_deeply(
    $exa->get_index_usage(
-      sql => "select 1 union select count(*) from actor a",
-      db  => 'sakila',
+      query   => "select 1 union select count(*) from actor a",
+      db      => 'sakila',
       explain => $exa->normalize(
          [
             { id            => 1,
@@ -333,8 +342,8 @@ is_deeply(
 # Here's a query that uses a table but no indexes in it.
 is_deeply(
    $exa->get_index_usage(
-      sql => "select * from film_text",
-      db  => 'sakila',
+      query   => "select * from film_text",
+      db      => 'sakila',
       explain => $exa->normalize(
          [
             { id            => 1,
