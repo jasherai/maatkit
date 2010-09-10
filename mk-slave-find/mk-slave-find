@@ -2835,7 +2835,9 @@ sub print_node_summary {
    push @lines, [
       'Replication',
       ($ss ? "Is a slave, " : "Is not a slave, ")
-         . "has $n_slaves slaves connected"
+         . "has $n_slaves slaves connected, "
+         . "is " . (($vars->{read_only}->{value} || "") eq "ON" ? "" : "not ")
+         . "read_only"
    ];
 
    my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);

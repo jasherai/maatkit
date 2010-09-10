@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * Added "is [not] read_only" to summary report format (issue 1132).
+
 2010-08-01: version 1.0.13
 
    * Added "InnoDB version" to summary report format (issue 1079).
