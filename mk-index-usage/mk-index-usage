@@ -4250,6 +4250,14 @@ sub main {
       DSNParser    => $dp,
    );
 
+   # dbh for SchemaIterator
+   # http://code.google.com/p/maatkit/issues/detail?id=1140 
+   my $si_dbh = get_cxn(
+      dsn          => $dsn,
+      OptionParser => $o,
+      DSNParser    => $dp,
+   );
+
    # ##########################################################################
    # Make common modules.
    # ##########################################################################
@@ -4278,12 +4286,12 @@ sub main {
    # ########################################################################
    $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-   my $next_db = $si->get_db_itr(dbh => $dbh);
+   my $next_db = $si->get_db_itr(dbh => $si_dbh);
    DATABASE:
    while ( my $database = $next_db->() ) {
       MKDEBUG && _d('Getting tables from', $database);
       my $next_tbl = $si->get_tbl_itr(
-         dbh   => $dbh,
+         dbh   => $si_dbh,
          db    => $database,
          views => 0,
       );
@@ -4292,7 +4300,7 @@ sub main {
          MKDEBUG && _d('Got table', $table);
          eval {
             my $ddl       = $du->get_create_table(
-                            $dbh, $q, $database, $table)->[1];
+                            $si_dbh, $q, $database, $table)->[1];
             my ($indexes) = $tp->get_keys($ddl, {version => $version });
             $iu->add_indexes(db=>$database, tbl=>$table, indexes=>$indexes);
          };
@@ -4302,12 +4310,13 @@ sub main {
          }
       }
    }
+   $si_dbh->disconnect();
 
    # ########################################################################
    # This keeps track of the $dbh's current DB, so we know when to USE a
    # different database.
    # ########################################################################
-   my $cur_db = '';
+   my $cur_db = $o->get('database') || '';
 
    # ########################################################################
    # This keeps track of statements that can't be EXPLAINed for some reason, so

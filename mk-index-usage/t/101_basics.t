@@ -28,7 +28,7 @@ if ( !@{ $dbh->selectall_arrayref('show databases like "sakila"') } ) {
    plan skip_all => "Sakila database is not loaded";
 }
 else {
-   plan tests => 6;
+   plan tests => 8;
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
@@ -108,6 +108,32 @@ is(
    scalar @errs,
    1,
    'Failing statement was blacklisted'
+);
+
+
+# #############################################################################
+# Issue 1118: mk-index-usage doesn't have a --database option
+# #############################################################################
+ok(
+   no_diff(
+      sub {
+          mk_index_usage::main(@args, qw(-D sakila),
+            "$trunk/$samples/slow006.txt");
+      },
+      "$samples/slow006-report.txt"),
+   '--database (-D) for default db'
+);
+
+$output = output(
+   sub {
+      mk_index_usage::main(@args, qw(-q),
+         "$trunk/$samples/slow006.txt");
+   },
+);
+is(
+   $output,
+   "",
+   'No output without default db'
 );
 
 # #############################################################################

@@ -1,5 +1,8 @@
 Changelog for mk-index-usage:
 
+   * Default database was changed by iterating schema (issue 1140).
+   * Added --database (-D) option (issue 1118).
+
 2010-06-08: version 0.9.0
 
    * Initial release.
