@@ -106,7 +106,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6785
+# OptionParser package 6875
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -327,7 +327,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -1500,7 +1500,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6810
+# MasterSlave package 6865
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -2140,14 +2140,14 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
-   
+
 sub is_replication_thread {
    my ( $self, $query, $type ) = @_; 
    return unless $query;
 
-   $type ||= 'all';
+   $type = lc $type || 'all';
    die "Invalid type: $type"
-      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+      unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
    my $match = 0;
    if ( $type =~ m/binlog_dump|all/i ) {
@@ -2156,35 +2156,40 @@ sub is_replication_thread {
    }
    if ( !$match ) {
       if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
-         my $state = $query->{State} || $query->{state} || '';
-         if ( $type =~ m/slave_io|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\smaster\supdate
-                |Connecting\sto\smaster
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\sbinlog
-                |Waiting\sfor\smaster\sto\ssend\sevent
-                |Queueing\smaster\sevent\sto\sthe\srelay
-                |Waiting\sto\sreconnect\safter\sa\sfailed
-                |Reconnecting\safter\sa\sfailed\smaster
-                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         MKDEBUG && _d("Slave replication thread");
+         if ( $type ne 'all' ) { 
+            my $state = $query->{State} || $query->{state} || '';
+
+            if ( $state =~ m/^init|end$/ ) {
+               MKDEBUG && _d("Special state:", $state);
+               $match = 1;
+            }
+            else {
+               my ($slave_sql) = $state =~ m/
+                  ^(Waiting\sfor\sthe\snext\sevent
+                   |Reading\sevent\sfrom\sthe\srelay\slog
+                   |Has\sread\sall\srelay\slog;\swaiting
+                   |Making\stemp\sfile
+                   |Waiting\sfor\sslave\smutex\son\sexit)/xi; 
+
+               $match = $type eq 'slave_sql' &&  $slave_sql ? 1
+                      : $type eq 'slave_io'  && !$slave_sql ? 1
+                      :                                       0;
+            }
          }
-         if ( !$match && $type =~ m/slave_sql|all/i ) {
-            ($match) = $state =~ m/
-               ^(Waiting\sfor\sthe\snext\sevent
-                |Reading\sevent\sfrom\sthe\srelay\slog
-                |Has\sread\sall\srelay\slog;\swaiting
-                |Making\stemp\sfile)/xi; 
+         else {
+            $match = 1;
          }
       }
       else {
          MKDEBUG && _d('Not system user');
       }
    }
-   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
-      '; match:', $match);
+   MKDEBUG && _d('Matches', $type, 'replication thread:',
+      ($match ? 'yes' : 'no'), '; match:', $match);
    return $match;
 }
+
 
 sub get_replication_filters {
    my ( $self, %args ) = @_;
@@ -2227,6 +2232,7 @@ sub get_replication_filters {
 
    return \%filters; 
 }
+
 
 sub pos_to_string {
    my ( $self, $pos ) = @_;

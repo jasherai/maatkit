@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 6785
+# OptionParser package 6875
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -248,7 +248,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -2157,30 +2157,31 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TextResultSetParser package 6590
+# TextResultSetParser package 6898
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TextResultSetParser.pm
 #   trunk/common/t/TextResultSetParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package TextResultSetParser;
 
+package TextResultSetParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
+   my %value_for = (
+      'NULL' => undef,  # DBI::selectall_arrayref() does this
+      ($args{value_for} ? %{$args{value_for}} : ()),
+   );
+   my $self = {
+      %args,
+      value_for => \%value_for,
+   };
    return bless $self, $class;
 }
 
@@ -2203,10 +2204,18 @@ sub _parse_tab_sep {
 }
 
 sub parse_vertical_row {
-   my ( $text ) = @_;
+   my ( $self, $text ) = @_;
    my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
-   MKDEBUG && _d('vertical row:', Dumper(\%row));
-   return \%row;
+   if ( $self->{NAME_lc} ) {
+      my %lc_row = map {
+         my $key = lc $_;
+         $key => $row{$_};
+      } keys %row;
+      return \%lc_row;
+   }
+   else {
+      return \%row;
+   }
 }
 
 sub parse {
@@ -2217,28 +2226,33 @@ sub parse {
       MKDEBUG && _d('Result set text is standard tabular');
       my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
       $result_set
-         = parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
+         = $self->parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
    }
-   elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
+   elsif ( $text =~ m/^\w+\t\w+/m ) { # tab-separated
       MKDEBUG && _d('Result set text is tab-separated');
       my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
       $result_set
-         = parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
+         = $self->parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
    }
    elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
       MKDEBUG && _d('Result set text is vertical (\G)');
       foreach my $row ( split_vertical_rows($text) ) {
-         push @$result_set, parse_vertical_row($row);
+         push @$result_set, $self->parse_vertical_row($row);
       }
    }
    else {
-      die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
-         . $text;
+      my $text_sample = substr $text, 0, 300;
+      my $remaining   = length $text > 300 ? (length $text) - 300 : 0;
+      chomp $text_sample;
+      die "Cannot determine if text is tabular, tab-separated or vertical:\n"
+         . "$text_sample\n"
+         . ($remaining ? "(not showing last $remaining bytes of text)\n" : "");
    }
 
    if ( $self->{value_for} ) {
       foreach my $result_set ( @$result_set ) {
          foreach my $key ( keys %$result_set ) {
+            next unless defined $result_set->{$key};
             $result_set->{$key} = $self->{value_for}->{ $result_set->{$key} }
                if exists $self->{value_for}->{ $result_set->{$key} };
          }
@@ -2248,8 +2262,9 @@ sub parse {
    return $result_set;
 }
 
+
 sub parse_horizontal_row {
-   my ( $text, $line_pattern, $sub ) = @_;
+   my ( $self, $text, $line_pattern, $sub ) = @_;
    my @result_sets = ();
    my @cols        = ();
    foreach my $line ( $text =~ m/$line_pattern/g ) {
@@ -2258,7 +2273,7 @@ sub parse_horizontal_row {
          push @result_sets, $row;
       }
       else {
-         @cols = @$cols;
+         @cols = map { $self->{NAME_lc} ? lc $_ : $_ } @$cols;
       }
    }
    return \@result_sets;
