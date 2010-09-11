@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2010-09-11: version 0.9.21
+
    * Empty Schema attribute was not parsed correctly in some cases (issue 1104).
    * Added /*!50100 PARTITIONS*/ to EXPLAIN line (issue 1114).
    * Added hostname to --report-format (issue 1117).

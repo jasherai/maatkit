@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+2010-09-11: version 0.9.7
+
    * Slave replication threads in "init" or "end" state were killed (issue 1121)
 
 2010-06-08: version 0.9.6

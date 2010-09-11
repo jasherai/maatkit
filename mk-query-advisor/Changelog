@@ -1,5 +1,7 @@
 Changelog for mk-query-advisor:
 
+2010-09-11: version 1.0.1
+
    * Add rules JOI.003 and JOI.004 (issue 950).
    * Added --[no]show-create-table (issue 950).
    * Added --database (issue 950).
