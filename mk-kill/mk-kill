@@ -3394,8 +3394,8 @@ mk-kill is designed to kill queries if you use the L<"--kill"> option is given,
 and that might disrupt your database's users, of course.  You should test with
 the <"--print"> option, which is safe, if you're unsure what the tool will do.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release there is a bug that allows replication threads
+executing triggers to be killed.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

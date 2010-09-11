@@ -3304,8 +3304,9 @@ mk-parallel-restore for backups.  mk-parallel-restore inserts data unless you
 use the L<"--dry-run"> option.
 
 At the time of this release, there is a bug that prevents huge statements from
-being printed when an error is encountered and a bug applying
-L<"--[no]foreign-key-checks"> when truncating tables.
+being printed when an error is encountered, a bug applying
+L<"--[no]foreign-key-checks"> when truncating tables, and a bug with LOAD
+DATA LOCAL.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
