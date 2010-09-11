@@ -5488,7 +5488,7 @@ warehouse.
 
 This method is not called if L<"--bulk-insert"> is given.
 
-=item before_bulk_insert(first_row => \@row, last_row => \@row)
+=item before_bulk_insert(first_row => \@row, last_row => \@row, filename => bulk_insert_filename)
 
 This method is called just before a bulk insert is executed.  It is similar to
 the C<before_insert> method, except its arguments are the first and last row of
@@ -5509,7 +5509,7 @@ This method applies only to the plugin specified for L<"--dest">, so if your
 plugin isn't doing what you expect, check that you've specified it for the
 destination and not the source.
 
-=item custom_sth_bulk(first_row => \@row, last_row => \@row, sql => $sql)
+=item custom_sth_bulk(first_row => \@row, last_row => \@row, sql => $sql, filename => $bulk_insert_filename)
 
 If you've specified L<"--bulk-insert">, this method is called just before the
 bulk insert, but after L<"before_bulk_insert()">, and the arguments are

@@ -1,6 +1,7 @@
 Changelog for mk-archiver:
 
    * The DSN documentation was ambiguous and redundant.
+   * Added filename argument to before_bulk_insert() and custom_sth_bulk().
 
 2010-06-08: version 1.0.23
 
