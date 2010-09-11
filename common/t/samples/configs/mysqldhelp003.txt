@@ -936,7 +936,7 @@ innodb-file-per-table             FALSE
 innodb-flush-log-at-trx-commit    1
 innodb-flush-method               (No default value)
 innodb-force-recovery             0
-innodb-lock-wait-timeout          50
+innodb-lock-wait-timeout          3
 innodb-locks-unsafe-for-binlog    FALSE
 innodb-log-buffer-size            1048576
 innodb-log-file-size              5242880

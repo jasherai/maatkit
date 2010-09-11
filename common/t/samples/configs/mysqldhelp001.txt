@@ -1003,7 +1003,7 @@ innodb_commit_concurrency         0
 innodb_concurrency_tickets        500
 innodb_file_io_threads            4
 innodb_force_recovery             0
-innodb_lock_wait_timeout          50
+innodb_lock_wait_timeout          3
 innodb_log_buffer_size            1048576
 innodb_log_file_size              5242880
 innodb_log_files_in_group         2
