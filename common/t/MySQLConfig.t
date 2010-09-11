@@ -114,7 +114,7 @@ is_deeply(
       innodb_flush_log_at_trx_commit => '1',
       innodb_flush_method => '',
       innodb_force_recovery => '0',
-      innodb_lock_wait_timeout => '50',
+      innodb_lock_wait_timeout => '3',
       innodb_locks_unsafe_for_binlog => 'FALSE',
       innodb_log_arch_dir => '',
       innodb_log_buffer_size => '1048576',
