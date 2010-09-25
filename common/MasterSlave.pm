@@ -34,7 +34,10 @@ $Data::Dumper::Indent    = 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
+   my $self = {
+      %args,
+      replication_thread => {},
+   };
    return bless $self, $class;
 }
 
@@ -832,16 +835,21 @@ sub short_host {
 #
 # Parameters:
 #   $query - Hashref of a processlist item
-#   $type  - Which kind of repl thread to match: all, binlog_dump (master),
-#            slave_io, or slave_sql
+#   %args  - Arguments
+#
+# Arguments:
+#   type            - Which kind of repl thread to match:
+#                     all, binlog_dump (master), slave_io, or slave_sql
+#                     (default: all)
+#   check_known_ids - Check known replication thread IDs (default: yes)
 #
 # Returns:
 #   True if the proclist item is the given type of replication thread.
 sub is_replication_thread {
-   my ( $self, $query, $type ) = @_; 
+   my ( $self, $query, %args ) = @_; 
    return unless $query;
 
-   $type = lc $type || 'all';
+   my $type = lc $args{type} || 'all';
    die "Invalid type: $type"
       unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
@@ -892,9 +900,29 @@ sub is_replication_thread {
       else {
          MKDEBUG && _d('Not system user');
       }
+
+      # MySQL loves to trick us.  Sometimes a slave replication thread will
+      # temporarily morph into what looks like a regular user thread when
+      # really it's still the same slave repl thread.  So here we save known
+      # repl thread IDs and check if a non-matching event is actually a
+      # known repl thread ID and if yes then we make it match.
+      if ( !defined $args{check_known_ids} || $args{check_known_ids} ) {
+         my $id = $query->{Id} || $query->{id};
+         if ( $match ) {
+            $self->{replication_thread}->{$id} = 1;
+         }
+         else {
+            if ( $self->{replication_thread}->{$id} ) {
+               MKDEBUG && _d("Thread ID is a known replication thread ID");
+               $match = 1;
+            }
+         }
+      }
    }
+
    MKDEBUG && _d('Matches', $type, 'replication thread:',
       ($match ? 'yes' : 'no'), '; match:', $match);
+
    return $match;
 }
 
@@ -967,6 +995,12 @@ sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
    return sprintf($fmt, @{$pos}{qw(file position)});
+}
+
+sub reset_known_replication_threads {
+   my ( $self ) = @_;
+   $self->{replication_thread} = {};
+   return;
 }
 
 sub _d {

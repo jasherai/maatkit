@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 54;
 
 use MasterSlave;
 use DSNParser;
@@ -376,17 +376,17 @@ ok(
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'binlog_dump'),
+   !$ms->is_replication_thread($query, type=>'binlog_dump', check_known_ids=>0),
    "Non-rpl thd is not binlog dump thd"
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_io'),
+   !$ms->is_replication_thread($query, type=>'slave_io', check_known_ids=>0),
    "Non-rpl thd is not slave io thd"
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_sql'),
+   !$ms->is_replication_thread($query, type=>'slave_sql', check_known_ids=>0),
    "Non-rpl thd is not slave sql thd"
 );
 
@@ -402,17 +402,17 @@ $query = {
 },
 
 ok(
-   $ms->is_replication_thread($query),
+   $ms->is_replication_thread($query, check_known_ids=>0),
    'Binlog Dump is a repl thd'
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_io'),
+   !$ms->is_replication_thread($query, type=>'slave_io', check_known_ids=>0),
    'Binlog Dump is not a slave io thd'
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_sql'),
+   !$ms->is_replication_thread($query, type=>'slave_sql', check_known_ids=>0),
    'Binlog Dump is not a slave sql thd'
 );
 
@@ -428,17 +428,17 @@ $query = {
 },
 
 ok(
-   $ms->is_replication_thread($query),
+   $ms->is_replication_thread($query, check_known_ids=>0),
    'Slave io thd is a repl thd'
 );
 
 ok(
-   $ms->is_replication_thread($query, 'slave_io'),
+   $ms->is_replication_thread($query, type=>'slave_io', check_known_ids=>0),
    'Slave io thd is a slave io thd'
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_sql'),
+   !$ms->is_replication_thread($query, type=>'slave_sql', check_known_ids=>0),
    'Slave io thd is not a slave sql thd',
 );
 
@@ -454,17 +454,17 @@ $query = {
 },
 
 ok(
-   $ms->is_replication_thread($query),
+   $ms->is_replication_thread($query, check_known_ids=>0),
    'Slave sql thd is a repl thd'
 );
 
 ok(
-   !$ms->is_replication_thread($query, 'slave_io'),
+   !$ms->is_replication_thread($query, type=>'slave_io', check_known_ids=>0),
    'Slave sql thd is not a slave io thd'
 );
 
 ok(
-   $ms->is_replication_thread($query, 'slave_sql'),
+   $ms->is_replication_thread($query, type=>'slave_sql', check_known_ids=>0),
    'Slave sql thd is a slave sql thd',
 );
 
@@ -484,16 +484,42 @@ ok(
    'Slave thread in init state matches all (issue 1121)',
 );
 ok(
-   $ms->is_replication_thread($query, 'slave_io'),
+   $ms->is_replication_thread($query, type=>'slave_io'),
    'Slave thread in init state matches slave_io (issue 1121)',
 );
 ok(
-   $ms->is_replication_thread($query, 'slave_sql'),
+   $ms->is_replication_thread($query, type=>'slave_sql'),
    'Slave thread in init state matches slave_sql (issue 1121)',
 );
 
+# Issue 1143: mk-kill Can Kill Slave's Replication Thread
+# Same thread id as previous, so it's still the repl thread,
+# but it's executing a trigger so it looks like a normal thread.
+$query = {
+   Command  => 'Connect',
+   Host     => 'localhost',
+   Id       => '466963',
+   Info     => 'INSERT IGNORE INTO tbl VALUES (NEW.id, NEW.name,  0)',
+   State    => 'update',
+   Time     => '15',
+   User     => 'root',
+   db       => 'mydatabase',
+};
+ok(
+   $ms->is_replication_thread($query),
+   'Slave thread executing trigger matches all (issue 1143)',
+);
+ok(
+   $ms->is_replication_thread($query, type=>'slave_io'),
+   'Slave thread executing trigger matches slave_io (issue 1143)',
+);
+ok(
+   $ms->is_replication_thread($query, type=>'slave_sql'),
+   'Slave thread executing trigger matches slave_sql (issue 1143)',
+);
+
 throws_ok(
-   sub { $ms->is_replication_thread($query, 'foo') },
+   sub { $ms->is_replication_thread($query, type=>'foo') },
    qr/Invalid type: foo/,
    "Invalid repl thread type"
 );
