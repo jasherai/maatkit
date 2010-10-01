@@ -191,7 +191,8 @@ $qv->set_review_history(
 );
 
 $res = $dbh->selectall_arrayref(
-   'SELECT * FROM test.query_review_history',
+   'SELECT Lock_time_median, Lock_time_stddev, Query_time_sum, checksum, Rows_examined_stddev, ts_cnt, sample, Rows_examined_median, Rows_sent_min, Rows_examined_min, Rows_sent_sum,  Query_time_min, Query_time_pct_95, Rows_examined_sum, Rows_sent_stddev, Rows_sent_pct_95, Query_time_max, Rows_examined_max, Query_time_stddev, Rows_sent_median, Lock_time_pct_95, ts_min, Lock_time_min, Lock_time_max, ts_max, Rows_examined_pct_95 ,Rows_sent_max, Query_time_median, Lock_time_sum
+   FROM test.query_review_history',
    { Slice => {} });
 is_deeply(
    $res,

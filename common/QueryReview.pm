@@ -123,7 +123,23 @@ sub set_history_options {
    foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
       my ( $attr, $metric ) = $col =~ m/$args{col_pat}/;
       next unless $attr && $metric;
-      $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
+
+      # TableParser lowercases the column names so, e.g., Query_time
+      # becomes query_time.  We have to fix this so attribs in the event
+      # match keys in $self->{history_metrics}...
+
+      # If the attrib name has at least one _ then it's a multi-word
+      # attrib like Query_time or Lock_time, so the first letter should
+      # be uppercase.  Else, it's a one-word attrib like ts, checksum
+      # or sample, so we leave it alone.  Except Filesort which is yet
+      # another exception.
+      $attr = ucfirst $attr if $attr =~ m/_/;
+      $attr = 'Filesort' if $attr eq 'filesort';
+
+      $attr =~ s/^Qc_hit/QC_Hit/;  # Qc_hit is really QC_Hit
+      $attr =~ s/^Innodb/InnoDB/g; # Innodb is really InnoDB
+      $attr =~ s/_io_/_IO_/g;      # io is really IO
+
       push @cols, $col;
       push @metrics, [$attr, $metric];
    }
