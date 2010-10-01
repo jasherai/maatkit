@@ -7989,7 +7989,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 5266
+# QueryReview package 6937
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReview.pm
@@ -8075,7 +8075,15 @@ sub set_history_options {
    foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
       my ( $attr, $metric ) = $col =~ m/$args{col_pat}/;
       next unless $attr && $metric;
-      $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
+
+
+      $attr = ucfirst $attr if $attr =~ m/_/;
+      $attr = 'Filesort' if $attr eq 'filesort';
+
+      $attr =~ s/^Qc_hit/QC_Hit/;  # Qc_hit is really QC_Hit
+      $attr =~ s/^Innodb/InnoDB/g; # Innodb is really InnoDB
+      $attr =~ s/_io_/_IO_/g;      # io is really IO
+
       push @cols, $col;
       push @metrics, [$attr, $metric];
    }
@@ -9849,7 +9857,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6865
+# MasterSlave package 6935
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -9871,7 +9879,10 @@ $Data::Dumper::Indent    = 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
+   my $self = {
+      %args,
+      replication_thread => {},
+   };
    return bless $self, $class;
 }
 
@@ -10491,10 +10502,10 @@ sub short_host {
 }
 
 sub is_replication_thread {
-   my ( $self, $query, $type ) = @_; 
+   my ( $self, $query, %args ) = @_; 
    return unless $query;
 
-   $type = lc $type || 'all';
+   my $type = lc $args{type} || 'all';
    die "Invalid type: $type"
       unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
@@ -10533,9 +10544,24 @@ sub is_replication_thread {
       else {
          MKDEBUG && _d('Not system user');
       }
+
+      if ( !defined $args{check_known_ids} || $args{check_known_ids} ) {
+         my $id = $query->{Id} || $query->{id};
+         if ( $match ) {
+            $self->{replication_thread}->{$id} = 1;
+         }
+         else {
+            if ( $self->{replication_thread}->{$id} ) {
+               MKDEBUG && _d("Thread ID is a known replication thread ID");
+               $match = 1;
+            }
+         }
+      }
    }
+
    MKDEBUG && _d('Matches', $type, 'replication thread:',
       ($match ? 'yes' : 'no'), '; match:', $match);
+
    return $match;
 }
 
@@ -10587,6 +10613,12 @@ sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
    return sprintf($fmt, @{$pos}{qw(file position)});
+}
+
+sub reset_known_replication_threads {
+   my ( $self ) = @_;
+   $self->{replication_thread} = {};
+   return;
 }
 
 sub _d {
@@ -13556,6 +13588,74 @@ table definition is used for L<"--create-review-history-table">:
    Rows_examined_pct_95 FLOAT,
    Rows_examined_stddev FLOAT,
    Rows_examined_median FLOAT,
+   -- Percona extended slowlog attributes 
+   -- http://www.percona.com/docs/wiki/patches:slow_extended
+   Rows_affected_sum             FLOAT,
+   Rows_affected_min             FLOAT,
+   Rows_affected_max             FLOAT,
+   Rows_affected_pct_95          FLOAT,
+   Rows_affected_stddev          FLOAT,
+   Rows_affected_median          FLOAT,
+   Rows_read_sum                 FLOAT,
+   Rows_read_min                 FLOAT,
+   Rows_read_max                 FLOAT,
+   Rows_read_pct_95              FLOAT,
+   Rows_read_stddev              FLOAT,
+   Rows_read_median              FLOAT,
+   Merge_passes_sum              FLOAT,
+   Merge_passes_min              FLOAT,
+   Merge_passes_max              FLOAT,
+   Merge_passes_pct_95           FLOAT,
+   Merge_passes_stddev           FLOAT,
+   Merge_passes_median           FLOAT,
+   InnoDB_IO_r_ops_min           FLOAT,
+   InnoDB_IO_r_ops_max           FLOAT,
+   InnoDB_IO_r_ops_pct_95        FLOAT,
+   InnoDB_IO_r_ops_stddev        FLOAT,
+   InnoDB_IO_r_ops_median        FLOAT,
+   InnoDB_IO_r_bytes_min         FLOAT,
+   InnoDB_IO_r_bytes_max         FLOAT,
+   InnoDB_IO_r_bytes_pct_95      FLOAT,
+   InnoDB_IO_r_bytes_stddev      FLOAT,
+   InnoDB_IO_r_bytes_median      FLOAT,
+   InnoDB_IO_r_wait_min          FLOAT,
+   InnoDB_IO_r_wait_max          FLOAT,
+   InnoDB_IO_r_wait_pct_95       FLOAT,
+   InnoDB_IO_r_wait_stddev       FLOAT,
+   InnoDB_IO_r_wait_median       FLOAT,
+   InnoDB_rec_lock_wait_min      FLOAT,
+   InnoDB_rec_lock_wait_max      FLOAT,
+   InnoDB_rec_lock_wait_pct_95   FLOAT,
+   InnoDB_rec_lock_wait_stddev   FLOAT,
+   InnoDB_rec_lock_wait_median   FLOAT,
+   InnoDB_queue_wait_min         FLOAT,
+   InnoDB_queue_wait_max         FLOAT,
+   InnoDB_queue_wait_pct_95      FLOAT,
+   InnoDB_queue_wait_stddev      FLOAT,
+   InnoDB_queue_wait_median      FLOAT,
+   InnoDB_pages_distinct_min     FLOAT,
+   InnoDB_pages_distinct_max     FLOAT,
+   InnoDB_pages_distinct_pct_95  FLOAT,
+   InnoDB_pages_distinct_stddev  FLOAT,
+   InnoDB_pages_distinct_median  FLOAT,
+   -- Boolean (Yes/No) attributes.  Only the cnt and sum are needed for these.
+   -- cnt is how many times is attribute was recorded and sum is how many of
+   -- those times the value was Yes.  Therefore sum/cnt * 100 = % of recorded
+   -- times that the value was Yes.
+   QC_Hit_cnt          FLOAT,
+   QC_Hit_sum          FLOAT,
+   Full_scan_cnt       FLOAT,
+   Full_scan_sum       FLOAT,
+   Full_join_cnt       FLOAT,
+   Full_join_sum       FLOAT,
+   Tmp_table_cnt       FLOAT,
+   Tmp_table_sum       FLOAT,
+   Disk_tmp_table_cnt  FLOAT,
+   Disk_tmp_table_sum  FLOAT,
+   Filesort_cnt        FLOAT,
+   Filesort_sum        FLOAT,
+   Disk_filesort_cnt   FLOAT,
+   Disk_filesort_sum   FLOAT,
    PRIMARY KEY(checksum, ts_min, ts_max)
  );
 

@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 15;
+   plan tests => 16;
 }
 
 my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
@@ -76,7 +76,7 @@ is_deeply(
    ],
    'Adds/updates queries to query review table'
 );
-$res = $dbh->selectall_arrayref( 'SELECT * FROM test.query_review_history',
+$res = $dbh->selectall_arrayref('SELECT lock_time_median, lock_time_stddev, query_time_sum, checksum, rows_examined_stddev, ts_cnt, sample, rows_examined_median, rows_sent_min, rows_examined_min, rows_sent_sum,  query_time_min, query_time_pct_95, rows_examined_sum, rows_sent_stddev, rows_sent_pct_95, query_time_max, rows_examined_max, query_time_stddev, rows_sent_median, lock_time_pct_95, ts_min, lock_time_min, lock_time_max, ts_max, rows_examined_pct_95 ,rows_sent_max, query_time_median, lock_time_sum FROM test.query_review_history',
    { Slice => {} } );
 is_deeply(
    $res,
@@ -226,6 +226,120 @@ is(
    $output,
    '',
    'No output with --review and --no-report'
+);
+
+
+# #############################################################################
+# Issue 1149: Add Percona attributes to mk-query-digest review table
+# #############################################################################
+$dbh->do('truncate table test.query_review');
+$dbh->do('truncate table test.query_review_history');
+
+`${run_with}slow002.txt --review h=127.1,u=msandbox,p=msandbox,P=12345,D=test,t=query_review --review-history t=query_review_history --no-report --filter '\$event->{arg} =~ m/db2.tuningdetail_21_265507/' > /dev/null`;
+
+$res = $dbh->selectall_arrayref( 'SELECT * FROM test.query_review_history',
+   { Slice => {} } );
+
+is_deeply(
+   $res,
+   [
+      {
+         sample => 'update db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) 
+      set n.column1 = a.column1, n.word3 = a.word3',
+         checksum => '7386569538324658825',
+         disk_filesort_cnt => '1',
+         disk_filesort_sum => '0',
+         disk_tmp_table_cnt => '1',
+         disk_tmp_table_sum => '0',
+         filesort_cnt => '1',
+         filesort_sum => '0',
+         full_join_cnt => '1',
+         full_join_sum => '0',
+         full_scan_cnt => '1',
+         full_scan_sum => '1',
+         innodb_io_r_bytes_max => undef,
+         innodb_io_r_bytes_median => undef,
+         innodb_io_r_bytes_min => undef,
+         innodb_io_r_bytes_pct_95 => undef,
+         innodb_io_r_bytes_stddev => undef,
+         innodb_io_r_ops_max => undef,
+         innodb_io_r_ops_median => undef,
+         innodb_io_r_ops_min => undef,
+         innodb_io_r_ops_pct_95 => undef,
+         innodb_io_r_ops_stddev => undef,
+         innodb_io_r_wait_max => undef,
+         innodb_io_r_wait_median => undef,
+         innodb_io_r_wait_min => undef,
+         innodb_io_r_wait_pct_95 => undef,
+         innodb_io_r_wait_stddev => undef,
+         innodb_pages_distinct_max => undef,
+         innodb_pages_distinct_median => undef,
+         innodb_pages_distinct_min => undef,
+         innodb_pages_distinct_pct_95 => undef,
+         innodb_pages_distinct_stddev => undef,
+         innodb_queue_wait_max => undef,
+         innodb_queue_wait_median => undef,
+         innodb_queue_wait_min => undef,
+         innodb_queue_wait_pct_95 => undef,
+         innodb_queue_wait_stddev => undef,
+         innodb_rec_lock_wait_max => undef,
+         innodb_rec_lock_wait_median => undef,
+         innodb_rec_lock_wait_min => undef,
+         innodb_rec_lock_wait_pct_95 => undef,
+         innodb_rec_lock_wait_stddev => undef,
+         lock_time_max => '9.1e-05',
+         lock_time_median => '9.1e-05',
+         lock_time_min => '9.1e-05',
+         lock_time_pct_95 => '9.1e-05',
+         lock_time_stddev => '0',
+         lock_time_sum => '9.1e-05',
+         merge_passes_max => '0',
+         merge_passes_median => '0',
+         merge_passes_min => '0',
+         merge_passes_pct_95 => '0',
+         merge_passes_stddev => '0',
+         merge_passes_sum => '0',
+         qc_hit_cnt => '1',
+         qc_hit_sum => '0',
+         query_time_max => '0.726052',
+         query_time_median => '0.726052',
+         query_time_min => '0.726052',
+         query_time_pct_95 => '0.726052',
+         query_time_stddev => '0',
+         query_time_sum => '0.726052',
+         rows_affected_max => undef,
+         rows_affected_median => undef,
+         rows_affected_min => undef,
+         rows_affected_pct_95 => undef,
+         rows_affected_stddev => undef,
+         rows_affected_sum => undef,
+         rows_examined_max => '62951',
+         rows_examined_median => '62951',
+         rows_examined_min => '62951',
+         rows_examined_pct_95 => '62951',
+         rows_examined_stddev => '0',
+         rows_examined_sum => '62951',
+         rows_read_max => undef,
+         rows_read_median => undef,
+         rows_read_min => undef,
+         rows_read_pct_95 => undef,
+         rows_read_stddev => undef,
+         rows_read_sum => undef,
+         rows_sent_max => '0',
+         rows_sent_median => '0',
+         rows_sent_min => '0',
+         rows_sent_pct_95 => '0',
+         rows_sent_stddev => '0',
+         rows_sent_sum => '0',
+         tmp_table_cnt => '1',
+         tmp_table_sum => '0',
+         ts_cnt => '1',
+         ts_max => '2007-12-18 11:48:27',
+         ts_min => '2007-12-18 11:48:27',
+      },
+   ],
+   "Review history has Percona extended slowlog attribs (issue 1149)"
 );
 
 # #############################################################################

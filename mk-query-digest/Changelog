@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added extended slowlog attribs to query review history table (issue 1149).
+
 2010-09-11: version 0.9.21
 
    * Empty Schema attribute was not parsed correctly in some cases (issue 1104).
