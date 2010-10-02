@@ -4229,6 +4229,7 @@ sub main {
    my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
    $o->set('progress', undef) if $o->get('q');
+
    if ( !$o->got('help') ) {
       if ( $o->get('progress') ) {
          eval { Progress->validate_spec($o->get('progress')) };
@@ -4237,26 +4238,66 @@ sub main {
             $o->save_error("--progress $EVAL_ERROR");
          }
       }
+
+      if ( my $dsn = $o->get('save-results-database') ) {
+         if ( !$dsn->{D} ) {
+            $o->save_error("You must specify a D (database) part for the "
+               . "--save-results-database DSN");
+         }
+      }
    }
+
    $o->usage_or_errors();
 
-   # Open the database connection.  If no connection opts (-h, -P, etc.)
+   # ##########################################################################
+   # Open the database connections.  If no connection opts (-h, -P, etc.)
    # are given on the cmd line then parse_options() will return undef,
    # but get_cxn() required a defined dsn arg so use an empty hashref.
-   my $dsn = $dp->parse_options($o) || {};
-   my $dbh = get_cxn(
-      dsn          => $dsn,
-      OptionParser => $o,
-      DSNParser    => $dp,
-   );
+   # ########################################################################## 
+   my ($dbh, $si_dbh, $res_dbh);
+   eval {
+      my $dsn = $dp->parse_options($o) || {};
+      $dbh = get_cxn(
+         dsn          => $dsn,
+         OptionParser => $o,
+         DSNParser    => $dp,
+      );
 
-   # dbh for SchemaIterator
-   # http://code.google.com/p/maatkit/issues/detail?id=1140 
-   my $si_dbh = get_cxn(
-      dsn          => $dsn,
-      OptionParser => $o,
-      DSNParser    => $dp,
-   );
+      # dbh for SchemaIterator
+      # http://code.google.com/p/maatkit/issues/detail?id=1140 
+      $si_dbh = get_cxn(
+         dsn          => $dsn,
+         OptionParser => $o,
+         DSNParser    => $dp,
+      );
+
+      # dbh for --save-results-database
+      if ( my $res_dsn = $o->get('save-results-database') ) {
+         
+         # To make --create-save-results-database work we have to
+         # temporarily remove the D from the DSN to avoid the error
+         # "DBI connect failed: Unknown database".  It's restored
+         # to the DSN after connecting.
+         my $res_db    = $res_dsn->{D};
+         $res_dsn->{D} = undef if $o->get('create-save-results-database');
+
+         $res_dbh = get_cxn(
+            dsn          => $res_dsn,
+            OptionParser => $o,
+            DSNParser    => $dp,
+         );
+
+         $res_dsn->{D} = $res_db;
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      # Avoid "Issuing rollback() for database handle being DESTROY'd
+      # without explicit disconnect()" errors.
+      $dbh->disconnect if $dbh;
+      $si_dbh->disconnect if $si_dbh;
+      $res_dbh->disconnect if $res_dbh;
+      die $EVAL_ERROR;
+   }
 
    # ##########################################################################
    # Make common modules.
@@ -4284,6 +4325,46 @@ sub main {
       IndexUsage      => $iu,
       ExplainAnalyzer => $exa,
    );
+
+
+   # ########################################################################
+   # Ready the save results database and its tables.
+   # ########################################################################
+   if ( $res_dbh ) {
+      my $db = $o->get('save-results-database')->{D};  # checked earlier
+
+      # Create the database (if it doesn't already exist).
+      if ( $o->get('create-save-results-database') ) {
+         create_save_results_database(
+            dbh => $res_dbh,
+            db  => $db,
+            %common_modules,
+         );
+      }
+
+      # Parse the CREATE TABLE defs from the POD.
+      my @tables = get_save_results_tables(%common_modules);
+
+      # Empty the tables.  This is actually done via DROP TABLE IF EXISTS.
+      if ( $o->get('empty-saved-results') ) {
+         empty_saved_results(
+            dbh  => $res_dbh,
+            db   => $db,
+            tbls => \@tables,
+         );
+      }
+
+      # Create the tables if necessary.  If they were dropped above, now
+      # they'll be recreated.  If they never existed (e.g. new db), they'll
+      # be recreated.  Or if they already exist, each def has "IF NOT EXISTS"
+      # so existing tables will remain untouched.
+      create_save_results_tables(
+         dbh  => $res_dbh,
+         db   => $db,
+         tbls => \@tables,
+         %common_modules,
+      );
+   }
 
    # ########################################################################
    # Populate the IndexUsage object with indexes.  Also get a list of all
@@ -4448,6 +4529,7 @@ sub main {
    }
 
    $dbh->disconnect;
+   $res_dbh->disconnect if $res_dbh;
    return 0;
 } # End main().
 
@@ -4563,6 +4645,101 @@ sub get_cxn {
    return $dbh;
 }
 
+sub create_save_results_database {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($dbh, $db, $q) = @args{@required_args};
+   my $sql;
+
+   $db = $q->quote($db);
+
+   eval {
+      MKDEBUG && _d("Checking if", $db, "database already exists");
+      $sql = "USE $db";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($db, "does not exist:", $EVAL_ERROR);
+      $sql = "CREATE DATABASE $db";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+
+      # Now USE the newly created db (the first attempt failed obviously).
+      $sql = "USE $db";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
+   else {
+      MKDEBUG && _d($db, "already exists");
+   }
+
+   return;
+}
+
+sub get_save_results_tables {
+   my ( %args ) = @_;
+   my @required_args = qw(OptionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($o) = @args{@required_args};
+   MKDEBUG && _d("Getting CREATE TABLE defs from POD");
+   my @table_defs = qw(indexes tables queries index_usage index_alternatives);
+   my @tables;
+   foreach my $tbl ( @table_defs ) {
+      my $magic = "MAGIC_create_$tbl";
+      my $sql   = $o->read_para_after(__FILE__, qr/$magic/);
+      push @tables, {
+         name => $tbl,
+         def  => $sql,
+      };
+   }
+
+   return @tables;
+}
+
+sub empty_saved_results {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db tables Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbls, $q) = @args{@required_args};
+
+   foreach my $tbl ( @$tbls ) {
+      # Nothing is more "empty" than non-existence.  The tables
+      # will be recreated later by calling create_save_results_tables().
+      # Dropping and recreating has an advantage over truncating/deleting:
+      # if the CREATE TABLE def is changed, this will auto-upgrade.
+      my $sql = "DROP TABLE IF EXISTS " . $q->quote($db, $tbl);
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
+
+   return;
+}
+
+sub create_save_results_tables {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh db tbls);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbls) = @args{@required_args};
+
+   foreach my $tbl ( @$tbls ) {
+      my $sql = $tbl->{def};
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
+
+   return;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -4589,7 +4766,7 @@ Analyze queries in slow.log and print reports:
 
   mk-index-usage /path/to/slow.log --host localhost
 
-Disaple reports and save results to mk database for later analysis:
+Disable reports and save results to mk database for later analysis:
 
   mk-index-usage slow.log --no-report --save-results-database mk
 
@@ -4844,47 +5021,47 @@ See the section L<QUERIES FOR SAVED RESULTS>.
 
 The tables have the following CREATE TABLE definitions:
 
-MAGIC_create_index_usage_index:
+MAGIC_create_indexes:
 
-  CREATE TABLE indexes (
+  CREATE TABLE IF NOT EXISTS indexes (
     id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    database      VARCHAR(64) NOT NULL,
-    table         VARCHAR(64) NOT NULL,
-    index         VARCHAR(64) NOT NULL,
+    db            VARCHAR(64) NOT NULL,
+    tbl           VARCHAR(64) NOT NULL,
+    idx           VARCHAR(64) NOT NULL,
     usage_cnt     BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEK   (index_id),
-    UNIQUE INDEX  (database, table, index)
+    PRIMARY KEY   (id),
+    UNIQUE INDEX  (db, tbl, idx)
   )
 
-MAGIC_create_index_usage_query:
+MAGIC_create_queries:
 
-  CREATE TABLE queries (
+  CREATE TABLE IF NOT EXISTS queries (
     checksum     BIGINT UNSIGNED NOT NULL,
     fingerprint  TEXT NOT NULL,
     sample       TEXT NOT NULL,
     PRIMARY KEY  (checksum)
   )
 
-MAGIC_create_index_usage_table:
+MAGIC_create_tables:
 
-  CREATE TABLE tables (
-    database     VARCHAR(64) NOT NULL,
-    table        VARCHAR(64) NOT NULL,
+  CREATE TABLE IF NOT EXISTS tables (
+    db           VARCHAR(64) NOT NULL,
+    tbl          VARCHAR(64) NOT NULL,
     usage_cnt    BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY  (database, table)
+    PRIMARY KEY  (db, tbl)
   )
 
 MAGIC_create_index_usage:
 
-  CREATE TABLE index_usage (
+  CREATE TABLE IF NOT EXISTS index_usage (
     index_id        INT UNSIGNED NOT NULL,
     query_checksum  BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY     (index_id, query_checksum)
   )
 
-MAGIC create_index_alternatives:
+MAGIC_create_index_alternatives:
 
-  CREATE TABLE index_alternatives (
+  CREATE TABLE IF NOT EXISTS index_alternatives (
      index_id      INT UNSIGNED NOT NULL,
      alt_index_id  INT UNSIGNED NOT NULL,
      PRIMARY KEY   (index_id, alt_index_id)
