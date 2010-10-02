@@ -4273,9 +4273,16 @@ sub main {
    my $iu     = new IndexUsage();
    my $exa    = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
    my %common_modules = (
-      OptionParser => $o,
-      DSNParser    => $dp,
-      Quoter       => $q,
+      OptionParser    => $o,
+      DSNParser       => $dp,
+      Quoter          => $q,
+      QueryParser     => $qp,
+      QueryRewriter   => $qr,
+      TableParser     => $tp,
+      VersionParser   => $vp,
+      MySQLDump       => $du,
+      IndexUsage      => $iu,
+      ExplainAnalyzer => $exa,
    );
 
    # ########################################################################
@@ -4430,18 +4437,15 @@ sub main {
    }
 
    # ########################################################################
-   # All done!  Now just print out the unused indexes.
+   # All done!  Now print the reports, maybe.
    # ########################################################################
-   $iu->find_unused_indexes(
-      sub {
-         my ( $unused ) = @_;
-         print_unused_indexes(
-            unused => $unused,
-            drop   => $o->get('drop'),
-            %common_modules,
-         );
-      }
-   );
+   if ( $o->get('report') ) {
+      print_reports(
+         dbh     => $dbh,
+         err_for => \%err_for,
+         %common_modules
+      );
+   }
 
    $dbh->disconnect;
    return 0;
@@ -4450,6 +4454,29 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+sub print_reports {
+   my ( %args ) = @_;
+   my $iu      = $args{IndexUsage};
+   my $o       = $args{OptionParser};
+   my @reports = @{$o->get('report-format')};
+   MKDEBUG && _d("Printing reports");
+
+   if ( grep { $_ eq 'drop_unused_indexes' } @reports ) {
+      $iu->find_unused_indexes(
+         sub {
+            my ( $unused ) = @_;
+            print_unused_indexes(
+               unused => $unused,
+               drop   => $o->get('drop'),
+               %args,
+            );
+         }
+      );
+   }
+
+   return;
+}
+
 sub print_unused_indexes {
    my ( %args ) = @_;
    my @required_args = qw(unused drop Quoter);
@@ -4558,7 +4585,13 @@ mk-index-usage - Read queries from a log and analyze how they use indexes.
 
 =head1 SYNOPSIS
 
- mk-index-usage /path/to/slow.log --host localhost
+Analyze queries in slow.log and print reports:
+
+  mk-index-usage /path/to/slow.log --host localhost
+
+Disaple reports and save results to mk database for later analysis:
+
+  mk-index-usage slow.log --no-report --save-results-database mk
 
 =head1 RISKS
 
@@ -4637,6 +4670,33 @@ statements that cannot be EXPLAIN'ed and similar.  These go to standard error.
 Progress reports are enabled by default (see L<"--progress">).  These also go to
 standard error.
 
+=head1 QUERIES FOR SAVED RESULTS
+
+If you specify the L<"--save-results-database"> option, information about
+indexes, queries, tables and their usages is stored in several tables in
+the specified database.  These tables can be queried to answer questions like
+the following.
+
+=over
+
+=item * Which index was used the most?
+
+SELECT ...
+
+=item * Which indexes were not used?
+
+SELECT ...
+
+=item * Which index was used by the most number of distinct queries?
+
+SELECT ...
+
+=item * Which indexes are alternatives?
+
+SELECT ...
+
+=back
+
 =head1 OPTIONS
 
 =over
@@ -4661,6 +4721,14 @@ type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
+
+=item --create-save-results-database
+
+Create the L<"--save-results-database"> if it does not exist.
+
+If the L<"--save-results-database"> already exists and this option is
+specified, the database is used and the necessary tables are created if
+they do not already exist.
 
 =item --database
 
@@ -4687,6 +4755,23 @@ the tool suggests to drop: primary, unique, non-unique, all.
 A separate C<ALTER TABLE> statement for each type is printed.  So if you
 specify C<--drop all> and there is a primary key and a non-unique index,
 the C<ALTER TABLE ... DROP> for each will be printed on separate lines.
+
+=item --empty-saved-results
+
+Truncate all pre-existing tables in the L<"--save-results-database">.
+
+Specifying this option causes any previously saved results in the the
+L<"--save-results-database"> to be deleted before running.  This allows
+information from previous runs to be removed before the current run.
+
+=item --explain
+
+type: int; default: 1
+
+Number of times to EXPLAIN each query.
+
+Specifying a value greater than 1 causes each query to checked for multiple
+EXPLAIN plans.  Specifying zero is not allowed.
 
 =item --help
 
@@ -4724,6 +4809,86 @@ number of iterations.
 short form: -q
 
 Do not print any warnings.  Also disables L<"--progress">.
+
+=item --[no]report
+
+default: yes
+
+Print the reports for L<"--report-format">.
+
+You may want to disable the reports by specifying C<--no-report> if, for
+example, you also specify L<"--save-results-database"> and you only want
+to query the results tables later.
+
+=item --report-format
+
+type: Array; default: drop_unused_indexes
+
+Right now there is only one report: drop_unused_indexes.  This report prints
+SQL statements for dropping any unused indexes.  See also L<"--drop">.
+
+See also L<"--[no]report">.
+
+=item --save-results-database
+
+type: DSN
+
+Save results to tables in this database.
+
+Information about indexes, queries, tables and usage of those is stored in
+several tables in the specified database.  The tables are auto-created if they
+do not exist.
+
+After a run, these tables can be queried to answer various questions.
+See the section L<QUERIES FOR SAVED RESULTS>.
+
+The tables have the following CREATE TABLE definitions:
+
+MAGIC_create_index_usage_index:
+
+  CREATE TABLE indexes (
+    id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    database      VARCHAR(64) NOT NULL,
+    table         VARCHAR(64) NOT NULL,
+    index         VARCHAR(64) NOT NULL,
+    usage_cnt     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEK   (index_id),
+    UNIQUE INDEX  (database, table, index)
+  )
+
+MAGIC_create_index_usage_query:
+
+  CREATE TABLE queries (
+    checksum     BIGINT UNSIGNED NOT NULL,
+    fingerprint  TEXT NOT NULL,
+    sample       TEXT NOT NULL,
+    PRIMARY KEY  (checksum)
+  )
+
+MAGIC_create_index_usage_table:
+
+  CREATE TABLE tables (
+    database     VARCHAR(64) NOT NULL,
+    table        VARCHAR(64) NOT NULL,
+    usage_cnt    BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY  (database, table)
+  )
+
+MAGIC_create_index_usage:
+
+  CREATE TABLE index_usage (
+    index_id        INT UNSIGNED NOT NULL,
+    query_checksum  BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY     (index_id, query_checksum)
+  )
+
+MAGIC create_index_alternatives:
+
+  CREATE TABLE index_alternatives (
+     index_id      INT UNSIGNED NOT NULL,
+     alt_index_id  INT UNSIGNED NOT NULL,
+     PRIMARY KEY   (index_id, alt_index_id)
+  )
 
 =item --set-vars
 
