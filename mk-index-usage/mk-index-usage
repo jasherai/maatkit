@@ -4346,11 +4346,12 @@ sub main {
       my @tables = get_save_results_tables(%common_modules);
 
       # Empty the tables.  This is actually done via DROP TABLE IF EXISTS.
-      if ( $o->get('empty-saved-results') ) {
-         empty_saved_results(
+      if ( $o->get('empty-save-results-tables') ) {
+         empty_save_results_tables(
             dbh  => $res_dbh,
             db   => $db,
             tbls => \@tables,
+            %common_modules,
          );
       }
 
@@ -4686,13 +4687,15 @@ sub get_save_results_tables {
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($o) = @args{@required_args};
+   my ($o)  = @args{@required_args};
+   my $file = $args{file} || __FILE__;
    MKDEBUG && _d("Getting CREATE TABLE defs from POD");
+
    my @table_defs = qw(indexes tables queries index_usage index_alternatives);
    my @tables;
    foreach my $tbl ( @table_defs ) {
       my $magic = "MAGIC_create_$tbl";
-      my $sql   = $o->read_para_after(__FILE__, qr/$magic/);
+      my $sql   = $o->read_para_after($file, qr/$magic/);
       push @tables, {
          name => $tbl,
          def  => $sql,
@@ -4702,9 +4705,9 @@ sub get_save_results_tables {
    return @tables;
 }
 
-sub empty_saved_results {
+sub empty_save_results_tables {
    my ( %args ) = @_;
-   my @required_args = qw(dbh db tables Quoter);
+   my @required_args = qw(dbh db tbls Quoter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
@@ -4715,7 +4718,7 @@ sub empty_saved_results {
       # will be recreated later by calling create_save_results_tables().
       # Dropping and recreating has an advantage over truncating/deleting:
       # if the CREATE TABLE def is changed, this will auto-upgrade.
-      my $sql = "DROP TABLE IF EXISTS " . $q->quote($db, $tbl);
+      my $sql = "DROP TABLE IF EXISTS " . $q->quote($db, $tbl->{name});
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
@@ -4933,22 +4936,13 @@ A separate C<ALTER TABLE> statement for each type is printed.  So if you
 specify C<--drop all> and there is a primary key and a non-unique index,
 the C<ALTER TABLE ... DROP> for each will be printed on separate lines.
 
-=item --empty-saved-results
+=item --empty-save-results-tables
 
 Truncate all pre-existing tables in the L<"--save-results-database">.
 
 Specifying this option causes any previously saved results in the the
 L<"--save-results-database"> to be deleted before running.  This allows
 information from previous runs to be removed before the current run.
-
-=item --explain
-
-type: int; default: 1
-
-Number of times to EXPLAIN each query.
-
-Specifying a value greater than 1 causes each query to checked for multiple
-EXPLAIN plans.  Specifying zero is not allowed.
 
 =item --help
 
@@ -5029,8 +5023,8 @@ MAGIC_create_indexes:
     tbl           VARCHAR(64) NOT NULL,
     idx           VARCHAR(64) NOT NULL,
     usage_cnt     BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY   (id),
-    UNIQUE INDEX  (db, tbl, idx)
+    PRIMARY KEY   (db, tbl, idx),
+    UNIQUE INDEX  (id)
   )
 
 MAGIC_create_queries:
@@ -5054,17 +5048,19 @@ MAGIC_create_tables:
 MAGIC_create_index_usage:
 
   CREATE TABLE IF NOT EXISTS index_usage (
-    index_id        INT UNSIGNED NOT NULL,
-    query_checksum  BIGINT UNSIGNED NOT NULL,
-    PRIMARY KEY     (index_id, query_checksum)
+    checksum  BIGINT UNSIGNED NOT NULL,
+    db        VARCHAR(64) NOT NULL,
+    tbl       VARCHAR(64) NOT NULL,
+    idx       VARCHAR(64) NOT NULL
   )
 
 MAGIC_create_index_alternatives:
 
   CREATE TABLE IF NOT EXISTS index_alternatives (
-     index_id      INT UNSIGNED NOT NULL,
-     alt_index_id  INT UNSIGNED NOT NULL,
-     PRIMARY KEY   (index_id, alt_index_id)
+    db       VARCHAR(64) NOT NULL,
+    tbl      VARCHAR(64) NOT NULL,
+    idx      VARCHAR(64) NOT NULL,
+    alt_idx  VARCHAR(64) NOT NULL  
   )
 
 =item --set-vars
