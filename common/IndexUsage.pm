@@ -17,6 +17,12 @@
 # ###########################################################################
 # IndexUsage package $Revision$
 # ###########################################################################
+
+# Package: IndexUsage
+# IndexUsage keeps track of how many times queries use indexes, and
+# show which are unused.  You use it by telling it about all the tables and
+# indexes that exist, and then you give it index usage stats (from
+# ExplainAnalyzer).  Afterwards, you ask it to show you unused indexes.
 package IndexUsage;
 
 use strict;
@@ -24,17 +30,36 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# This module's job is to keep track of how many times queries use indexes, and
-# show which are unused.  You use it by telling it about all the tables and
-# indexes that exist, and then you give it index usage stats (from
-# ExplainAnalyzer).  Afterwards, you ask it to show you unused indexes.
 sub new {
    my ( $class, %args ) = @_;
+ 
    my $self = {
       %args,
       tables_for  => {}, # Keyed off db
       indexes_for => {}, # Keyed off db->tbl
    };
+   
+   my $dbh = $args{dbh};
+   my $db  = $args{db};
+   if ( $dbh && $db ) {
+      MKDEBUG && _d("Saving results to tables in database", $db);
+      $self->{save_results} = 1;
+
+      $self->{insert_index_sth} = $dbh->prepare(
+         "INSERT INTO $db.`indexes` (db, tbl, idx) VALUES (?, ?, ?) "
+         . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
+      $self->{insert_query_sth} = $dbh->prepare(
+         "INSERT IGNORE INTO $db.`queries` (checksum, fingerprint, sample) "
+         . " VALUES (CONV(?, 16, 10), ?, ?)");
+      $self->{insert_tbl_sth} = $dbh->prepare(
+         "INSERT INTO $db.`tables` (db, tbl) "
+         . "VALUES (?, ?) "
+         . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
+      $self->{insert_index_usage_sth} = $dbh->prepare(
+         "INSERT IGNORE INTO $db.`index_usage` (checksum, db, tbl, idx) "
+         . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
+   }
+
    return bless $self, $class;
 }
 
@@ -53,12 +78,17 @@ sub add_indexes {
    my ($db, $tbl, $indexes) = @args{@required_args};
 
    $self->{tables_for}->{$db}->{$tbl}  = 0;
-   $self->{indexes_for}->{$db}->{$tbl} = $indexes;
-
+   $self->{insert_tbl_sth}->execute($db, $tbl) if $self->{save_results};
+   
    # Add to the indexes struct a cnt key for each index which is
    # incremented in add_index_usage().
+   $self->{indexes_for}->{$db}->{$tbl} = $indexes;
    foreach my $index ( keys %$indexes ) {
       $indexes->{$index}->{cnt} = 0;
+      if ( $self->{save_results} ) {
+         $self->{insert_index_sth}->execute($db, $tbl, $index);
+      }
+      MKDEBUG && _d("Added index", $db, $tbl, $index);
    }
 
    return;
@@ -70,6 +100,25 @@ sub add_table_usage {
    my ( $self, $db, $tbl ) = @_;
    die "I need a db and table" unless defined $db && defined $tbl;
    ++$self->{tables_for}->{$db}->{$tbl};
+   if ( $self->{save_results} ) {
+      $self->{insert_tbl_sth}->execute($db, $tbl);
+   }
+   return;
+}
+
+sub add_query {
+   my ( $self, $query ) = @_;
+   return unless $self->{save_results};
+   die "I need a query argument" unless $query;
+   my $qr = $self->{QueryRewriter};
+   die "I need a QueryRewriter object" unless $qr;
+
+   my $fingerprint = $qr->fingerprint($query);
+   my $checksum    = Transformers::make_checksum($fingerprint);
+
+   $self->{insert_query_sth}->execute($checksum, $fingerprint, $query);
+
+   return $checksum;
 }
 
 # This method accepts information about how a query used an index, and saves it
@@ -87,6 +136,13 @@ sub add_index_usage {
       # Increment the index(es)'s usage counter.
       foreach my $index ( @$idx ) {
          $self->{indexes_for}->{$db}->{$tbl}->{$index}->{cnt}++;
+         if ( $self->{save_results} ) {
+            $self->{insert_index_sth}->execute($db, $tbl, $index);
+            if ( $args{checksum} ) {
+               $self->{insert_index_usage_sth}->execute(
+                  $args{checksum}, $db, $tbl, $index);
+            }
+         }
       }
    }
 }
