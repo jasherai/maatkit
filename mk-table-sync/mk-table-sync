@@ -9287,12 +9287,14 @@ the various connection options, and exit.
 
 type: int
 
-Precision for C<FLOAT> and C<DOUBLE> column comparisons.
-
-If you specify this option, FLOAT and DOUBLE columns will be rounded to the
-specified number of digits after the decimal point for the checksum.  This can
-avoid mismatches due to different floating-point representations of
-the same values on different MySQL versions and hardware.
+Precision for C<FLOAT> and C<DOUBLE> number-to-string conversion.  Causes FLOAT
+and DOUBLE values to be rounded to the specified number of digits after the
+decimal point, with the ROUND() function in MySQL.  This can help avoid
+checksum mismatches due to different floating-point representations of the same
+values on different MySQL versions and hardware.  The default is no rounding;
+the values are converted to strings by the CONCAT() function, and MySQL chooses
+the string representation.  If you specify a value of 2, for example, then the
+values 1.008 and 1.009 will be rounded to 1.01, and will checksum as equal.
 
 =item --[no]foreign-key-checks
 

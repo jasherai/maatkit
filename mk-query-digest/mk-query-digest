@@ -13451,7 +13451,7 @@ Print these sections of the query analysis report.
   hostname     Hostname of machine on which mk-query-digest was run
   files        Input files read/parse
   header       Summary of the entire analysis run
-  profile      Compact table of queries for a quick view of the report
+  profile      Compact table of queries for an overview of the report
   query_report Detailed information about each unique query
   prepared     Prepared statements
 
