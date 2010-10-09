@@ -24,8 +24,8 @@
 # indexes that exist, and then you give it index usage stats from
 # <ExplainAnalyzer>.  Afterwards, you ask it to show you unused indexes.
 #
-# If the object is created with a dbh, db and QueryRewriter object, then
-# results (the indexes, tables, queries and index usages) are saved in tables.
+# If the object is created with a dbh and db, then results (the indexes,
+# tables, queries and index usages) are saved in tables.
 package IndexUsage;
 
 use strict;
@@ -55,18 +55,19 @@ sub new {
       MKDEBUG && _d("Saving results to tables in database", $db);
       $self->{save_results} = 1;
 
+      # See mk-index-usage --save-results-database for the table defs.
       $self->{insert_index_sth} = $dbh->prepare(
          "INSERT INTO `$db`.`indexes` (db, tbl, idx) VALUES (?, ?, ?) "
          . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
       $self->{insert_query_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO `$db`.`queries` (checksum, fingerprint, sample) "
+         "INSERT IGNORE INTO `$db`.`queries` (query_id, fingerprint, sample) "
          . " VALUES (CONV(?, 16, 10), ?, ?)");
       $self->{insert_tbl_sth} = $dbh->prepare(
          "INSERT INTO `$db`.`tables` (db, tbl) "
          . "VALUES (?, ?) "
          . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
       $self->{insert_index_usage_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO `$db`.`index_usage` (checksum, db, tbl, idx) "
+         "INSERT IGNORE INTO `$db`.`index_usage` (query_id, db, tbl, idx) "
          . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
    }
 
@@ -133,29 +134,25 @@ sub add_table_usage {
 }
 
 # Sub: add_query
-#   Add a query to the save results query table.  The query is fingerprinted
-#   and checksummed, so the object needs to have been created with a
-#   QueryRewriter object.  The returned checksum can be passed to
-#   <add_index_usage()> to updated the save results index usage table.
+#   Add a query to the save results query table.  Duplicate queries are
+#   ignored (easier to ignore than check if query is already in the table).
 #
 # Parameters:
-#   $query - Query to add
+#   %args - Arguments
 #
-# Returns:
-#   Checksum for query for <add_index_usage()>.
+# Required Arguments:
+#   query_id    - Query ID (hex checksum of fingerprint)
+#   fingerprint - Query fingerprint (<QueryRewriter::fingerprint()>)
+#   sample      - Query SQL
 sub add_query {
-   my ( $self, $query ) = @_;
-   return unless $self->{save_results};
-   die "I need a query argument" unless $query;
-   my $qr = $self->{QueryRewriter};
-   die "I need a QueryRewriter object" unless $qr;
-
-   my $fingerprint = $qr->fingerprint($query);
-   my $checksum    = Transformers::make_checksum($fingerprint);
-
-   $self->{insert_query_sth}->execute($checksum, $fingerprint, $query);
-
-   return $checksum;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id fingerprint sample);
+   foreach my $arg ( @required_args  ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($query_id, $fingerprint, $sample) = @args{@required_args};
+   $self->{insert_query_sth}->execute($query_id, $fingerprint, $sample);
+   return;
 }
 
 # Sub: add_index_usage
@@ -169,7 +166,7 @@ sub add_query {
 #           <ExplainAnalyzer::get_index_usage()>
 #
 # Optional Arguments:
-#   checksum - Query checksum from <add_query()>, if saving results
+#   query_id - Query ID, if saving results
 sub add_index_usage {
    my ( $self, %args ) = @_;
    my @required_args = qw(usage);
@@ -189,9 +186,9 @@ sub add_index_usage {
 
          if ( $self->{save_results} ) {
             $self->{insert_index_sth}->execute($db, $tbl, $index);
-            if ( $args{checksum} ) {
+            if ( $args{query_id} ) {
                $self->{insert_index_usage_sth}->execute(
-                  $args{checksum}, $db, $tbl, $index);
+                  $args{query_id}, $db, $tbl, $index);
             }
          }
 

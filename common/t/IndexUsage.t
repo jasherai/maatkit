@@ -114,12 +114,13 @@ SKIP: {
       unless @{ $dbh->selectall_arrayref('show databases like "sakila"') };
 
    # Use mk-index-usage to create all the save results tables.
-   `$trunk/mk-index-usage/mk-index-usage -F /tmp/12345/my.sandbox.cnf --create-save-results-database --save-results-database D=mk_iu --empty-save-results-tables --no-report --quiet $trunk/common/t/samples/empty >/dev/null 2>&1`;
+   # Must --databases foo so it won't find anything, else it will
+   # pre-populate the tables with mysql.*, sakila.*, etc.
+   `$trunk/mk-index-usage/mk-index-usage -F /tmp/12345/my.sandbox.cnf --create-save-results-database --save-results-database D=mk_iu --empty-save-results-tables --no-report --quiet --databases foo $trunk/common/t/samples/empty >/dev/null 2>&1`;
 
    $iu = new IndexUsage(
       dbh => $dbh,
       db  => "mk_iu",
-      QueryRewriter => $qr,
    );
 
    $iu->add_indexes(db=>'sakila', tbl=>'actor',      indexes=>$actor_idx);
@@ -169,10 +170,16 @@ SKIP: {
       "Update table usage in results"
    );
 
-   my $query    = "select * from sakila.film_actor a left join sakila.actor b using (id)";
-   my $checksum = $iu->add_query($query);
+   my $query       = "select * from sakila.film_actor a left join sakila.actor b using (id)";
+   my $fingerprint = $qr->fingerprint($query);
+   my $query_id    = make_checksum($fingerprint);
+   my $checksum = $iu->add_query(
+      query_id    => $query_id,
+      fingerprint => $fingerprint,
+      sample      => $query,
+   );
    $iu->add_index_usage(
-      checksum => $checksum,
+      query_id => $query_id,
       usage    => [
          {  db  => 'sakila',
             tbl => 'film_actor',
@@ -201,7 +208,7 @@ SKIP: {
       "Updates index usage in results"
    );
 
-   $rows = $dbh->selectall_arrayref("select db,tbl,idx,fingerprint from mk_iu.index_usage left join mk_iu.queries using (checksum) order by db,tbl,idx");
+   $rows = $dbh->selectall_arrayref("select db,tbl,idx,fingerprint from mk_iu.index_usage left join mk_iu.queries using (query_id) order by db,tbl,idx");
    is_deeply(
       $rows,
       [
