@@ -3401,7 +3401,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 5473
+# SchemaIterator package 6949
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm
@@ -3565,8 +3565,8 @@ sub make_filter {
             = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
       }
 
-      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
-           || @permit_engs || @reject_engs ) {
+      if ( @permit_tbls || @permit_qtbls || @reject_tbls || @tbls_regex
+           || @reject_tbls_regex || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
                (@permit_tbls       ? @permit_tbls        : ()),
@@ -4570,7 +4570,10 @@ sub main {
             }
             foreach my $row ( @$access ) {
                $iu->add_table_usage($row->{db}, $row->{tbl});
-               $iu->add_index_usage(usage => $access);
+               $iu->add_index_usage(
+                  usage    => $access,
+                  query_id => $id,
+               );
             }
 
          };
