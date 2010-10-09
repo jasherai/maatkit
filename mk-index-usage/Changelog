@@ -1,5 +1,12 @@
 Changelog for mk-index-usage:
 
+   * Added --save-results-database option (issue 1015).
+   * Added --create-save-results-database option (issue 1015).
+   * Added --empty-save-results-tables option (issue 1015).
+   * Added --[no]report option (issue 1015).
+   * Added --report-format option (issue 1015).
+   * Added standard schema object filter options (--databases, --tables, etc).
+
 2010-09-11: version 0.9.1
 
    * Default database was changed by iterating schema (issue 1140).

@@ -3932,7 +3932,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# IndexUsage package 6946
+# IndexUsage package 6952
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/IndexUsage.pm
@@ -3975,6 +3975,10 @@ sub new {
       $self->{insert_index_usage_sth} = $dbh->prepare(
          "INSERT IGNORE INTO `$db`.`index_usage` (query_id, db, tbl, idx) "
          . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
+      $self->{insert_index_alt_sth} = $dbh->prepare(
+         "INSERT IGNORE INTO `$db`.`index_alternatives` "
+         . "(query_id, db, tbl, idx, alt_idx) "
+         . "VALUES (CONV(?, 16, 10), ?, ?, ?, ?)");
    }
 
    return bless $self, $class;
@@ -4017,6 +4021,7 @@ sub add_table_usage {
 
 sub add_query {
    my ( $self, %args ) = @_;
+   return unless $self->{save_results};
    my @required_args = qw(query_id fingerprint sample);
    foreach my $arg ( @required_args  ) {
       die "I need a $arg argument" unless defined $args{$arg};
@@ -4047,6 +4052,11 @@ sub add_index_usage {
             if ( $args{query_id} ) {
                $self->{insert_index_usage_sth}->execute(
                   $args{query_id}, $db, $tbl, $index);
+
+               foreach my $alt_index ( @$alt ) {
+                  $self->{insert_index_alt_sth}->execute(
+                     $args{query_id}, $db, $tbl, $index, $alt_index);
+               }
             }
          }
 
@@ -4567,6 +4577,11 @@ sub main {
                   explain => $exa->normalize($explain),
                );
                $exa->save_usage_for($chk, $cur_db, $access);
+               $iu->add_query(
+                  query_id    => $id,
+                  fingerprint => $fingerprint,
+                  sample      => $arg,
+               );
             }
             foreach my $row ( @$access ) {
                $iu->add_table_usage($row->{db}, $row->{tbl});
@@ -5157,19 +5172,22 @@ MAGIC_create_tables:
 MAGIC_create_index_usage:
 
   CREATE TABLE IF NOT EXISTS index_usage (
-    query_id  BIGINT UNSIGNED NOT NULL,
-    db        VARCHAR(64) NOT NULL,
-    tbl       VARCHAR(64) NOT NULL,
-    idx       VARCHAR(64) NOT NULL
+    query_id      BIGINT UNSIGNED NOT NULL,
+    db            VARCHAR(64) NOT NULL,
+    tbl           VARCHAR(64) NOT NULL,
+    idx           VARCHAR(64) NOT NULL,
+    UNIQUE INDEX  (query_id, db, tbl, idx)
   )
 
 MAGIC_create_index_alternatives:
 
   CREATE TABLE IF NOT EXISTS index_alternatives (
-    db       VARCHAR(64) NOT NULL,
-    tbl      VARCHAR(64) NOT NULL,
-    idx      VARCHAR(64) NOT NULL,
-    alt_idx  VARCHAR(64) NOT NULL  
+    query_id      BIGINT UNSIGNED NOT NULL, -- This query used
+    db            VARCHAR(64) NOT NULL,     -- this index, but...
+    tbl           VARCHAR(64) NOT NULL,     --
+    idx           VARCHAR(64) NOT NULL,     --
+    alt_idx       VARCHAR(64) NOT NULL,     -- this index was an alternative
+    UNIQUE INDEX  (query_id, db, tbl, idx, alt_idx)
   )
 
 =item --set-vars
