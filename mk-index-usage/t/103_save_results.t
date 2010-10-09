@@ -116,15 +116,27 @@ is_deeply(
    "Table access counts"
 );
 
-$rows = $dbh->selectall_arrayref("select * from mk.indexes order by db, tbl");
-is_deeply(
-   $rows,
+# EXPLAIN results differ a little between 5.0 and 5.1.  5.1 is smarter.
+my $res = $sandbox_version ge '5.1' ?
+   # v5.1 and newer
    [
       [qw(sakila  actor   idx_actor_last_name 1)],
       [qw(sakila  actor   PRIMARY             3)],
       [qw(sakila  address idx_fk_city_id      0)],
       [qw(sakila  address PRIMARY             0)],
-   ],
+   ]
+   : # v5.0 and older
+   [
+      [qw(sakila  actor   idx_actor_last_name 2)],
+      [qw(sakila  actor   PRIMARY             2)],
+      [qw(sakila  address idx_fk_city_id      0)],
+      [qw(sakila  address PRIMARY             0)],
+   ];
+
+$rows = $dbh->selectall_arrayref("select * from mk.indexes order by db, tbl");
+is_deeply(
+   $rows,
+   $res,
    "Index usage counts"
 );
 
@@ -149,8 +161,8 @@ is_deeply(
 );
 
 $rows = $dbh->selectall_arrayref("select query_id, db, tbl, idx, sample from index_usage iu left join queries q using (query_id) order by db, tbl, idx");
-is_deeply(
-   $rows,
+$res = $sandbox_version ge '5.1' ?
+   # v5.1 and newer
    [
       [
          4950186562421969363,
@@ -167,18 +179,40 @@ is_deeply(
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where last_name like 'A%' order by actor_id",
       ],
-   ],
+   ]
+   :
+   # v5.0 and older
+   [
+      [
+         4950186562421969363,
+         qw(sakila  actor  idx_actor_last_name),
+         "select * from sakila.actor where last_name like 'A%'",
+      ], 
+      [
+         10334408417593890092,
+         qw(sakila  actor  idx_actor_last_name),
+         "select * from sakila.actor where last_name like 'A%' order by actor_id",
+      ],
+      [
+         10891801448710051322,
+         qw(sakila  actor  PRIMARY),
+         "select * from sakila.actor where actor_id>10",
+      ],
+   ];
+is_deeply(
+   $rows,
+   $res,
    "Index usage",
 );
 
 $rows = $dbh->selectall_arrayref("select db,tbl,idx,alt_idx,sample from index_alternatives a left join queries q using (query_id)");
+$res = $sandbox_version ge '5.1' ?
+   [qw(sakila actor PRIMARY idx_actor_last_name),
+    "select * from sakila.actor where last_name like 'A%' order by actor_id"]
+   : [];
 is_deeply(
    $rows,
-   [
-      [  qw(sakila actor PRIMARY idx_actor_last_name),
-         "select * from sakila.actor where last_name like 'A%' order by actor_id",
-      ], 
-   ],
+   $res,
    "Index alternatives"
 );
 
