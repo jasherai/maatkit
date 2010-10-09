@@ -209,8 +209,8 @@ sub make_filter {
             = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
       }
 
-      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
-           || @permit_engs || @reject_engs ) {
+      if ( @permit_tbls || @permit_qtbls || @reject_tbls || @tbls_regex
+           || @reject_tbls_regex || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
                (@permit_tbls       ? @permit_tbls        : ()),
