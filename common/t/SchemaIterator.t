@@ -36,7 +36,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 34;
+   plan tests => 35;
 }
 
 
@@ -424,6 +424,29 @@ is_deeply(
    get_all_db_tbls($dbh, $si),
    [qw(d1.t3 d2.t1)],
    '-t d1.t3,d2.t1 (issue 806)'
+);
+
+
+# #############################################################################
+# Issue 1161: make_filter() with only --tables db.foo filter does not work
+# #############################################################################
+$o = new OptionParser(
+   description => 'SchemaIterator'
+);
+# mk-index-usage does not have any of the schema filters with default
+# values like --engines so when we do --tables that will be the only
+# filter.
+$o->get_specs("$trunk/mk-index-usage/mk-index-usage");
+$o->get_opts();
+
+@ARGV=qw(-t d1.t1);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t1)],
+   '-t d1.t1 (issue 1161)'
 );
 
 # #############################################################################
