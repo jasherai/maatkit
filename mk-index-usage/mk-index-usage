@@ -4938,33 +4938,6 @@ statements that cannot be EXPLAIN'ed and similar.  These go to standard error.
 Progress reports are enabled by default (see L<"--progress">).  These also go to
 standard error.
 
-=head1 QUERIES FOR SAVED RESULTS
-
-If you specify the L<"--save-results-database"> option, information about
-indexes, queries, tables and their usages is stored in several tables in
-the specified database.  These tables can be queried to answer questions like
-the following.
-
-=over
-
-=item * Which index was used the most?
-
-SELECT ...
-
-=item * Which indexes were not used?
-
-SELECT ...
-
-=item * Which index was used by the most number of distinct queries?
-
-SELECT ...
-
-=item * Which indexes are alternatives?
-
-SELECT ...
-
-=back
-
 =head1 OPTIONS
 
 =over
@@ -5132,12 +5105,17 @@ type: DSN
 
 Save results to tables in this database.
 
+B<WARNING>: Saved results is a new, experimental feature.  It may change in
+future releases.  You should not save results to a production server because
+mk-index-usage executes many INSERT statements to save the results, therefore
+it can temporarily increase the load on the server.
+
 Information about indexes, queries, tables and usage of those is stored in
 several tables in the specified database.  The tables are auto-created if they
 do not exist.
 
-After a run, these tables can be queried to answer various questions.
-See the section L<QUERIES FOR SAVED RESULTS>.
+After a run, these tables can be queried to answer various questions about
+index usage.
 
 The tables have the following CREATE TABLE definitions:
 
