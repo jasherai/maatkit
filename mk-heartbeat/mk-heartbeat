@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MasterSlave package 6865
+# MasterSlave package 6935
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MasterSlave.pm
@@ -50,7 +50,10 @@ $Data::Dumper::Indent    = 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
+   my $self = {
+      %args,
+      replication_thread => {},
+   };
    return bless $self, $class;
 }
 
@@ -670,10 +673,10 @@ sub short_host {
 }
 
 sub is_replication_thread {
-   my ( $self, $query, $type ) = @_; 
+   my ( $self, $query, %args ) = @_; 
    return unless $query;
 
-   $type = lc $type || 'all';
+   my $type = lc $args{type} || 'all';
    die "Invalid type: $type"
       unless $type =~ m/^binlog_dump|slave_io|slave_sql|all$/i;
 
@@ -712,9 +715,24 @@ sub is_replication_thread {
       else {
          MKDEBUG && _d('Not system user');
       }
+
+      if ( !defined $args{check_known_ids} || $args{check_known_ids} ) {
+         my $id = $query->{Id} || $query->{id};
+         if ( $match ) {
+            $self->{replication_thread}->{$id} = 1;
+         }
+         else {
+            if ( $self->{replication_thread}->{$id} ) {
+               MKDEBUG && _d("Thread ID is a known replication thread ID");
+               $match = 1;
+            }
+         }
+      }
    }
+
    MKDEBUG && _d('Matches', $type, 'replication thread:',
       ($match ? 'yes' : 'no'), '; match:', $match);
+
    return $match;
 }
 
@@ -766,6 +784,12 @@ sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
    return sprintf($fmt, @{$pos}{qw(file position)});
+}
+
+sub reset_known_replication_threads {
+   my ( $self ) = @_;
+   $self->{replication_thread} = {};
+   return;
 }
 
 sub _d {
