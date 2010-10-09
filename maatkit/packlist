@@ -6,7 +6,7 @@ mk-error-log 1.0.3
 mk-fifo-split 1.0.7
 mk-find 0.9.23
 mk-heartbeat 1.0.22
-mk-index-usage 0.9.1
+mk-index-usage 0.9.2
 mk-kill 0.9.7
 mk-loadavg 0.9.6
 mk-log-player 1.0.8
@@ -14,7 +14,7 @@ mk-parallel-dump 1.0.26
 mk-parallel-restore 1.0.23
 mk-purge-logs 0.9.0
 mk-query-advisor 1.0.1
-mk-query-digest 0.9.21
+mk-query-digest 0.9.22
 mk-query-profiler 1.1.22
 mk-show-grants 1.0.23
 mk-slave-delay 1.0.22
