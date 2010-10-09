@@ -150,6 +150,7 @@ sub add_table_usage {
 #   sample      - Query SQL
 sub add_query {
    my ( $self, %args ) = @_;
+   return unless $self->{save_results};
    my @required_args = qw(query_id fingerprint sample);
    foreach my $arg ( @required_args  ) {
       die "I need a $arg argument" unless defined $args{$arg};
