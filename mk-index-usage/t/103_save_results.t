@@ -207,8 +207,8 @@ is_deeply(
 
 $rows = $dbh->selectall_arrayref("select db,tbl,idx,alt_idx,sample from index_alternatives a left join queries q using (query_id)");
 $res = $sandbox_version ge '5.1' ?
-   [qw(sakila actor PRIMARY idx_actor_last_name),
-    "select * from sakila.actor where last_name like 'A%' order by actor_id"]
+   [[qw(sakila actor PRIMARY idx_actor_last_name),
+    "select * from sakila.actor where last_name like 'A%' order by actor_id"]]
    : [];
 is_deeply(
    $rows,
