@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use IndexUsage;
@@ -109,8 +109,8 @@ is_deeply(
 # Test save results.
 # #############################################################################
 SKIP: {
-   skip "Cannot connect to sandbox master", 6 unless $dbh;
-   skip "Sakila database is not loaded",    6
+   skip "Cannot connect to sandbox master", 7 unless $dbh;
+   skip "Sakila database is not loaded",    7
       unless @{ $dbh->selectall_arrayref('show databases like "sakila"') };
 
    # Use mk-index-usage to create all the save results tables.
@@ -241,6 +241,15 @@ SKIP: {
          },
       ],
       'Unused indexes for sakila.actor and film_actor',
+   );
+   
+   $rows = $dbh->selectall_arrayref("SELECT * FROM mk_iu.index_alternatives ORDER BY db,tbl,idx");
+   is_deeply(
+      $rows,
+      [
+         [qw(12852102680195556712 sakila actor PRIMARY idx_actor_last_name)],
+      ],
+      "Updates index alternatives"
    );
 
    $sb->wipe_clean($dbh);

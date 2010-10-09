@@ -69,6 +69,10 @@ sub new {
       $self->{insert_index_usage_sth} = $dbh->prepare(
          "INSERT IGNORE INTO `$db`.`index_usage` (query_id, db, tbl, idx) "
          . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
+      $self->{insert_index_alt_sth} = $dbh->prepare(
+         "INSERT IGNORE INTO `$db`.`index_alternatives` "
+         . "(query_id, db, tbl, idx, alt_idx) "
+         . "VALUES (CONV(?, 16, 10), ?, ?, ?, ?)");
    }
 
    return bless $self, $class;
@@ -189,6 +193,11 @@ sub add_index_usage {
             if ( $args{query_id} ) {
                $self->{insert_index_usage_sth}->execute(
                   $args{query_id}, $db, $tbl, $index);
+
+               foreach my $alt_index ( @$alt ) {
+                  $self->{insert_index_alt_sth}->execute(
+                     $args{query_id}, $db, $tbl, $index, $alt_index);
+               }
             }
          }
 
