@@ -19,10 +19,13 @@
 # ###########################################################################
 
 # Package: IndexUsage
-# IndexUsage keeps track of how many times queries use indexes, and
-# show which are unused.  You use it by telling it about all the tables and
-# indexes that exist, and then you give it index usage stats (from
-# ExplainAnalyzer).  Afterwards, you ask it to show you unused indexes.
+# IndexUsage tracks index and tables usage of queries.  It can then show which
+# indexes are not used.  You use it by telling it about all the tables and
+# indexes that exist, and then you give it index usage stats from
+# <ExplainAnalyzer>.  Afterwards, you ask it to show you unused indexes.
+#
+# If the object is created with a dbh, db and QueryRewriter object, then
+# results (the indexes, tables, queries and index usages) are saved in tables.
 package IndexUsage;
 
 use strict;
@@ -30,6 +33,13 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Returns:
+#   IndexUsage object
 sub new {
    my ( $class, %args ) = @_;
  
@@ -38,7 +48,7 @@ sub new {
       tables_for  => {}, # Keyed off db
       indexes_for => {}, # Keyed off db->tbl
    };
-   
+
    my $dbh = $args{dbh};
    my $db  = $args{db};
    if ( $dbh && $db ) {
@@ -46,29 +56,35 @@ sub new {
       $self->{save_results} = 1;
 
       $self->{insert_index_sth} = $dbh->prepare(
-         "INSERT INTO $db.`indexes` (db, tbl, idx) VALUES (?, ?, ?) "
+         "INSERT INTO `$db`.`indexes` (db, tbl, idx) VALUES (?, ?, ?) "
          . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
       $self->{insert_query_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO $db.`queries` (checksum, fingerprint, sample) "
+         "INSERT IGNORE INTO `$db`.`queries` (checksum, fingerprint, sample) "
          . " VALUES (CONV(?, 16, 10), ?, ?)");
       $self->{insert_tbl_sth} = $dbh->prepare(
-         "INSERT INTO $db.`tables` (db, tbl) "
+         "INSERT INTO `$db`.`tables` (db, tbl) "
          . "VALUES (?, ?) "
          . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
       $self->{insert_index_usage_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO $db.`index_usage` (checksum, db, tbl, idx) "
+         "INSERT IGNORE INTO `$db`.`index_usage` (checksum, db, tbl, idx) "
          . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
    }
 
    return bless $self, $class;
 }
 
-# Tell the object that an index exists.  Internally, it just creates usage
-# counters for the index and the table it belongs to.  The arguments are as
-# follows:
-#   - The name of the database
-#   - The name of the table
-#   - A hashref to an indexes struct returned by TableParser::get_keys()
+# Sub: add_indexes
+#   Tell the object that an index exists.  Internally, it just creates usage
+#   counters for the index and the table it belongs to.  If saving results,
+#   the index is inserted into the indexes table, too.
+#
+# Parameteres:
+#   %args - Arguments
+#
+# Required Arguments:
+#   db      - Database name
+#   tbl     - Table name
+#   indexes - Hashref to an indexes struct returned by <TableParser::get_keys()>
 sub add_indexes {
    my ( $self, %args ) = @_;
    my @required_args = qw(db tbl indexes);
@@ -78,8 +94,10 @@ sub add_indexes {
    my ($db, $tbl, $indexes) = @args{@required_args};
 
    $self->{tables_for}->{$db}->{$tbl}  = 0;
-   $self->{insert_tbl_sth}->execute($db, $tbl) if $self->{save_results};
-   
+   if ( $self->{save_results} ) {
+      $self->{insert_tbl_sth}->execute($db, $tbl);
+   }
+
    # Add to the indexes struct a cnt key for each index which is
    # incremented in add_index_usage().
    $self->{indexes_for}->{$db}->{$tbl} = $indexes;
@@ -94,8 +112,16 @@ sub add_indexes {
    return;
 }
 
-# This method just counts the fact that a table was used (regardless of whether
-# any indexes in it are used).  The arguments are just database and table name.
+# Sub: add_table_usage
+#   Increase usage count for table (even if no indexes in it are used). 
+#   If saving results, the tables table is updated, too.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   db      - Database name
+#   tbl     - Table name
 sub add_table_usage {
    my ( $self, $db, $tbl ) = @_;
    die "I need a db and table" unless defined $db && defined $tbl;
@@ -106,6 +132,17 @@ sub add_table_usage {
    return;
 }
 
+# Sub: add_query
+#   Add a query to the save results query table.  The query is fingerprinted
+#   and checksummed, so the object needs to have been created with a
+#   QueryRewriter object.  The returned checksum can be passed to
+#   <add_index_usage()> to updated the save results index usage table.
+#
+# Parameters:
+#   $query - Query to add
+#
+# Returns:
+#   Checksum for query for <add_index_usage()>.
 sub add_query {
    my ( $self, $query ) = @_;
    return unless $self->{save_results};
@@ -121,21 +158,35 @@ sub add_query {
    return $checksum;
 }
 
-# This method accepts information about how a query used an index, and saves it
-# for later retrieval.  The arguments are as follows:
-#  usage       The usage information, in the same format as the output from
-#              ExplainAnalyzer::get_index_usage()
+# Sub: add_index_usage
+#   Save information about how a query used an index.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   usage - Uusage information, in the same format as the output from
+#           <ExplainAnalyzer::get_index_usage()>
+#
+# Optional Arguments:
+#   checksum - Query checksum from <add_query()>, if saving results
 sub add_index_usage {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(usage) ) {
+   my @required_args = qw(usage);
+   foreach my $arg ( @required_args  ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($id, $chk, $pos_in_log, $usage) = @args{qw(id chk pos_in_log usage)};
+   my ($usage) = @args{@required_args};
+
+   ACCESS:
    foreach my $access ( @$usage ) {
       my ($db, $tbl, $idx, $alt) = @{$access}{qw(db tbl idx alt)};
+
       # Increment the index(es)'s usage counter.
+      INDEX:
       foreach my $index ( @$idx ) {
          $self->{indexes_for}->{$db}->{$tbl}->{$index}->{cnt}++;
+
          if ( $self->{save_results} ) {
             $self->{insert_index_sth}->execute($db, $tbl, $index);
             if ( $args{checksum} ) {
@@ -143,16 +194,26 @@ sub add_index_usage {
                   $args{checksum}, $db, $tbl, $index);
             }
          }
-      }
-   }
+
+      }  # INDEX
+   } # ACCESS
+
+   return;
 }
 
-# For every table in every database, determine whether each index was used or
-# not.  But only if the table was used.  Don't say "this index should be
-# dropped" if the table was never queried.  For each table, collect the unused
-# indexes and execute the callback subroutine with a hashref that looks like
-# this:
-# { db => db, tbl => tbl, idx => [<list of unused indexes on this table>] }
+# Sub: find_unused_indexes
+#   Find unused indexes and pass them to the callback.
+#   For every table in every database, determine whether each index was used or
+#   not.  But only if the table was used.  Don't say "this index should be
+#   dropped" if the table was never queried.  For each table, collect the unused
+#   indexes and execute the callback subroutine with a hashref that looks like
+#   this:
+#   (start code)
+#   { db => db, tbl => tbl, idx => [<list of unused indexes on this table>] }
+#   (end code)
+#
+# Parameters:
+#   $callback - Coderef called with unused indexes
 sub find_unused_indexes {
    my ( $self, $callback ) = @_;
    die "I need a callback" unless $callback;
