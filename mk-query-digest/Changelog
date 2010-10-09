@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2010-10-09: version 0.9.22
+
    * Added extended slowlog attribs to query review history table (issue 1149).
 
 2010-09-11: version 0.9.21
