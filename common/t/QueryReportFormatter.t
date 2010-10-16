@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 use Transformers;
 use QueryReportFormatter;
@@ -915,7 +915,7 @@ $o->get_opts();
 # be shared, we can only test one subreport at a time, else the
 # prepared statements subreport will reuse/reprint stuff from the
 # profile subreport.
-my $report = new ReportFormatter(line_width=>74, long_last_column=>1);
+my $report = new ReportFormatter(line_width=>74);
 
 ok(
    no_diff(
@@ -933,7 +933,7 @@ ok(
    "print_reports(header, query_report, profile)"
 );
 
-$report = new ReportFormatter(line_width=>74, long_last_column=>1);
+$report = new ReportFormatter(line_width=>74);
 
 ok(
    no_diff(
@@ -985,9 +985,8 @@ foreach my $event ( @$events ) {
 }
 $ea->calculate_statistical_metrics();
 $report = new ReportFormatter(
-   line_width       => 74,
-   long_last_column => 1, 
-   extend_right     => 1
+   line_width   => 74,
+   extend_right => 1,
 );
 ok(
    no_diff(
@@ -1029,9 +1028,8 @@ foreach my $event ( @$events ) {
 }
 $ea->calculate_statistical_metrics();
 $report = new ReportFormatter(
-   line_width       => 74,
-   long_last_column => 1, 
-   extend_right     => 1
+   line_width   => 74,
+   extend_right => 1,
 );
 ok(
    no_diff(
@@ -1141,7 +1139,7 @@ foreach my $event ( @$events ) {
 $ea->calculate_statistical_metrics();
 @ARGV = qw();
 $o->get_opts();
-$report = new ReportFormatter(line_width=>74, long_last_column=>1);
+$report = new ReportFormatter(line_width=>74);
 $qrf    = new QueryReportFormatter(
    OptionParser  => $o,
    QueryRewriter => $qr,
@@ -1168,6 +1166,71 @@ like(
 ^#\sFiles:\sfoo,\sbar$
    /mx,
    "grouped reports"
+);
+
+# #############################################################################
+# Issue 1124: Make mk-query-digest profile include variance-to-mean ratio
+# #############################################################################
+
+$events = [
+   {
+      Query_time    => "1.000000",
+      arg           => "select c from t where id=1",
+      fingerprint   => "select c from t where id=?",
+      cmd           => 'Query',
+      pos_in_log    => 0,
+   },
+   {
+      Query_time    => "5.500000",
+      arg           => "select c from t where id=2",
+      fingerprint   => "select c from t where id=?",
+      cmd           => 'Query',
+      pos_in_log    => 0,
+   },
+   {
+      Query_time    => "2.000000",
+      arg           => "select c from t where id=3",
+      fingerprint   => "select c from t where id=?",
+      cmd           => 'Query',
+      pos_in_log    => 0,
+   },
+   {
+      Query_time    => "9.000000",
+      arg           => "select c from t where id=4",
+      fingerprint   => "select c from t where id=?",
+      cmd           => 'Query',
+      pos_in_log    => 0,
+   },
+];
+$ea = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+$report = new ReportFormatter(
+   line_width   => 74,
+   extend_right => 1,
+);
+ok(
+   no_diff(
+      sub {
+         $qrf->print_reports(
+            reports => ['profile'],
+            ea      => $ea,
+            worst   => [
+               ['select c from t where id=?', 'top',1],
+            ],
+            orderby => 'Query_time',
+            groupby => 'fingerprint',
+            ReportFormatter => $report,
+         );
+      },
+      "common/t/samples/QueryReportFormatter/reports005.txt",
+   ),
+   "Variance-to-mean ration (issue 1124)"
 );
 
 # #############################################################################

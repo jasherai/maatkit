@@ -32,6 +32,6 @@
 select col from tbl where id=42\G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   Item
-# ==== ================== ================= ===== ======== ==========
-#    1 0x5796997451B1FA1D     1.0007 100.0%     1   1.0007 SELECT tbl
+# Rank Query ID           Response time     Calls R/Call   V/M  Item
+# ==== ================== ================= ===== ======== ==== ==========
+#    1 0x5796997451B1FA1D     1.0007 100.0%     1   1.0007  0.0 SELECT tbl
