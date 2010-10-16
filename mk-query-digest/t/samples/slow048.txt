@@ -26,6 +26,6 @@
 SELECT * FROM `products` ORDER BY name, shape asc\G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   Item
-# ==== ================== ================= ===== ======== ===============
-#    1 0x208AC308FD716D83     0.0001 100.0%     4   0.0000 SELECT products
+# Rank Query ID           Response time     Calls R/Call   V/M  Item
+# ==== ================== ================= ===== ======== ==== ==========
+#    1 0x208AC308FD716D83     0.0001 100.0%     4   0.0000  0.0 SELECT products

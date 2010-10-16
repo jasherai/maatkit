@@ -11,4 +11,4 @@
 > #    SHOW TABLE STATUS LIKE 'a'\G
 > #    SHOW CREATE TABLE `a`\G
 92d90
-< # MISC 0xMISC                 0.0361  1.3%    13   0.0028 <8 ITEMS>
+< # MISC 0xMISC                 0.0361  1.3%    13   0.0028  0.0 <8 ITEMS>

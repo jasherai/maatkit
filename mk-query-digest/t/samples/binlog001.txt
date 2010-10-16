@@ -204,11 +204,11 @@ insert into test1.tbl6
          metric12 = metric12 + values(metric12), secs = secs + values(secs)\G
 
 # Profile
-# Rank Query ID           Response time    Calls R/Call     Item
-# ==== ================== ================ ===== ========== ==============
-#    1 0xCD948EAF18BC614E 20704.0000 16.7%     1 20704.0000 REPLACE SELECT test?.tbl? test?.tblo test?.tbl?
-#    2 0xC356FD9EFD7D799E 20675.0000 16.7%     1 20675.0000 UPDATE test?.tblo test?.tbl?
-#    3 0xB5E55291C7DE1096 20664.0000 16.7%     1 20664.0000 UPDATE test?.tblo test?.tbl?
-#    4 0x85FFF5AA78E5FF6A 20664.0000 16.7%     1 20664.0000 BEGIN
-#    5 0xED69B13F3D0161D0 20661.0000 16.7%     1 20661.0000 UPDATE test?.tbl?
-#    6 0x79BFEA84D0CED05F 20661.0000 16.7%     1 20661.0000 INSERT UPDATE test?.tbl?
+# Rank Query ID           Response time    Calls R/Call     V/M  Item
+# ==== ================== ================ ===== ========== ==== =========
+#    1 0xCD948EAF18BC614E 20704.0000 16.7%     1 20704.0000  0.0 REPLACE SELECT test?.tbl? test?.tblo test?.tbl?
+#    2 0xC356FD9EFD7D799E 20675.0000 16.7%     1 20675.0000  0.0 UPDATE test?.tblo test?.tbl?
+#    3 0xB5E55291C7DE1096 20664.0000 16.7%     1 20664.0000  0.0 UPDATE test?.tblo test?.tbl?
+#    4 0x85FFF5AA78E5FF6A 20664.0000 16.7%     1 20664.0000  0.0 BEGIN
+#    5 0xED69B13F3D0161D0 20661.0000 16.7%     1 20661.0000  0.0 UPDATE test?.tbl?
+#    6 0x79BFEA84D0CED05F 20661.0000 16.7%     1 20661.0000  0.0 INSERT UPDATE test?.tbl?

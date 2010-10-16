@@ -115,10 +115,10 @@ SELECT foo
 administrator command: Init DB\G
 
 # Profile
-# Rank Query ID           Response time    Calls R/Call   Item
-# ==== ================== ================ ===== ======== =============
-#    1 0x5D51E5F01B88B79E     0.0000  0.0%     2   0.0000 ADMIN CONNECT
-#    2 0xAA353644DE4C4CB4     0.0000  0.0%     2   0.0000 ADMIN QUIT
-#    3 0x4D096479916B0F45     0.0000  0.0%     1   0.0000 SELECT tbl
-#    4 0x44AAC79F41BCF692     0.0000  0.0%     1   0.0000 SELECT tbl
-#    5 0x44AE35A182869033     0.0000  0.0%     1   0.0000 ADMIN INIT DB
+# Rank Query ID           Response time    Calls R/Call   V/M  Item
+# ==== ================== ================ ===== ======== ==== ===========
+#    1 0x5D51E5F01B88B79E     0.0000  0.0%     2   0.0000  0.0 ADMIN CONNECT
+#    2 0xAA353644DE4C4CB4     0.0000  0.0%     2   0.0000  0.0 ADMIN QUIT
+#    3 0x4D096479916B0F45     0.0000  0.0%     1   0.0000  0.0 SELECT tbl
+#    4 0x44AAC79F41BCF692     0.0000  0.0%     1   0.0000  0.0 SELECT tbl
+#    5 0x44AE35A182869033     0.0000  0.0%     1   0.0000  0.0 ADMIN INIT DB

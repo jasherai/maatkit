@@ -5845,7 +5845,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6903
+# QueryReportFormatter package 6965
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -6366,6 +6366,7 @@ sub profile {
       my $stats      = $ea->results->{classes}->{$item};
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
+      my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
       my %profile    = (
          rank   => $rank,
          r      => $stats->{Query_time}->{sum},
@@ -6373,7 +6374,8 @@ sub profile {
          sample => $groupby eq 'fingerprint' ?
                     $qr->distill($samp_query, %{$args{distill_args}}) : $item,
          id     => $groupby eq 'fingerprint' ? make_checksum($item)   : '',
-      );
+         vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
+      ); 
       push @profiles, \%profile;
    }
 
@@ -6389,6 +6391,7 @@ sub profile {
       { name => 'Response time', right_justify => 1, },
       { name => 'Calls',         right_justify => 1, },
       { name => 'R/Call',        right_justify => 1, },
+      { name => 'V/M',           right_justify => 1, },
       { name => 'Item',                              },
    );
 
@@ -6396,12 +6399,14 @@ sub profile {
       my $rt  = sprintf('%10.4f', $item->{r});
       my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
       my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
+      my $vmr = sprintf('%4.1f', $item->{vmr});
       $report->add_line(
          $item->{rank},
          "0x$item->{id}",
          "$rt $rtp",
          $item->{cnt},
          $rc,
+         $vmr,
          $item->{sample},
       );
    }
@@ -6426,6 +6431,7 @@ sub profile {
          "$rt $rtp",
          $misc->{cnt},
          $rc,
+         '0.0',  # variance-to-mean ratio is not meaningful here
          "<".scalar @$other." ITEMS>",
       );
    }

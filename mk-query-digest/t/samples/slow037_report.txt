@@ -26,6 +26,6 @@
 LOCK foo bar
 
 # Profile
-# Rank Query ID Response time     Calls R/Call   Item
-# ==== ======== ================= ===== ======== ============
-#    1 0x           0.0010 100.0%     1   0.0010 LOCK foo bar
+# Rank Query ID Response time     Calls R/Call   V/M  Item
+# ==== ======== ================= ===== ======== ==== ============
+#    1 0x           0.0010 100.0%     1   0.0010  0.0 LOCK foo bar
