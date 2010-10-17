@@ -185,6 +185,14 @@ sub get_rules {
       },
    },
    {
+      id   => 'CLA.006',      # GROUP BY or ORDER BY different tables
+      code => sub {
+         my ( %args ) = @_;
+         my $event   = $args{event};
+         return;
+      },
+   },
+   {
       id   => 'COL.001',      # SELECT *
       code => sub {
          my ( %args ) = @_;

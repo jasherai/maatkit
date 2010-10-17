@@ -5936,6 +5936,12 @@ severity: warn
 
 ORDER BY constant column.
 
+=item CLA.006
+
+severity: warn
+
+GROUP BY or ORDER BY different tables will force a temp table and filesort.
+
 =item COL.001
 
 severity: note
