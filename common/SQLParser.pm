@@ -849,6 +849,17 @@ sub parse_having {
    return $having;
 }
 
+# GROUP BY {col_name | expr | position} [ASC | DESC], ... [WITH ROLLUP]
+sub parse_group_by {
+   my ( $self, $group_by ) = @_;
+   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
+   my $struct = {
+      columns => $self->parse_csv($group_by),
+   };
+   $struct->{with_rollup} = 1 if $with_rollup;
+   return $struct;
+}
+
 # [ORDER BY {col_name | expr | position} [ASC | DESC], ...]
 sub parse_order_by {
    my ( $self, $order_by ) = @_;
@@ -913,17 +924,6 @@ sub parse_columns {
       \%ref;
    } @{ $self->parse_csv($cols) };
    return \@cols;
-}
-
-# GROUP BY {col_name | expr | position} [ASC | DESC], ... [WITH ROLLUP]
-sub parse_group_by {
-   my ( $self, $group_by ) = @_;
-   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
-   my $struct = {
-      columns => $self->parse_csv($group_by),
-   };
-   $struct->{with_rollup} = 1 if $with_rollup;
-   return $struct;
 }
 
 # Remove subqueries from query, return modified query and list of subqueries.
