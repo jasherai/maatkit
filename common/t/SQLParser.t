@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 106;
+use Test::More tests => 107;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -406,36 +406,57 @@ is(
 );
 
 # ###########################################################################
+# GROUP BY
+# ###########################################################################
+is_deeply(
+   $sp->parse_group_by('col, tbl.bar, 4, col2 ASC, MIN(bar)'),
+   [
+      { column => 'col', },
+      { table => 'tbl', column => 'bar', },
+      { position => '4', },
+      { column => 'col2', sort => 'ASC', },
+      { function => 'MIN', expression => 'bar' },
+   ],
+   "GROUP BY col, tbl.bar, 4, col2 ASC, MIN(bar)"
+);
+
+# ###########################################################################
 # ORDER BY
 # ###########################################################################
 is_deeply(
    $sp->parse_order_by('foo'),
-   [qw(foo)],
+   [{column=>'foo'}],
    'ORDER BY foo'
 );
 is_deeply(
    $sp->parse_order_by('foo'),
-   [qw(foo)],
+   [{column=>'foo'}],
    'order by foo'
 );
 is_deeply(
    $sp->parse_order_by('foo, bar'),
-   [qw(foo bar)],
+   [
+      {column => 'foo'},
+      {column => 'bar'},
+   ],
    'order by foo, bar'
 );
 is_deeply(
    $sp->parse_order_by('foo asc, bar'),
-   ['foo asc', 'bar'],
+   [
+      {column => 'foo', sort => 'ASC'},
+      {column => 'bar'},
+   ],
    'order by foo asc, bar'
 );
 is_deeply(
    $sp->parse_order_by('1'),
-   [qw(1)],
+   [{position => '1'}],
    'ORDER BY 1'
 );
 is_deeply(
    $sp->parse_order_by('RAND()'),
-   ['RAND()'],
+   [{function => 'RAND'}],
    'ORDER BY RAND()'
 );
 
@@ -837,11 +858,11 @@ test_from(
 );
 
 # #############################################################################
-# parse_identifier()
+# parse_table_reference()
 # #############################################################################
-sub test_parse_identifier {
+sub test_parse_table_reference {
    my ( $tbl, $struct ) = @_;
-   my %s = $sp->parse_identifier($tbl);
+   my %s = $sp->parse_table_reference($tbl);
    is_deeply(
       \%s,
       $struct,
@@ -850,64 +871,64 @@ sub test_parse_identifier {
    return;
 }
 
-test_parse_identifier('tbl',
+test_parse_table_reference('tbl',
    { name => 'tbl', }
 );
 
-test_parse_identifier('tbl a',
+test_parse_table_reference('tbl a',
    { name => 'tbl', alias => 'a', }
 );
 
-test_parse_identifier('tbl as a',
+test_parse_table_reference('tbl as a',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_identifier('tbl AS a',
+test_parse_table_reference('tbl AS a',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_identifier('db.tbl',
+test_parse_table_reference('db.tbl',
    { name => 'tbl', db => 'db', }
 );
 
-test_parse_identifier('db.tbl a',
+test_parse_table_reference('db.tbl a',
    { name => 'tbl', db => 'db', alias => 'a', }
 );
 
-test_parse_identifier('db.tbl AS a',
+test_parse_table_reference('db.tbl AS a',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 
 
-test_parse_identifier('`tbl`',
+test_parse_table_reference('`tbl`',
    { name => 'tbl', }
 );
 
-test_parse_identifier('`tbl` `a`',
+test_parse_table_reference('`tbl` `a`',
    { name => 'tbl', alias => 'a', }
 );
 
-test_parse_identifier('`tbl` as `a`',
+test_parse_table_reference('`tbl` as `a`',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_identifier('`tbl` AS `a`',
+test_parse_table_reference('`tbl` AS `a`',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_identifier('`db`.`tbl`',
+test_parse_table_reference('`db`.`tbl`',
    { name => 'tbl', db => 'db', }
 );
 
-test_parse_identifier('`db`.`tbl` `a`',
+test_parse_table_reference('`db`.`tbl` `a`',
    { name => 'tbl', db => 'db', alias => 'a', }
 );
 
-test_parse_identifier('`db`.`tbl` AS `a`',
+test_parse_table_reference('`db`.`tbl` AS `a`',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_identifier('db.* foo',
+test_parse_table_reference('db.* foo',
    { name => '*', db => 'db', alias => 'foo' }
 );
 
@@ -1134,7 +1155,7 @@ my @cases = (
             order_by => 'foo',
          },
          from     => [ { name => 'tbl', } ],
-         order_by => [qw(foo)],
+         order_by => [{column=>'foo'}],
          unknown  => undef,
       },
    },
@@ -1180,7 +1201,7 @@ my @cases = (
                value     => '1',
             },
          ],
-         order_by => [qw(id)],
+         order_by => [{column=>'id'}],
          unknown  => undef,
       },
    },
@@ -1203,7 +1224,7 @@ my @cases = (
                value     => '1',
             },
          ],
-         order_by=> ['id ASC'],
+         order_by=> [{column=>'id', sort=>'ASC'}],
          limit   => {
             row_count       => 1,
             offset          => 3,
@@ -1486,8 +1507,11 @@ my @cases = (
                value     => '"bob"',
             },
          ],
-         group_by => { columns => [qw(a b)], },
-         order_by => ['t2.name ASC'],
+         group_by => [
+            { column => 'a' },
+            { column => 'b' },
+         ],
+         order_by => [{table=>'t2', column=>'name', sort=>'ASC'}],
          limit    => {
             row_count => 10,
             offset    => 100,
@@ -1719,7 +1743,7 @@ my @cases = (
             },
          ],
          limit      => { row_count => 10 },
-         group_by   => { columns => ['1'], },
+         group_by   => [ { position => '1' } ],
          unknown    => undef,
          subqueries => [
             {
@@ -1908,7 +1932,7 @@ my @cases = (
                value     => 'null',
             },
          ],
-         order_by => ['id'],
+         order_by => [{column=>'id'}],
          limit    => { row_count => 10 },
          unknown => undef,
       },
@@ -1922,6 +1946,7 @@ foreach my $test ( @cases ) {
       $test->{struct},
       $test->{name},
    ) or print Dumper($struct);
+   die if $test->{stop};
 }
 
 # #############################################################################

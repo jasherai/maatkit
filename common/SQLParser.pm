@@ -466,7 +466,7 @@ sub parse_from {
 
       if ( !$state && $thing !~ m/$join_delim/i ) {
          MKDEBUG && _d('Table factor');
-         $tbl = { $self->parse_identifier($thing) };
+         $tbl = { $self->parse_table_reference($thing) };
 
          # Non-ANSI implicit INNER join to previous table, e.g. "tbl1, tbl2".
          # Manual says: "INNER JOIN and , (comma) are semantically equivalent
@@ -497,7 +497,7 @@ sub parse_from {
          }
          elsif ( $state eq 'join tbl' ) {
             # Table for this join (i.e. tbl to right of JOIN).
-            my %tbl_ref = $self->parse_identifier($thing);
+            my %tbl_ref = $self->parse_table_reference($thing);
             @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
             $state = 'join condition';
          }
@@ -584,10 +584,10 @@ sub parse_from {
 # tbl can be optionally "db." qualified.  Also handles FORCE|USE|IGNORE
 # INDEX hints.  Does not handle "FOR JOIN" hint because "JOIN" here gets
 # confused with the "JOIN" thing in parse_from().
-sub parse_identifier {
+sub parse_table_reference {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
-   MKDEBUG && _d('Identifier string:', $tbl_ref);
+   MKDEBUG && _d('Table reference:', $tbl_ref);
 
    # First, check for an index hint.  Remove and save it if present.
    my $index_hint;
@@ -613,7 +613,7 @@ sub parse_identifier {
    my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
    # tbl ref:  tbl AS foo
    # words:      0  1   2
-   MKDEBUG && _d('Identifier words:', @words);
+   MKDEBUG && _d('Table ref words:', @words);
 
    # Real table name with optional db. qualifier.
    my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
@@ -622,7 +622,7 @@ sub parse_identifier {
 
    # Alias.
    if ( $words[2] ) {
-      die "Bad identifier: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
+      die "Bad table ref: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
       $tbl{alias}          = $words[2];
       $tbl{explicit_alias} = 1;
    }
@@ -852,12 +852,18 @@ sub parse_having {
 # GROUP BY {col_name | expr | position} [ASC | DESC], ... [WITH ROLLUP]
 sub parse_group_by {
    my ( $self, $group_by ) = @_;
+   return unless $group_by;
+   MKDEBUG && _d('Parse GROUP BY', $group_by);
+
+   # Remove special "WITH ROLLUP" clause so we're left with a simple csv list.
    my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
-   my $struct = {
-      columns => $self->parse_csv($group_by),
-   };
-   $struct->{with_rollup} = 1 if $with_rollup;
-   return $struct;
+
+   # Parse the identifers.
+   my $idents = $self->parse_identifiers( $self->parse_csv($group_by) );
+
+   $idents->{with_rollup} = 1 if $with_rollup;
+
+   return $idents;
 }
 
 # [ORDER BY {col_name | expr | position} [ASC | DESC], ...]
@@ -865,10 +871,8 @@ sub parse_order_by {
    my ( $self, $order_by ) = @_;
    return unless $order_by;
    MKDEBUG && _d('Parse ORDER BY', $order_by);
-   # They don't have to be cols, they can be expressions or positions;
-   # we call them all cols for simplicity.
-   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $order_by);
-   return \@cols;
+   my $idents = $self->parse_identifiers( $self->parse_csv($order_by) );
+   return $idents;
 }
 
 # [LIMIT {[offset,] row_count | row_count OFFSET offset}]
@@ -920,7 +924,7 @@ sub parse_csv {
 sub parse_columns {
    my ( $self, $cols ) = @_;
    my @cols = map {
-      my %ref = $self->parse_identifier($_);
+      my %ref = $self->parse_table_reference($_);
       \%ref;
    } @{ $self->parse_csv($cols) };
    return \@cols;
@@ -1036,6 +1040,75 @@ sub remove_subqueries {
    }
 
    return $query, @subqueries;
+}
+
+# Sub: parse_identifiers
+#   Parse an arrayref of identifiers into their parts.  Identifiers can be
+#   column names (optionally qualified), expressions, or constants.
+#   GROUP BY and ORDER BY specify a list of identifiers.
+#
+# Parameters:
+#   $idents - Arrayref of indentifiers
+#
+# Returns:
+#   Arrayref of hashes with each identifier's parts, depending on what kind
+#   of identifier it is.
+sub parse_identifiers {
+   my ( $self, $idents ) = @_;
+   return unless $idents;
+   MKDEBUG && _d("Parse identifiers");
+
+   my @ident_parts;
+   foreach my $ident ( @$idents ) {
+      MKDEBUG && _d("Identifier:", $ident);
+      my $parts = {};
+
+      if ( $ident =~ s/\s+(ASC|DESC)\s*$//i ) {
+         $parts->{sort} = uc $1;  # XXX
+      }
+
+      if ( $ident =~ m/^\d+$/ ) {      # Position like 5
+         MKDEBUG && _d("Positional ident");
+         $parts->{position} = $ident;
+      }
+      elsif ( $ident =~ m/^\w+\(/ ) {  # Function like MIN(col)
+         MKDEBUG && _d("Expression ident");
+         my ($func, $expr) = $ident =~ m/^(\w+)\(([^\)]*)\)/;
+         $parts->{function}   = uc $func;
+         $parts->{expression} = $expr if $expr;
+      }
+      else {                           # Ref like (table.)column
+         MKDEBUG && _d("Table/column ident");
+         my ($tbl, $col)  = $self->split_unquote($ident);
+         $parts->{table}  = $tbl if $tbl;
+         $parts->{column} = $col;
+      }
+      push @ident_parts, $parts;
+   }
+
+   return \@ident_parts;
+}
+
+# Sub: split_unquote
+#   Split and unquote a table name.  The table name can be database-qualified
+#   or not, like `db`.`table`.  The table name can be backtick-quoted or not.
+#
+# Parameters:
+#   $db_tbl     - Table name
+#   $default_db - Default database name to return if $db_tbl is not
+#                 database-qualified
+#
+# Returns:
+#   Array: unquoted database (possibly undef), unquoted table
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
 }
 
 sub _d {
