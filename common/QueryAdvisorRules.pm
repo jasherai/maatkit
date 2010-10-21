@@ -133,8 +133,9 @@ sub get_rules {
          my $event   = $args{event};
          my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
-         foreach my $col ( @$orderby ) {
-            return 0 if $col =~ m/RAND\([^\)]*\)/i;
+         foreach my $ident ( @$orderby ) {
+            # SQLParser will have uppercased the function name.
+            return 0 if $ident->{function} && $ident->{function} eq 'RAND';
          }
          return;
       },
@@ -156,8 +157,8 @@ sub get_rules {
          my $event   = $args{event};
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
-         foreach my $col ( @{$groupby->{columns}} ) {
-            return 0 if $col =~ m/^\d+\b/;
+         foreach my $ident ( @$groupby ) {
+            return 0 if exists $ident->{position};
          }
          return;
       },
@@ -171,11 +172,9 @@ sub get_rules {
          return unless $orderby;
          my $where   = $event->{query_struct}->{where};
          return unless $where;
-         my %orderby_col = map {
-            my ($col) = lc $_;
-            $col =~ s/\s+(?:asc|desc)$//;
-            $col => 1;
-         } @$orderby;
+         my %orderby_col = map { lc $_->{column} => 1 }
+                           grep { $_->{column} }
+                           @$orderby;
          foreach my $pred ( @$where ) {
             my $val = $pred->{value};
             next unless $val;
@@ -188,7 +187,9 @@ sub get_rules {
       id   => 'CLA.006',      # GROUP BY or ORDER BY different tables
       code => sub {
          my ( %args ) = @_;
-         my $event   = $args{event};
+         my $event = $args{event};
+         my %tables;  # for both GROUP BY and ORDER BY
+
          return;
       },
    },
@@ -287,9 +288,9 @@ sub get_rules {
          return unless $groupby;
          # Only check GROUP BY column names, not numbers.  GROUP BY number
          # is handled in CLA.004.
-         my %groupby_col = map { $_ => 1 }
-                           grep { m/^[^\d]+\b/ }
-                           @{$groupby->{columns}};
+         my %groupby_col = map { $_->{column} => 1 }
+                           grep { $_->{column} }
+                           @$groupby;
          return unless scalar %groupby_col;
          my $cols = $event->{query_struct}->{columns};
          # All SELECT cols must be in GROUP BY cols clause.
