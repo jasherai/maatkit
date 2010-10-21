@@ -188,7 +188,25 @@ sub get_rules {
       code => sub {
          my ( %args ) = @_;
          my $event = $args{event};
-         my %tables;  # for both GROUP BY and ORDER BY
+         my $groupby = $event->{query_struct}->{group_by};
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $groupby || $orderby;
+
+         my %groupby_tbls = map { $_->{table} => 1 }
+                            grep { $_->{table} }
+                            @$groupby;
+         return 0 if scalar keys %groupby_tbls > 1;
+         
+         my %orderby_tbls = map { $_->{table} => 1 }
+                            grep { $_->{table} }
+                            @$orderby;
+         return 0 if scalar keys %orderby_tbls > 1;
+
+         # Remove ORDER BY tables from GROUP BY tables.  Any tables
+         # remain in GROUP BY are unique to GROUP BY, i.e. not in
+         # ORDER BY, so we have a case like: group by tbl1.id order by tbl2.id
+         map { delete $groupby_tbls{$_} } keys %orderby_tbls;
+         return 0 if scalar keys %groupby_tbls;
 
          return;
       },

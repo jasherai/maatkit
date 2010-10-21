@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 81;
+use Test::More tests => 84;
 
 use MaatkitTest;
 use PodParser;
@@ -427,16 +427,29 @@ my @cases = (
       advice => [qw(JOI.004)],
    },
    {  name   => "CLA.006 GROUP BY different tables",
-      query  => "select c from tbl1 join tbl2 using(a) where 1 group by tbl1.id, tbl2.id",
+      query  => "select id from tbl1 join tbl2 using(a) where 1 group by tbl1.id, tbl2.id",
       advice => [qw(CLA.006)],
    },
    {  name   => "CLA.006 ORDER BY different tables",
-      query  => "select c from tbl1 join tbl2 using(a) where 1 order by tbl1.id, tbl2.id",
+      query  => "select id from tbl1 join tbl2 using(a) where 1 order by tbl1.id, tbl2.id",
       advice => [qw(CLA.006)],
    },
    {  name   => "CLA.006 GROUP BY tbl_a ORDER BY tbl_b",
-      query  => "select c from tbl1 join tbl2 using(a) where 1 group by by tbl1.id order by tbl2.id",
+      query  => "select id from tbl1 join tbl2 using(a) where 1 group by tbl1.id order by tbl2.id",
       advice => [qw(CLA.006)],
+   },
+   {  name   => "CLA.006 GROUP BY tbl_a ORDER BY tbl_b (2)",
+      query  => "select id, foo from tbl1 join tbl2 using(a) where 1 group by tbl1.id order by tbl2.id, tbl1.foo",
+      advice => [qw(CLA.006 RES.001)],
+   },
+   {  name   => "CLA.006 GROUP BY tbl_a ORDER BY tbl_b (3)",
+      query  => "select id,foo from tbl1 join tbl2 using(a) where 1 group by tbl1.id, tbl2.foo order by tbl2.id",
+      advice => [qw(CLA.006)],
+   },
+   # CLA.006 cannot be detected without table qualifications for every column
+   {  name   => "CLA.006 without full table qualifications",
+      query  => "select id from tbl1 join tbl2 using(a) where 1 group by id order by tbl1.id",
+      advice => [],
    },
 );
 
