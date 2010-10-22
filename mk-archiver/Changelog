@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+   * Removed LIMIT 1 from DELETE only when index is unique (issue 1166).
+
 2010-09-11: version 1.0.24
 
    * The DSN documentation was ambiguous and redundant.

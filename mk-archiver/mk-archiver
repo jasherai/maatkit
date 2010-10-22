@@ -3808,18 +3808,28 @@ sub main {
       }
    }
 
+   MKDEBUG && _d("Index for DELETE:", $del_stmt->{index});
    if ( !$bulk_del ) {
-      # The LIMIT is *always* 1 here, because even though a SELECT can return
+      # The LIMIT might be 1 here, because even though a SELECT can return
       # many rows, an INSERT only does one at a time.  It would not be safe to
       # iterate over a SELECT that was LIMIT-ed to 500 rows, read and INSERT
       # one, and then delete with a LIMIT of 500.  Only one row would be written
-      # to the file; only one would be INSERT-ed at the destination.  Every
-      # DELETE must be LIMIT 1.
+      # to the file; only one would be INSERT-ed at the destination.  But
+      # LIMIT 1 is actually only needed when the index is not unique
+      # (http://code.google.com/p/maatkit/issues/detail?id=1166).
       $del_sql = 'DELETE'
          . ($o->get('low-priority-delete') ? ' LOW_PRIORITY' : '')
          . ($o->get('quick-delete')        ? ' QUICK'        : '')
-         . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
-         . " LIMIT 1";
+         . " FROM $src->{db_tbl} WHERE $del_stmt->{where}";
+
+         if ( $src->{info}->{keys}->{$del_stmt->{index}}->{is_unique} ) {
+            MKDEBUG && _d("DELETE index is unique; LIMIT 1 is not needed");
+         }
+         else {
+            MKDEBUG && _d("Adding LIMIT 1 to DELETE because DELETE index "
+               . "is not unique");
+            $del_sql .= " LIMIT 1";
+         }
    }
    else {
       # Unless, of course, it's a bulk DELETE, in which case the 500 rows have
