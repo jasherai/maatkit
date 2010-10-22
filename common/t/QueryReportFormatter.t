@@ -154,7 +154,7 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-$ea->calculate_statistical_metrics();
+$ea->calculate_statistical_metrics(apdex_t=>1);
 $result = $qrf->header(
    ea      => $ea,
    select  => [ qw(Query_time Lock_time Rows_sent Rows_examined ts) ],
@@ -165,6 +165,7 @@ is($result, $expected, 'Global (header) report');
 
 $expected = <<EOF;
 # Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
+# Scores: Apdex = 0.50 [1.0]*, V/M = 5.4
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -286,7 +287,7 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-$ea->calculate_statistical_metrics();
+$ea->calculate_statistical_metrics(apdex_t=>1);
 $expected = <<EOF;
 # Overall: 1 total, 1 unique, 0 QPS, 0x concurrency ______________________
 # Attribute          total     min     max     avg     95%  stddev  median
@@ -305,6 +306,7 @@ is($result, $expected, 'Global report with all zeroes');
 
 $expected = <<EOF;
 # Query 1: 0 QPS, 0x concurrency, ID 0x5D51E5F01B88B79E at byte 0 ________
+# Scores: Apdex = 1.00 [1.0]*, V/M = 0.0
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -579,6 +581,7 @@ $events = [
 
 $expected = <<EOF;
 # Query 1: 0 QPS, 0x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
+# Scores: Apdex = NS [0.0]*, V/M = 0.0
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -623,6 +626,7 @@ push @$events,
 
 $expected = <<EOF;
 # Query 1: 0.67 QPS, 1x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
+# Scores: Apdex = NS [0.0]*, V/M = 0.3
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -661,6 +665,7 @@ push @$events,
 
 $expected = <<EOF;
 # Query 1: 1 QPS, 2x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
+# Scores: Apdex = NS [0.0]*, V/M = 0.3
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -759,6 +764,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+# Scores: Apdex = NS [0.0]*, V/M = 0.0
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       2
@@ -806,6 +812,7 @@ $result = $qrf->event_report(
 
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+# Scores: Apdex = NS [0.0]*, V/M = 0.0
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       3
@@ -827,6 +834,7 @@ $result = $qrf->event_report(
 
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+# Scores: Apdex = NS [0.0]*, V/M = 0.0
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       3
@@ -852,6 +860,7 @@ $events = [
 ];
 $expected = <<EOF;
 # Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+# Scores: Apdex = NS [0.0]*, V/M = 0.0
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1

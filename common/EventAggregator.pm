@@ -568,6 +568,7 @@ sub calculate_statistical_metrics {
 
             # Apdex (http://code.google.com/p/maatkit/issues/detail?id=1054)
             if ( $args{apdex_t} && $attrib eq 'Query_time' ) {
+               $class_metrics->{$class}->{$attrib}->{apdex_t} = $args{apdex_t};
                $class_metrics->{$class}->{$attrib}->{apdex}
                   = $self->calculate_apdex(
                      t       => $args{apdex_t},
@@ -729,7 +730,9 @@ sub metrics {
       median => $metrics->{classes}->{$where}->{$attrib}->{median} || 0,
       pct_95 => $metrics->{classes}->{$where}->{$attrib}->{pct_95} || 0,
       stddev => $metrics->{classes}->{$where}->{$attrib}->{stddev} || 0,
-      apdex  => $metrics->{classes}->{$where}->{$attrib}->{apdex}
+
+      apdex_t => $metrics->{classes}->{$where}->{$attrib}->{apdex_t},
+      apdex   => $metrics->{classes}->{$where}->{$attrib}->{apdex},
    };
 }
 

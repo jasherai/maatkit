@@ -482,6 +482,20 @@ sub event_report {
    $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
+   # Second line: Apdex and variance-to-mean (V/M) ratio, like:
+   # Scores: Apdex = 0.93 [1.0], V/M = 1.5
+   {
+      my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
+      push @result,
+         sprintf("# Scores: Apdex = %s [%3.1f]%s, V/M = %.1f",
+            (defined $query_time->{apdex} ? "$query_time->{apdex}" : "NS"),
+            ($query_time->{apdex_t} || 0),
+            ($query_time->{cnt} < 100 ? "*" : ""),
+            ($query_time->{stddev}**2 / ($query_time->{avg} || 1)),
+         );
+   }
+
+   # Third line: reason why this class is being reported.
    if ( $args{reason} ) {
       push @result,
          "# This item is included in the report because it matches "
