@@ -430,7 +430,7 @@ foreach my $event (@$events) {
 is_deeply( $ea->results, $result, 'user aggregation' );
 
 is($ea->type_for('Query_time'), 'num', 'Query_time is numeric');
-$ea->calculate_statistical_metrics();
+$ea->calculate_statistical_metrics(apdex_t => 1);
 is_deeply(
    $ea->metrics(
       where  => 'bob',
@@ -445,6 +445,7 @@ is_deeply(
       median => '0.000682',
       stddev => 0,
       pct_95 => '0.000682',
+      apdex  => '1.00',
    },
    'Got simple hash of metrics from metrics()',
 );
@@ -463,6 +464,7 @@ is_deeply(
       median => 0,
       stddev => 0,
       pct_95 => 0,
+      apdex  => undef,
    },
    'It does not crash on metrics()',
 );
