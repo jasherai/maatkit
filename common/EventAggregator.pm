@@ -1106,6 +1106,20 @@ sub _deep_copy_attrib_vals {
    return $copy;
 }
 
+# Sub: calculate_apdex
+#   Calculate the Apdex score for the given T and response times.
+#   <http://www.apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf>
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   t       - Target threshold
+#   samples - Hashref with bucketized response time values,
+#             i.e. { bucket_number => n_responses, }
+#
+# Returns:
+#   Apdex score
 sub calculate_apdex {
    my ( $self, %args ) = @_;
    my @required_args = qw(t samples);
@@ -1118,19 +1132,16 @@ sub calculate_apdex {
       die "Invalid target threshold (T): $t.  T must be greater than zero";
    }
 
-   my $f          = 4 * $t;
+   my $f = 4 * $t;
+   MKDEBUG && _d("Apdex T =", $t, "F =", $f);
+
    my $satisfied  = 0;
    my $tolerating = 0;
+   my $frustrated = 0;  # just for debug output
    my $n_samples  = 0;
-
-   my @buckets = map { 0 } (0..NUM_BUCK-1);
-   map { $buckets[$_] = $samples->{$_}; $n_samples += $_; } keys %$samples;
-   MKDEBUG && _d("Apdex:", $n_samples, "samples, T = ", $t, "F = ", $f);
-
    BUCKET:
-   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
-      my $n_responses = $samples->[$bucket];
-      next BUCKET unless $n_responses;
+   for my $bucket ( keys %$samples ) {
+      my $n_responses   = $samples->{$bucket};
       my $response_time = $buck_vals[$bucket];
 
       # Response time increases from 0 to F.
@@ -1144,10 +1155,17 @@ sub calculate_apdex {
       elsif ( $response_time <= $f ) {
          $tolerating += $n_responses;
       }
+      else {
+         $frustrated += $n_responses;
+      }
+
+      $n_samples += $n_responses;
    }
 
-   my $apdex = ($satisfied + ($tolerating / 2)) / $n_samples;
-   MKDEBUG && _d("Apdex score:", $apdex);
+   my $apdex = sprintf('%.2f', ($satisfied + ($tolerating / 2)) / $n_samples);
+   MKDEBUG && _d($n_samples, "samples,", $satisfied, "satisfied,",
+      $tolerating, "tolerating,", $frustrated, "frustrated, Apdex score:",
+      $apdex);
 
    return $apdex;
 }

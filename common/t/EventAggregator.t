@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 75;
+use Test::More tests => 78;
 
 use QueryRewriter;
 use EventAggregator;
@@ -1809,6 +1809,59 @@ is_deeply(
    $ea3->results,
    $result,
    "Merge results"
+);
+
+# #############################################################################
+# Apdex
+# #############################################################################
+
+my $samples = {
+   280 => 10,  # 0.81623354758492  satisfy
+   281 => 10,  # 0.85704522496417  satisfy
+   282 => 10,  # 0.89989748621238  satisfy
+   283 => 50,  # 0.94489236052300  satisfy
+   284 => 50,  # 0.99213697854915  satisfy
+   285 => 10,  # 1.04174382747661  tolerate
+   290 => 10,  # 1.32955843985657  tolerate
+   313 => 1,   # 4.08377033290049  frustrated
+};
+my $apdex = $ea->calculate_apdex(
+   t => 1,
+   samples => $samples,
+);
+
+is(
+   $apdex,
+   '0.93',
+   "Apdex score"
+);
+
+$samples = {
+   0 => 150,
+};
+$apdex = $ea->calculate_apdex(
+   t => 1,
+   samples => $samples,
+);
+
+is(
+   $apdex,
+   '1.00',
+   "Apdex score 1.00"
+);
+
+$samples = {
+   400 => 150,
+};
+$apdex = $ea->calculate_apdex(
+   t => 1,
+   samples => $samples,
+);
+
+is(
+   $apdex,
+   '0.00',
+   "Apdex score 0.00"
 );
 
 # #############################################################################
