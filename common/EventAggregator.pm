@@ -543,7 +543,7 @@ sub bucket_value {
 # global and classes stores that have all values (1k buckets).
 # Save the metrics in global_metrics and class_metrics.
 sub calculate_statistical_metrics {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $classes        = $self->{result_classes};
    my $globals        = $self->{result_globals};
    my $class_metrics  = $self->{class_metrics};
@@ -565,6 +565,15 @@ sub calculate_statistical_metrics {
                   $classes->{$class}->{$attrib}->{all},
                   $classes->{$class}->{$attrib}
                );
+
+            # Apdex (http://code.google.com/p/maatkit/issues/detail?id=1054)
+            if ( $args{apdex_t} && $class eq 'Query_time' ) {
+               $class_metrics->{$class}->{$attrib}->{apdex}
+                  = $self->calculate_apdex(
+                     t       => $args{apdex_t},
+                     samples => $classes->{$class}->{$attrib}->{all},
+                  );
+            }
          }
       }
    }
@@ -1095,6 +1104,52 @@ sub _deep_copy_attrib_vals {
       $copy = $vals;
    }
    return $copy;
+}
+
+sub calculate_apdex {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(t samples);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($t, $samples) = @args{@required_args};
+
+   if ( $t <= 0 ) {
+      die "Invalid target threshold (T): $t.  T must be greater than zero";
+   }
+
+   my $f          = 4 * $t;
+   my $satisfied  = 0;
+   my $tolerating = 0;
+   my $n_samples  = 0;
+
+   my @buckets = map { 0 } (0..NUM_BUCK-1);
+   map { $buckets[$_] = $samples->{$_}; $n_samples += $_; } keys %$samples;
+   MKDEBUG && _d("Apdex:", $n_samples, "samples, T = ", $t, "F = ", $f);
+
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
+      my $n_responses = $samples->[$bucket];
+      next BUCKET unless $n_responses;
+      my $response_time = $buck_vals[$bucket];
+
+      # Response time increases from 0 to F.
+      # 0 --- T --- F
+      #    ^     ^-- tolerating zone
+      #    |
+      #    +-------- satisfied zone
+      if ( $response_time <= $t ) {
+         $satisfied += $n_responses;
+      }
+      elsif ( $response_time <= $f ) {
+         $tolerating += $n_responses;
+      }
+   }
+
+   my $apdex = ($satisfied + ($tolerating / 2)) / $n_samples;
+   MKDEBUG && _d("Apdex score:", $apdex);
+
+   return $apdex;
 }
 
 sub _d {
