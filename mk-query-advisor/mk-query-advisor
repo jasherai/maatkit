@@ -3170,7 +3170,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 6890
+# QueryAdvisorRules package 6972
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryAdvisorRules.pm
@@ -3285,8 +3285,8 @@ sub get_rules {
          my $event   = $args{event};
          my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
-         foreach my $col ( @$orderby ) {
-            return 0 if $col =~ m/RAND\([^\)]*\)/i;
+         foreach my $ident ( @$orderby ) {
+            return 0 if $ident->{function} && $ident->{function} eq 'RAND';
          }
          return;
       },
@@ -3308,8 +3308,8 @@ sub get_rules {
          my $event   = $args{event};
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
-         foreach my $col ( @{$groupby->{columns}} ) {
-            return 0 if $col =~ m/^\d+\b/;
+         foreach my $ident ( @$groupby ) {
+            return 0 if exists $ident->{position};
          }
          return;
       },
@@ -3323,16 +3323,39 @@ sub get_rules {
          return unless $orderby;
          my $where   = $event->{query_struct}->{where};
          return unless $where;
-         my %orderby_col = map {
-            my ($col) = lc $_;
-            $col =~ s/\s+(?:asc|desc)$//;
-            $col => 1;
-         } @$orderby;
+         my %orderby_col = map { lc $_->{column} => 1 }
+                           grep { $_->{column} }
+                           @$orderby;
          foreach my $pred ( @$where ) {
             my $val = $pred->{value};
             next unless $val;
             return 0 if $val =~ m/^\d+$/ && $orderby_col{lc $pred->{column}};
          }
+         return;
+      },
+   },
+   {
+      id   => 'CLA.006',      # GROUP BY or ORDER BY different tables
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $groupby = $event->{query_struct}->{group_by};
+         my $orderby = $event->{query_struct}->{order_by};
+         return unless $groupby || $orderby;
+
+         my %groupby_tbls = map { $_->{table} => 1 }
+                            grep { $_->{table} }
+                            @$groupby;
+         return 0 if scalar keys %groupby_tbls > 1;
+         
+         my %orderby_tbls = map { $_->{table} => 1 }
+                            grep { $_->{table} }
+                            @$orderby;
+         return 0 if scalar keys %orderby_tbls > 1;
+
+         map { delete $groupby_tbls{$_} } keys %orderby_tbls;
+         return 0 if scalar keys %groupby_tbls;
+
          return;
       },
    },
@@ -3427,9 +3450,9 @@ sub get_rules {
          return unless ($event->{query_struct}->{type} || '') eq 'select';
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
-         my %groupby_col = map { $_ => 1 }
-                           grep { m/^[^\d]+\b/ }
-                           @{$groupby->{columns}};
+         my %groupby_col = map { $_->{column} => 1 }
+                           grep { $_->{column} }
+                           @$groupby;
          return unless scalar %groupby_col;
          my $cols = $event->{query_struct}->{columns};
          foreach my $col ( @$cols ) {
@@ -3843,7 +3866,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 6849
+# SQLParser package 6969
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SQLParser.pm
@@ -4132,7 +4155,7 @@ sub parse_from {
 
       if ( !$state && $thing !~ m/$join_delim/i ) {
          MKDEBUG && _d('Table factor');
-         $tbl = { $self->parse_identifier($thing) };
+         $tbl = { $self->parse_table_reference($thing) };
 
          $join_back = 1 if ($last_thing || '') eq ',';
       }
@@ -4158,7 +4181,7 @@ sub parse_from {
             }
          }
          elsif ( $state eq 'join tbl' ) {
-            my %tbl_ref = $self->parse_identifier($thing);
+            my %tbl_ref = $self->parse_table_reference($thing);
             @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
             $state = 'join condition';
          }
@@ -4231,10 +4254,10 @@ sub parse_from {
    return \@tbls;
 }
 
-sub parse_identifier {
+sub parse_table_reference {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
-   MKDEBUG && _d('Identifier string:', $tbl_ref);
+   MKDEBUG && _d('Table reference:', $tbl_ref);
 
    my $index_hint;
    if ( $tbl_ref =~ s/
@@ -4257,14 +4280,14 @@ sub parse_identifier {
    /x;
 
    my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
-   MKDEBUG && _d('Identifier words:', @words);
+   MKDEBUG && _d('Table ref words:', @words);
 
    my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
    $tbl{db}   = $db if $db;
    $tbl{name} = $tbl;
 
    if ( $words[2] ) {
-      die "Bad identifier: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
+      die "Bad table ref: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
       $tbl{alias}          = $words[2];
       $tbl{explicit_alias} = 1;
    }
@@ -4403,12 +4426,26 @@ sub parse_having {
    return $having;
 }
 
+sub parse_group_by {
+   my ( $self, $group_by ) = @_;
+   return unless $group_by;
+   MKDEBUG && _d('Parse GROUP BY', $group_by);
+
+   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
+
+   my $idents = $self->parse_identifiers( $self->parse_csv($group_by) );
+
+   $idents->{with_rollup} = 1 if $with_rollup;
+
+   return $idents;
+}
+
 sub parse_order_by {
    my ( $self, $order_by ) = @_;
    return unless $order_by;
    MKDEBUG && _d('Parse ORDER BY', $order_by);
-   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $order_by);
-   return \@cols;
+   my $idents = $self->parse_identifiers( $self->parse_csv($order_by) );
+   return $idents;
 }
 
 sub parse_limit {
@@ -4452,20 +4489,10 @@ sub parse_csv {
 sub parse_columns {
    my ( $self, $cols ) = @_;
    my @cols = map {
-      my %ref = $self->parse_identifier($_);
+      my %ref = $self->parse_table_reference($_);
       \%ref;
    } @{ $self->parse_csv($cols) };
    return \@cols;
-}
-
-sub parse_group_by {
-   my ( $self, $group_by ) = @_;
-   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
-   my $struct = {
-      columns => $self->parse_csv($group_by),
-   };
-   $struct->{with_rollup} = 1 if $with_rollup;
-   return $struct;
 }
 
 sub remove_subqueries {
@@ -4546,6 +4573,53 @@ sub remove_subqueries {
    }
 
    return $query, @subqueries;
+}
+
+sub parse_identifiers {
+   my ( $self, $idents ) = @_;
+   return unless $idents;
+   MKDEBUG && _d("Parse identifiers");
+
+   my @ident_parts;
+   foreach my $ident ( @$idents ) {
+      MKDEBUG && _d("Identifier:", $ident);
+      my $parts = {};
+
+      if ( $ident =~ s/\s+(ASC|DESC)\s*$//i ) {
+         $parts->{sort} = uc $1;  # XXX
+      }
+
+      if ( $ident =~ m/^\d+$/ ) {      # Position like 5
+         MKDEBUG && _d("Positional ident");
+         $parts->{position} = $ident;
+      }
+      elsif ( $ident =~ m/^\w+\(/ ) {  # Function like MIN(col)
+         MKDEBUG && _d("Expression ident");
+         my ($func, $expr) = $ident =~ m/^(\w+)\(([^\)]*)\)/;
+         $parts->{function}   = uc $func;
+         $parts->{expression} = $expr if $expr;
+      }
+      else {                           # Ref like (table.)column
+         MKDEBUG && _d("Table/column ident");
+         my ($tbl, $col)  = $self->split_unquote($ident);
+         $parts->{table}  = $tbl if $tbl;
+         $parts->{column} = $col;
+      }
+      push @ident_parts, $parts;
+   }
+
+   return \@ident_parts;
+}
+
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
 }
 
 sub _d {
@@ -5501,12 +5575,12 @@ sub main {
       eval {
          $query_struct = $sp->parse($event->{arg});
          if ( !$query_struct ) {
-            MKDEBUG && _d('Failed to parse query struct');
+            MKDEBUG && _d('Failed to parse query struct, no error');
          }
          $event->{query_struct} = $query_struct;
       };
       if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Failed to parse query struct');
+         MKDEBUG && _d('Failed to parse query struct:', $EVAL_ERROR);
       } 
       return $event;
    };

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 use MaatkitTest;
 shift @INC;  # These two shifts are required for tools that use base and
@@ -138,6 +138,20 @@ ok(
       'mk-query-advisor/t/samples/joi-001-002-01.txt',
    ),
    'JOI.001 and JOI.002'
+);
+
+
+
+# #############################################################################
+# CLA.* rules
+# #############################################################################
+
+ok(
+   no_diff(sub { mk_query_advisor::main(@args,
+         'select id from tbl1 join tbl2 using (a) group by tbl1.id, tbl2.id') },
+      'mk-query-advisor/t/samples/cla-006-01.txt',
+   ),
+   'CLA.001 and CLA.006'
 );
 
 # #############################################################################
