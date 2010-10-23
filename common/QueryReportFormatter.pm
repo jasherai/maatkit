@@ -673,6 +673,7 @@ sub profile {
                     $qr->distill($samp_query, %{$args{distill_args}}) : $item,
          id     => $groupby eq 'fingerprint' ? make_checksum($item)   : '',
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
+         apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
       push @profiles, \%profile;
    }
@@ -689,6 +690,7 @@ sub profile {
       { name => 'Response time', right_justify => 1, },
       { name => 'Calls',         right_justify => 1, },
       { name => 'R/Call',        right_justify => 1, },
+      { name => 'Apd',           right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, },
       { name => 'Item',                              },
    );
@@ -704,6 +706,7 @@ sub profile {
          "$rt $rtp",
          $item->{cnt},
          $rc,
+         $item->{apdex},
          $vmr,
          $item->{sample},
       );
@@ -731,6 +734,7 @@ sub profile {
          "$rt $rtp",
          $misc->{cnt},
          $rc,
+         'NS',   # Apdex is not meaningful here
          '0.0',  # variance-to-mean ratio is not meaningful here
          "<".scalar @$other." ITEMS>",
       );

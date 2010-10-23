@@ -912,7 +912,7 @@ $ea = new EventAggregator(
 foreach my $event ( @$events ) {
    $ea->aggregate($event);
 }
-$ea->calculate_statistical_metrics();
+$ea->calculate_statistical_metrics(apdex_t=>1);
 
 # Reset opts in case anything above left something set.
 @ARGV = qw();
