@@ -1,5 +1,6 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x305E73C51188758F at byte 0 ________
+# Scores: Apdex = 0.00 [1.0]*, V/M = 0.0
 # This item is included in the report because it matches --limit.
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
@@ -27,6 +28,6 @@
 UPDATE mybbl_MBMessage SET groupId = (select groupId from Group_ where name = 'Guest')\G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   V/M  Item
-# ==== ================== ================= ===== ======== ==== ==========
-#    1 0x305E73C51188758F    10.0000 100.0%     1  10.0000  0.0 UPDATE SELECT mybbl_MBMessage Group_
+# Rank Query ID           Response time     Calls R/Call   Apd  V/M  Item
+# ==== ================== ================= ===== ======== ==== ==== =====
+#    1 0x305E73C51188758F    10.0000 100.0%     1  10.0000 0.00  0.0 UPDATE SELECT mybbl_MBMessage Group_
