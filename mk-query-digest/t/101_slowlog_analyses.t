@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 41;
+use Test::More tests => 42;
 
 use MaatkitTest;
 
@@ -411,6 +411,14 @@ ok(
       "mk-query-digest/t/samples/slow052.txt",
    ),
    'Analysis for slow052 (Apdex and V/M)',
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, qw(--apdex-t 0.1), '--report-format', 'query_report,profile',  $sample.'slow052.txt') },
+      "mk-query-digest/t/samples/slow052-apdex-t-0.1.txt",
+   ),
+   'Analysis for slow052 (Apdex T = 0.1)',
 );
 
 # #############################################################################
