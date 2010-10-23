@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 40;
+use Test::More tests => 41;
 
 use MaatkitTest;
 
@@ -399,6 +399,18 @@ ok(
       "mk-query-digest/t/samples/slow051.txt",
    ),
    'Analysis for slow051 (issue 918)',
+);
+
+# #############################################################################
+# Issue 1124: Make mk-query-digest profile include variance-to-mean ratio
+# Issue 1054: Add Apdex scores to mk-query-digest report
+# #############################################################################
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, '--report-format', 'query_report,profile',  $sample.'slow052.txt') },
+      "mk-query-digest/t/samples/slow052.txt",
+   ),
+   'Analysis for slow052 (Apdex and V/M)',
 );
 
 # #############################################################################

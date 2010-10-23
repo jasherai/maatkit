@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+   * Added variance-to-mean ratio (V/M) to output (issue 1124).
+   * Added --apdex-threshold option and Apdex score to output (issue 1054).
+
 2010-10-09: version 0.9.22
 
    * Added extended slowlog attribs to query review history table (issue 1149).

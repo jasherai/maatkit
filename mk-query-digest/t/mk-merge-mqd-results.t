@@ -32,16 +32,11 @@ diag(`rm -rf $resdir ; mkdir $resdir`);
 # differs in that it reports 1 unique query instead of 7.  And,
 # re issue 1043, the MISC items aren't present in the new report
 # because they weren't saved either.
-$diff = `diff $resdir/orig $resdir/mrgd`;
-is(
-   $diff,
-"2c2
-< # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
----
-> # Overall: 8 total, 1 unique, 0 QPS, 0x concurrency ______________________
-62d61
-< # MISC 0xMISC                 0.0360  4.7%     7   0.0051  0.0 <6 ITEMS>
-",
+ok(
+   no_diff(
+      "diff $resdir/orig $resdir/mrgd",
+      "mk-query-digest/t/samples/save-results/diff002.txt",
+   ),
    "slow002.txt default results"
 );
 
@@ -51,16 +46,11 @@ is(
 diag(`rm -rf $resdir/*`);
 `$mqd $sample/slow002.txt --limit 3            > $resdir/orig`;
 `$cmd $ressample/slow002-limit-3.txt --limit 3 > $resdir/mrgd`;
-$diff = `diff $resdir/orig $resdir/mrgd`;
-is(
-   $diff,
-"2c2
-< # Overall: 8 total, 7 unique, 0 QPS, 0x concurrency ______________________
----
-> # Overall: 8 total, 3 unique, 0 QPS, 0x concurrency ______________________
-143d142
-< # MISC 0xMISC                 0.0016  0.2%     4   0.0004  0.0 <4 ITEMS>
-",
+ok(
+   no_diff(
+      "diff $resdir/orig $resdir/mrgd",
+      "mk-query-digest/t/samples/save-results/diff003.txt",
+   ),
    "slow002.txt --limit 3 results"
 );
 
