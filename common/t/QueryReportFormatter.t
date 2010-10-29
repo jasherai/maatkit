@@ -197,20 +197,6 @@ ok(
 SKIP: {
    skip 'Wider labels not used, not tested', 1;
 $qrf = new QueryReportFormatter(label_width => 15);
-$expected = <<EOF;
-# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 ___________
-# This item is included in the report because it matches --limit.
-# Attribute          pct   total     min     max     avg     95%  stddev  median
-# =============== ====== ======= ======= ======= ======= ======= ======= =======
-# Count               66       2
-# Exec time           89      9s      1s      8s      5s      8s      5s      5s
-# Lock time           68   310us   109us   201us   155us   201us    65us   155us
-# Rows sent          100       2       1       1       1       1       0       1
-# Rows examined      100       3       1       2    1.50       2    0.71    1.50
-# Users                        2 bob (1), root (1)
-# Databases                    2 test1 (1), test3 (1)
-# Time range      2007-10-15 21:43:52 to 2007-10-15 21:43:53
-EOF
 
 $result = $qrf->event_report(
    $ea,
@@ -222,7 +208,14 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is($result, $expected, 'Event report with wider label');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report017.txt",
+      cmd_output => 1,
+   ),
+   'Event report with wider label'
+);
 
 $qrf = new QueryReportFormatter;
 };
@@ -271,13 +264,6 @@ foreach my $event (@$events) {
    $ea->aggregate($event);
 }
 $ea->calculate_statistical_metrics(apdex_t=>1);
-$expected = <<EOF;
-# Overall: 1 total, 1 unique, 0 QPS, 0x concurrency ______________________
-# Attribute          total     min     max     avg     95%  stddev  median
-# =========        ======= ======= ======= ======= ======= ======= =======
-# Exec time              0       0       0       0       0       0       0
-# Time range        2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
-EOF
 
 $result = $qrf->header(
    ea      => $ea,
@@ -285,7 +271,14 @@ $result = $qrf->header(
    orderby => 'Query_time',
 );
 
-is($result, $expected, 'Global report with all zeroes');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report018.txt",
+      cmd_output => 1,
+   ),
+   'Global report with all zeroes'
+);
 
 $result = $qrf->event_report(
    ea     => $ea,
@@ -305,18 +298,6 @@ ok(
    'Event report with all zeroes'
 );
 
-$expected = <<EOF;
-# Query_time distribution
-#   1us
-#  10us
-# 100us
-#   1ms
-#  10ms
-# 100ms
-#    1s
-#  10s+
-EOF
-
 # This used to cause illegal division by zero in some cases.
 $result = $qrf->chart_distro(
    ea     => $ea,
@@ -324,7 +305,14 @@ $result = $qrf->chart_distro(
    item   => 'administrator command: Connect',
 );
 
-is($result, $expected, 'Chart distro with all zeroes');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report019.txt",
+      cmd_output => 1,
+   ),
+   'Chart distro with all zeroes'
+);
 
 # #############################################################################
 # Test bool (Yes/No) pretty printing.
@@ -361,18 +349,6 @@ $events = [
       InnoDB_pages_distinct => 11,
    }
 ];
-$expected = <<EOF;
-# Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
-# Attribute          total     min     max     avg     95%  stddev  median
-# =========        ======= ======= ======= ======= ======= ======= =======
-# Exec time            10s      1s      8s      3s      8s      3s   992ms
-# Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
-# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
-# IDB IO rb              7       2       3    2.33    2.90    0.44    1.96
-# IDB pages             49      11      20   16.33   19.46    3.71   17.65
-# 100% (3)    Filesort
-#  66% (2)    QC_Hit
-EOF
 
 $ea  = new EventAggregator(
    groupby => 'fingerprint',
@@ -390,7 +366,14 @@ $result = $qrf->header(
    orderby => 'Query_time',
 );
 
-is($result, $expected, 'Bool (Yes/No) pretty printer');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report020.txt",
+      cmd_output => 1,
+   ),
+   'Bool (Yes/No) pretty printer'
+);
 
 # #############################################################################
 # Test attrib sorting.
@@ -441,15 +424,6 @@ $events = [
       Filesort      => 'No',
    }
 ];
-$expected = <<EOF;
-# Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
-# Attribute          total     min     max     avg     95%  stddev  median
-# =========        ======= ======= ======= ======= ======= ======= =======
-# Exec time            10s      1s      8s      3s      8s      3s   992ms
-# Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
-# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
-#  66% (2)    QC_Hit
-EOF
 
 $ea  = new EventAggregator(
    groupby => 'fingerprint',
@@ -468,7 +442,14 @@ $result = $qrf->header(
    zero_bool => 0,
 );
 
-is($result, $expected, 'No zero bool vals');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report021.txt",
+      cmd_output => 1,
+   ),
+   'No zero bool vals'
+);
 
 # #############################################################################
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at
@@ -673,12 +654,6 @@ $events = [
       user          => 'bob',
    }
 ];
-$expected = <<EOF;
-# Overall: 3 total, 1 unique, 0 QPS, 0x concurrency ______________________
-# Attribute          total     min     max     avg     95%  stddev  median
-# =========        ======= ======= ======= ======= ======= ======= =======
-# Exec time            10s      1s      8s      3s      8s      3s   992ms
-EOF
 
 $ea  = new EventAggregator(
    groupby => 'fingerprint',
@@ -696,7 +671,14 @@ $result = $qrf->header(
    orderby => 'Query_time',
 );
 
-is($result, $expected, 'No string attribs in global report (issue 478)');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report022.txt",
+      cmd_output => 1,
+   ),
+   'No string attribs in global report (issue 478)'
+);
 
 # #############################################################################
 # Issue 744: Option to show all Hosts
