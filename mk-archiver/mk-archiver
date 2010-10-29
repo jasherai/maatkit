@@ -3554,7 +3554,7 @@ sub main {
             unless $dst;
          $bulk_del = 1; # VERY IMPORTANT for safety.
       }
-      if ( $bulk_del && $limit < 2 ) {
+      if ( $bulk_del && $o->get('bulk-delete-limit') && $limit < 2 ) {
          $o->save_error("--bulk-delete is meaningless with --limit 1");
       }
 
@@ -3848,7 +3848,8 @@ sub main {
          . ') AND (' . $asc_stmt->{boundaries}->{'<='}
          # Unlike the row-at-a-time DELETE, this one must include the user's
          # specified WHERE clause and an appropriate LIMIT clause.
-         . ") AND (".$o->get('where').") LIMIT $limit";
+         . ") AND (".$o->get('where').")"
+         . ($o->get('bulk-delete-limit') ? " LIMIT $limit" : "");
       @bulkdel_slice = @{$asc_stmt->{slice}};
    }
 
@@ -4673,6 +4674,17 @@ B<WARNING>: if you have a plugin on the source that sometimes doesn't return
 true from C<is_archivable()>, you should use this option only if you understand
 what it does.  If the plugin instructs C<mk-archiver> not to archive a row,
 it will still be deleted by the bulk delete!
+
+=item --[no]bulk-delete-limit
+
+default: yes
+
+Force L<"--limit"> with L<"--bulk-delete">.
+
+This is an advanced option and you should not disable it unless you know what
+you are doing and why!  By default, L<"--bulk-delete"> requires a L<"--limit">
+greater than 1.  In certain cases, the limit can be removed by specifying
+C<--no-bulk-delete-limit>.
 
 =item --bulk-insert
 

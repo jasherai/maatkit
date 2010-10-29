@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -34,7 +34,7 @@ my $cmd = "$trunk/mk-archiver/mk-archiver";
 $sb->create_dbs($dbh, ['test']);
 
 # #############################################################################
-# Issue 524: mk-archiver --no-delete --dry-run prints out DELETE statement
+# Issue 1166: Don't LIMIT 1 for unique indexes 
 # #############################################################################
 $sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
 $sb->load_file('master', 'mk-archiver/t/samples/issue_1166.sql');
@@ -46,7 +46,7 @@ $output = output(
 like(
    $output,
    qr/DELETE FROM `test`\.`issue_131_src` WHERE \(`id` = \?\)$/m,
-   "No LIMIT 1 with unique index"
+   "No LIMIT 1 with unique index (issue 1166)"
 );
 
 # With non-unique index LIMIT 1 should appear.
@@ -58,7 +58,25 @@ $output = output(
 like(
    $output,
    qr/DELETE FROM `test`\.`issue_1166` WHERE \(`id` = \?\) LIMIT 1$/m,
-   "LIMIT 1 with non-unique index"
+   "LIMIT 1 with non-unique index (issue 1166)"
+);
+
+
+# #############################################################################
+# This issue is related:
+# Issue 1170: Allow bulk delete without LIMIT
+# #############################################################################
+$sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
+
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1 --dry-run --source),
+      "F=$cnf,D=test,t=issue_131_src", qw(--bulk-delete --purge),
+      qw(--no-bulk-delete-limit)) }
+);
+like(
+   $output,
+   qr/DELETE FROM `test`\.`issue_131_src` WHERE \(\(\(`id` >= \?\)\)\) AND \(\(\(`id` <= \?\)\)\) AND \(1=1\)$/m,
+   "No LIMIT with bulk delete (issue 1170)"
 );
 
 # #############################################################################
