@@ -139,16 +139,6 @@ $events = [
 
 # I hand-checked these values with my TI-83 calculator.
 # They are, without a doubt, correct.
-$expected = <<EOF;
-# Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency __________________
-# Attribute          total     min     max     avg     95%  stddev  median
-# =========        ======= ======= ======= ======= ======= ======= =======
-# Exec time            10s      1s      8s      3s      8s      3s   992ms
-# Lock time          455us   109us   201us   151us   194us    35us   144us
-# Rows sent              2       0       1    0.67    0.99    0.47    0.99
-# Rows exam              3       0       2       1    1.96    0.80    0.99
-# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
-EOF
 
 foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
@@ -161,23 +151,14 @@ $result = $qrf->header(
    orderby => 'Query_time',
 );
 
-is($result, $expected, 'Global (header) report');
-
-$expected = <<EOF;
-# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
-# Scores: Apdex = 0.50 [1.0]*, V/M = 5.4
-# This item is included in the report because it matches --limit.
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count         66       2
-# Exec time     89      9s      1s      8s      5s      8s      5s      5s
-# Lock time     68   310us   109us   201us   155us   201us    65us   155us
-# Rows sent    100       2       1       1       1       1       0       1
-# Rows exam    100       3       1       2    1.50       2    0.71    1.50
-# Users                  2 bob (1/50%), root (1/50%)
-# Databases              2 test1 (1/50%), test3 (1/50%)
-# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
-EOF
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report006.txt",
+      cmd_output => 1,
+   ),
+   'Global (header) report'
+);
 
 $result = $qrf->event_report(
    ea => $ea,
@@ -189,19 +170,14 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is($result, $expected, 'Event report');
-
-$expected = <<EOF;
-# Query_time distribution
-#   1us
-#  10us
-# 100us
-#   1ms
-#  10ms
-# 100ms
-#    1s  ################################################################
-#  10s+
-EOF
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report007.txt",
+      cmd_output => 1,
+   ),
+   'Event report'
+);
 
 $result = $qrf->chart_distro(
    ea     => $ea,
@@ -209,7 +185,14 @@ $result = $qrf->chart_distro(
    item   => 'select id from users where name=?',
 );
 
-is($result, $expected, 'Query_time distro');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report008.txt",
+      cmd_output => 1,
+   ),
+   'Query_time distro'
+);
 
 SKIP: {
    skip 'Wider labels not used, not tested', 1;
@@ -304,19 +287,6 @@ $result = $qrf->header(
 
 is($result, $expected, 'Global report with all zeroes');
 
-$expected = <<EOF;
-# Query 1: 0 QPS, 0x concurrency, ID 0x5D51E5F01B88B79E at byte 0 ________
-# Scores: Apdex = 1.00 [1.0]*, V/M = 0.0
-# This item is included in the report because it matches --limit.
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       1
-# Exec time      0       0       0       0       0       0       0       0
-# Users                  1 msandbox
-# Databases              1   mysql
-# Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
-EOF
-
 $result = $qrf->event_report(
    ea     => $ea,
    select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
@@ -326,7 +296,14 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is($result, $expected, 'Event report with all zeroes');
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report009.txt",
+      cmd_output => 1,
+   ),
+   'Event report with all zeroes'
+);
 
 $expected = <<EOF;
 # Query_time distribution
@@ -579,17 +556,6 @@ $events = [
    },
 ];
 
-$expected = <<EOF;
-# Query 1: 0 QPS, 0x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
-# Scores: Apdex = NS [0.0]*, V/M = 0.0
-# This item is included in the report because it matches --limit.
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       1
-# Exec time    100      1s      1s      1s      1s      1s       0      1s
-# foo                    1 Hi.  I'm a very long string.  I'm way over t...
-EOF
-
 $ea  = new EventAggregator(
    groupby => 'fingerprint',
    worst   => 'Query_time',
@@ -609,9 +575,12 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is(
-   $result,
-   $expected,
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report010.txt",
+      cmd_output => 1,
+   ),
    'Truncate one long string'
 );
 
@@ -624,17 +593,6 @@ push @$events,
       foo  => "Me too! I'm a very long string yay!  I'm also over the 78 column width that we try to keep lines limited to."
    };
 
-$expected = <<EOF;
-# Query 1: 0.67 QPS, 1x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
-# Scores: Apdex = NS [0.0]*, V/M = 0.3
-# This item is included in the report because it matches --limit.
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       2
-# Exec time    100      3s      1s      2s      2s      2s   707ms      2s
-# foo                    2 Hi.  I'm a... (1/50%), Me too! I'... (1/50%)
-EOF
-
 foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
@@ -649,9 +607,13 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is(
-   $result,
-   $expected, 'Truncate multiple long strings'
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report011.txt",
+      cmd_output => 1,
+   ),
+   'Truncate multiple long strings'
 );
 
 $ea->reset_aggregated_data();
@@ -663,17 +625,6 @@ push @$events,
       foo  => 'Number 3 long string, but I\'ll exceed the line length so I\'ll only show up as "more" :-('
    };
 
-$expected = <<EOF;
-# Query 1: 1 QPS, 2x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
-# Scores: Apdex = NS [0.0]*, V/M = 0.3
-# This item is included in the report because it matches --limit.
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       3
-# Exec time    100      6s      1s      3s      2s      3s   780ms      2s
-# foo                    3 Hi.  I'm a... (1/33%), Me too! I'... (1/33%)... 1 more
-EOF
-
 foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
@@ -688,9 +639,13 @@ $result = $qrf->event_report(
    reason  => 'top',
 );
 
-is(
-   $result,
-   $expected, 'Truncate multiple strings longer than whole line'
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report012.txt",
+      cmd_output => 1,
+   ),
+   'Truncate multiple strings longer than whole line'
 );
 
 # #############################################################################
@@ -762,15 +717,6 @@ $events = [
       host       => '123.123.123.789',
    },
 ];
-$expected = <<EOF;
-# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Scores: Apdex = NS [0.0]*, V/M = 0.0
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       2
-# Exec time    100     16s      8s      8s      8s      8s       0      8s
-# Hosts                  2 123.123.123.456 (1/50%)... 1 more
-EOF
 
 $ea  = new EventAggregator(
    groupby => 'arg',
@@ -789,7 +735,14 @@ $result = $qrf->event_report(
    orderby => 'Query_time',
 );
 
-is($result, $expected, "IPs not shortened");
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report013.txt",
+      cmd_output => 1,
+   ),
+   "IPs not shortened"
+);
 
 # Add another event so we get "... N more" to make sure that IPs
 # are still not shortened.
@@ -810,16 +763,14 @@ $result = $qrf->event_report(
    orderby => 'Query_time',
 );
 
-$expected = <<EOF;
-# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Scores: Apdex = NS [0.0]*, V/M = 0.0
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       3
-# Exec time    100     24s      8s      8s      8s      8s       0      8s
-# Hosts                  3 123.123.123.456 (1/33%)... 2 more
-EOF
-is($result, $expected, "IPs not shortened with more");
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report014.txt",
+      cmd_output => 1,
+   ),
+   "IPs not shortened with more"
+);
 
 # Test show_all.
 @ARGV = qw(--show-all host);
@@ -832,16 +783,14 @@ $result = $qrf->event_report(
    orderby  => 'Query_time',
 );
 
-$expected = <<EOF;
-# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Scores: Apdex = NS [0.0]*, V/M = 0.0
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       3
-# Exec time    100     24s      8s      8s      8s      8s       0      8s
-# Hosts                  3 123.123.123.456 (1/33%), 123.123.123.789 (1/33%), 123.123.123.999 (1/33%)
-EOF
-is($result, $expected, "Show all hosts");
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report015.txt",
+      cmd_output => 1,
+   ),
+   "Show all hosts"
+);
 
 # #############################################################################
 # Issue 948: mk-query-digest treats InnoDB_rec_lock_wait value as number
@@ -858,17 +807,6 @@ $events = [
       InnoDB_queue_wait    => 0.003,
    },
 ];
-$expected = <<EOF;
-# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
-# Scores: Apdex = NS [0.0]*, V/M = 0.0
-# Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
-# Count        100       1
-# Exec time    100      8s      8s      8s      8s      8s       0      8s
-# IDB IO rw    100     2ms     2ms     2ms     2ms     2ms       0     2ms
-# IDB queue    100     3ms     3ms     3ms     3ms     3ms       0     3ms
-# IDB rec l    100     1ms     1ms     1ms     1ms     1ms       0     1ms
-EOF
 
 $ea  = new EventAggregator(
    groupby => 'arg',
@@ -887,8 +825,14 @@ $result = $qrf->event_report(
    orderby => 'Query_time',
 );
 
-is($result, $expected, "_wait attribs treated as times (issue 948)");
-
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report016.txt",
+      cmd_output => 1,
+   ),
+   "_wait attribs treated as times (issue 948)"
+);
 
 # #############################################################################
 # print_reports()
@@ -937,7 +881,7 @@ ok(
          groupby => 'fingerprint',
          ReportFormatter => $report,
       ); },
-      "common/t/samples/QueryReportFormatter/reports001.txt",
+      "common/t/samples/QueryReportFormatter/report001.txt",
    ),
    "print_reports(header, query_report, profile)"
 );
@@ -954,7 +898,7 @@ ok(
          groupby => 'fingerprint',
          ReportFormatter => $report,
       ); },
-      "common/t/samples/QueryReportFormatter/reports003.txt",
+      "common/t/samples/QueryReportFormatter/report003.txt",
    ),
    "print_reports(profile, query_report, header)",
 );
@@ -1012,7 +956,7 @@ ok(
             ReportFormatter => $report,
          );
       },
-      "common/t/samples/QueryReportFormatter/reports002.txt",
+      "common/t/samples/QueryReportFormatter/report002.txt",
    ),
    "print_reports(query_report, prepared)"
 );
@@ -1058,7 +1002,7 @@ ok(
             ReportFormatter => $report,
          );
       },
-      "common/t/samples/QueryReportFormatter/reports004.txt",
+      "common/t/samples/QueryReportFormatter/report004.txt",
    ),
    "MISC items in profile"
 );
@@ -1237,7 +1181,7 @@ ok(
             ReportFormatter => $report,
          );
       },
-      "common/t/samples/QueryReportFormatter/reports005.txt",
+      "common/t/samples/QueryReportFormatter/report005.txt",
    ),
    "Variance-to-mean ration (issue 1124)"
 );
