@@ -3554,7 +3554,7 @@ sub main {
             unless $dst;
          $bulk_del = 1; # VERY IMPORTANT for safety.
       }
-      if ( $bulk_del && $o->get('bulk-delete-limit') && $limit < 2 ) {
+      if ( $bulk_del && $limit < 2 ) {
          $o->save_error("--bulk-delete is meaningless with --limit 1");
       }
 
@@ -4679,12 +4679,13 @@ it will still be deleted by the bulk delete!
 
 default: yes
 
-Force L<"--limit"> with L<"--bulk-delete">.
+Add L<"--limit"> to L<"--bulk-delete"> statement.
 
 This is an advanced option and you should not disable it unless you know what
-you are doing and why!  By default, L<"--bulk-delete"> requires a L<"--limit">
-greater than 1.  In certain cases, the limit can be removed by specifying
-C<--no-bulk-delete-limit>.
+you are doing and why!  By default, L<"--bulk-delete"> appends a L<"--limit">
+clause to the bulk delete SQL statement.  In certain cases, this clause can be
+omitted by specifying C<--no-bulk-delete-limit>.  L<"--limit"> must still be
+specified.
 
 =item --bulk-insert
 

@@ -71,7 +71,7 @@ $sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
 $output = output(
    sub { mk_archiver::main(qw(--where 1=1 --dry-run --source),
       "F=$cnf,D=test,t=issue_131_src", qw(--bulk-delete --purge),
-      qw(--no-bulk-delete-limit)) }
+      qw(--no-bulk-delete-limit --limit 3)) }
 );
 like(
    $output,
