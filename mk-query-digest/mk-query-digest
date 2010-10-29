@@ -14037,13 +14037,16 @@ The parser expects the input to be formatted with the following options: C<-x -n
 -q -tttt>.  For example, if you want to capture output from your local machine,
 you can do something like the following (the port must come last on FreeBSD):
 
-  tcpdump -s 65535 -x -nn -q -tttt -i eth0 -c 1000 port 3306 > mysql.tcp.txt
+  tcpdump -s 65535 -x -nn -q -tttt -i eth0 -c 1000 port 3306 \
+    > mysql.tcp.txt
   mk-query-digest --type tcpdump mysql.tcp.txt
 
 The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
-sure the output looks like this:
+sure the output looks like this (there is a line break in the first line to
+avoid man-page problems):
 
-  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
+  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167
+         > 127.0.0.1.3306: tcp 37
       0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
       0x0010:  ....
 
@@ -14067,8 +14070,7 @@ connect events for a new client or when <USE db> is executed.  If the tcpdump
 output contains neither of these, then mk-query-digest cannot discover the
 database.
 
-The MySQL client protocol implementation is not complete; server-side prepared
-statements are not yet supported, and naturally, SSL-encrypted traffic cannot be
+Server-side prepared statements are supported.  SSL-encrypted traffic cannot be
 inspected and decoded.
 
 =item memcached
@@ -14076,7 +14078,8 @@ inspected and decoded.
 Similar to tcpdump, but the expected input is memcached packets
 instead of MySQL packets.  For example:
 
-  tcpdump -i eth0 port 11211 -s 65535 -x -nn -q -tttt > memcached.tcp.txt
+  tcpdump -i eth0 port 11211 -s 65535 -x -nn -q -tttt \
+    > memcached.tcp.txt
   mk-query-digest --type memcached memcached.tcp.txt
 
 memcached uses port 11211 by default.
