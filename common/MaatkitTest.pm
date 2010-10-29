@@ -449,6 +449,12 @@ sub no_diff {
    if ( ref $cmd eq 'CODE' ) {
       output($cmd, file => $tmp_file);
    }
+   elsif ( $args{cmd_output} ) {
+      # Copy cmd output to tmp file so we don't with the original.
+      open my $tmp_fh, '>', $tmp_file or die "Cannot open $tmp_file: $OS_ERROR";
+      print $tmp_fh $cmd;
+      close $tmp_fh;
+   }
    else {
       `$cmd > $tmp_file`;
    }

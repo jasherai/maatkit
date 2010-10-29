@@ -487,7 +487,7 @@ sub event_report {
    {
       my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
       push @result,
-         sprintf("# Scores: Apdex = %s [%3.1f]%s, V/M = %.1f",
+         sprintf("# Scores: Apdex = %s [%3.1f]%s, V/M = %.2f",
             (defined $query_time->{apdex} ? "$query_time->{apdex}" : "NS"),
             ($query_time->{apdex_t} || 0),
             ($query_time->{cnt} < 100 ? "*" : ""),
@@ -690,8 +690,8 @@ sub profile {
       { name => 'Response time', right_justify => 1, },
       { name => 'Calls',         right_justify => 1, },
       { name => 'R/Call',        right_justify => 1, },
-      { name => 'Apd',           right_justify => 1, width => 4, },
-      { name => 'V/M',           right_justify => 1, },
+      { name => 'Apdx',          right_justify => 1, width => 4, },
+      { name => 'V/M',           right_justify => 1, width => 5, },
       { name => 'Item',                              },
    );
 
@@ -699,7 +699,7 @@ sub profile {
       my $rt  = sprintf('%10.4f', $item->{r});
       my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
       my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
-      my $vmr = sprintf('%4.1f', $item->{vmr});
+      my $vmr = sprintf('%4.2f', $item->{vmr});
       $report->add_line(
          $item->{rank},
          "0x$item->{id}",
