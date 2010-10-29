@@ -11,6 +11,11 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 32;
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use Transformers;
 use QueryReportFormatter;
 use EventAggregator;
@@ -380,12 +385,13 @@ ok(
 # #############################################################################
 
 # This test uses the $ea from the Bool pretty printer test above.
+my @sorted = $qrf->sorted_attribs($ea->get_attributes(), $ea);
 is_deeply(
-   [ $qrf->sorted_attribs($ea->get_attributes(), $ea) ],
+   \@sorted,
    [qw(
+      ts
       Query_time
       Lock_time
-      ts
       InnoDB_IO_r_bytes
       InnoDB_pages_distinct
       Filesort
@@ -393,7 +399,7 @@ is_deeply(
       )
    ],
    'sorted_attribs()'
-);
+) or print Dumper(\@sorted);
 
 # ############################################################################
 # Test that --[no]zero-bool removes 0% vals.

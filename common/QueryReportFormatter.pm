@@ -950,45 +950,95 @@ sub format_string_list {
    return (scalar keys %$cnt_for, $line);
 }
 
-# Attribs are sorted into three groups: basic attributes (Query_time, etc.),
-# other non-bool attributes sorted by name, and bool attributes sorted by name.
+# Sort template:
+# 1. ts (time range)
+# 2. basic numeric attribs
+#    %numeric_attrib
+#    all other alphabetized
+# 3. string attribs
+#    %string_attrib
+#    all others alphabetized
+# 4. bool attribs
+#    alphabetized
+# 5. prepared statement attribs
+#    special order
 sub sorted_attribs {
    my ( $self, $attribs, $ea ) = @_;
-   my %basic_attrib = (
-      Query_time    => 0,
-      Lock_time     => 1,
-      Rows_sent     => 2,
-      Rows_examined => 3,
-      user          => 4,
-      host          => 5,
-      db            => 6,
-      ts            => 7,
-   );
-   my @basic_attribs;
-   my @non_bool_attribs;
-   my @bool_attribs;
+   return unless $attribs && @$attribs;
 
+   # Sort order for numeric and string attribs.  Attribs not listed here
+   # come after these, in alphabetical order.
+   my %num_order = (
+      Query_time    => 2,
+      Lock_time     => 3,
+      Rows_sent     => 4,
+      Rows_examined => 5,
+      bytes         => 6,
+   );
+   my %string_order = (
+      user => 1,
+      host => 2,
+      db   => 3,
+   );
+
+   my (@ts, @num, @string, @bool, @unknown);
    ATTRIB:
    foreach my $attrib ( @$attribs ) {
-      if ( exists $basic_attrib{$attrib} ) {
-         push @basic_attribs, $attrib;
+      if ( $attrib eq 'ts' ) {
+         # ts is type string but special so we handle it specially
+         push @ts, 'ts';
+         next ATTRIB;
+      }
+
+      # Default type is string in EventAggregator::make_handler().
+      my $type = $ea->type_for($attrib) || 'string';
+      if ( $type eq 'num' ) {
+         push @num, $attrib;
+      }
+      elsif ( $type eq 'string' ) {
+         push @string, $attrib;
+      }
+      elsif ( $type eq 'bool' ) {
+         push @bool, $attrib;
       }
       else {
-         if ( ($ea->type_for($attrib) || '') ne 'bool' ) {
-            push @non_bool_attribs, $attrib;
-         }
-         else {
-            push @bool_attribs, $attrib;
-         }
+         MKDEBUG && _d("Unknown attrib type:", $attrib);
+         push @unknown, $attrib;
       }
    }
 
-   @non_bool_attribs = sort { uc $a cmp uc $b } @non_bool_attribs;
-   @bool_attribs     = sort { uc $a cmp uc $b } @bool_attribs;
-   @basic_attribs    = sort {
-         $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
+   # Sorting with preferred orders.
+   @num     = sort { pref_sort($a, $num_order{$a}, $b, $num_order{$b}) }
+              @num;
+   @string  = sort { pref_sort($a, $string_order{$a}, $b, $string_order{$b}) }
+              @string;
 
-   return @basic_attribs, @non_bool_attribs, @bool_attribs;
+   @bool    = sort { uc $a cmp uc $b } @bool;
+   @unknown = sort { uc $a cmp uc $b } @unknown;
+
+   return @ts, @num, @string, @bool, @unknown;
+}
+
+sub pref_sort {
+   my ( $attrib_a, $order_a, $attrib_b, $order_b ) = @_;
+
+   # Neither has preferred order so sort by attrib name alphabetically.
+   if ( !defined $order_a && !defined $order_b ) {
+      return $attrib_a cmp $attrib_b;
+   }
+
+   # By have a preferred order so sort by their order.
+   if ( defined $order_a && defined $order_b ) {
+      return $order_a <=> $order_b;
+   }
+
+   # Only one has a preferred order so sort it first.
+   if ( !defined $order_a ) {
+      return 1;
+   }
+   else {
+      return -1;
+   }
 }
 
 # Gets a default database and a list of arrayrefs of [db, tbl] to print out

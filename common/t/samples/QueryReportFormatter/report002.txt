@@ -4,13 +4,13 @@
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       1
-# Exec time     99    30ms    30ms    30ms    30ms    30ms       0    30ms
 # Time range 2009-12-08 09:23:49.637892 to 2009-12-08 09:23:49.637892
-# arg                    1 EXECUTE SELECT i FROM d.t WHERE i="3"
+# Exec time     99    30ms    30ms    30ms    30ms    30ms       0    30ms
 # bytes         51      37      37      37      37      37       0      37
-# cmd                    1   Query
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
+# arg                    1 EXECUTE SELECT i FROM d.t WHERE i="3"
+# cmd                    1   Query
 # Query_time distribution
 #   1us
 #  10us
@@ -33,13 +33,13 @@ SELECT i FROM d.t WHERE i="3"\G
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       1
-# Exec time      0   286us   286us   286us   286us   286us       0   286us
 # Time range 2009-12-08 09:23:49.637394 to 2009-12-08 09:23:49.637394
-# arg                    1 PREPARE SELECT i FROM d.t WHERE i=?
+# Exec time      0   286us   286us   286us   286us   286us       0   286us
 # bytes         48      35      35      35      35      35       0      35
-# cmd                    1   Query
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
+# arg                    1 PREPARE SELECT i FROM d.t WHERE i=?
+# cmd                    1   Query
 # Query_time distribution
 #   1us
 #  10us

@@ -4,7 +4,7 @@
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
+# Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
 # Exec time      0       0       0       0       0       0       0       0
 # Users                  1 msandbox
 # Databases              1   mysql
-# Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
