@@ -973,7 +973,9 @@ sub sorted_attribs {
       Lock_time     => 3,
       Rows_sent     => 4,
       Rows_examined => 5,
-      bytes         => 6,
+      Rows_affected => 6,
+      Rows_read     => 7,
+      bytes         => 8,
    );
    my %string_order = (
       user => 1,
