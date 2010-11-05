@@ -564,7 +564,7 @@ sub event_report {
       }
    }
 
-   push @result, "# String:" if @{$attribs->{bool}};
+   push @result, "# String:" if @{$attribs->{string}};
    STRING_ATTRIB:
    foreach my $attrib ( @{$attribs->{string}} ) {
       next STRING_ATTRIB unless exists $store->{$attrib};

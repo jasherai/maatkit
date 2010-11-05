@@ -14,6 +14,7 @@
 # Count        100       1
 # Exec time    100      1s      1s      1s      1s      1s       0      1s
 # Lock time    100     1ms     1ms     1ms     1ms     1ms       0     1ms
+# String:
 # cmd        Query
 # Databases  foodb
 # Query_time distribution

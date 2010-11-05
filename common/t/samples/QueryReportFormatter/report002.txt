@@ -9,6 +9,7 @@
 # Query size     51      37      37      37      37      37       0      37
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
+# String:
 # cmd        Query
 # Query_time distribution
 #   1us
@@ -37,6 +38,7 @@ SELECT i FROM d.t WHERE i="3"\G
 # Query size     48      35      35      35      35      35       0      35
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
+# String:
 # cmd        Query
 # Query_time distribution
 #   1us

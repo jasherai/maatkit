@@ -6,4 +6,5 @@
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100      1s      1s      1s      1s      1s       0      1s
+# String:
 # foo        Hi.  I'm a very long string.  I'm way over t...
