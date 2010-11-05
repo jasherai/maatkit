@@ -1,4 +1,4 @@
-# Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency _____________________
+# Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency __________________
 # Time range: 2007-10-15 21:43:52 to 21:43:53
 # Attribute          total     min     max     avg     95%  stddev  median
 # ============     ======= ======= ======= ======= ======= ======= =======

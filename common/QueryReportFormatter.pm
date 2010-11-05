@@ -206,7 +206,7 @@ sub header {
       shorten(scalar keys %{$results->{classes}}, d=>1_000),
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000));
-   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 12));
    push @result, $line;
 
    # Second line: time range
@@ -473,7 +473,7 @@ sub event_report {
       make_checksum($item),
       $results->{samples}->{$item}->{pos_in_log} || 0,
    );
-   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 12));
    push @result, $line;
 
    # Second line: reason why this class is being reported.
