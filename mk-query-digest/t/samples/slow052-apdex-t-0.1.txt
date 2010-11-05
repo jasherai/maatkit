@@ -1,17 +1,18 @@
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x32B0659E6D13E5A2 at byte 16849 ____
-# Scores: Apdex = 0.00 [0.1], V/M = 0.48
 # This item is included in the report because it matches --limit.
+# Scores: Apdex = 0.00 [0.1], V/M = 0.48
 # Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
+# ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         50     100
 # Exec time     74    308s      1s      5s      3s      5s      1s      3s
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent     50     100       1       1       1       1       0       1
-# Rows exam      0       0       0       0       0       0       0       0
-# Users                  1    root
-# Hosts                  1 localhost
-# bytes         51   4.59k      47      47      47      47       0      47
+# Rows examine   0       0       0       0       0       0       0       0
+# Query size    51   4.59k      47      47      47      47       0      47
+# String:
+# Hosts        localhost
+# Users        root
 # Query_time distribution
 #   1us
 #  10us
@@ -28,18 +29,19 @@
 select very_variable_column from unsteady_table\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x2F621C2B0611518C at byte 8582 _____
-# Scores: Apdex = 0.00 [0.1], V/M = 0.00
 # This item is included in the report because it matches --limit.
+# Scores: Apdex = 0.00 [0.1], V/M = 0.00
 # Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
+# ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         50     100
 # Exec time     25    105s      1s      1s      1s      1s    30ms      1s
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent     50     100       1       1       1       1       0       1
-# Rows exam      0       0       0       0       0       0       0       0
-# Users                  1    root
-# Hosts                  1 localhost
-# bytes         48   4.39k      45      45      45      45       0      45
+# Rows examine   0       0       0       0       0       0       0       0
+# Query size    48   4.39k      45      45      45      45       0      45
+# String:
+# Hosts        localhost
+# Users        root
 # Query_time distribution
 #   1us
 #  10us

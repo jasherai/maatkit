@@ -1,4 +1,4 @@
-# Exec orig    100      2s      2s      2s      2s      2s       0      2s
+# Users        root
 # Query_time distribution
 #   1us
 #  10us

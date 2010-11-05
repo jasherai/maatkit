@@ -4,21 +4,22 @@
 # ########################################################################
 
 # Item 1: 0 QPS, 0x concurrency, ID 0xE0976A52E15A18AC at byte 0 _________
-# Scores: Apdex = 0.50 [1.0]*, V/M = 0.00
 # This item is included in the report because it matches --limit.
+# Scores: Apdex = 0.50 [1.0]*, V/M = 0.00
+# Time range: all events occurred at 2007-10-15 21:43:52
 # Attribute    pct   total     min     max     avg     95%  stddev  median
-# ========= ====== ======= ======= ======= ======= ======= ======= =======
+# ============ === ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100      2s      2s      2s      2s      2s       0      2s
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent    100       1       1       1       1       1       0       1
-# Rows exam      0       0       0       0       0       0       0       0
-# Users                  1    root
-# Hosts                  1 localhost
-# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
-# bytes        100      91      91      91      91      91       0      91
+# Rows examine   0       0       0       0       0       0       0       0
+# Query size   100      91      91      91      91      91       0      91
 # line         100     417     417     417     417     417       0     417
-# url                    1 d217d035a34ac9e693b41d4c2&limit=500&offset=0
+# String:
+# Hosts        localhost
+# url          d217d035a34ac9e693b41d4c2&limit=500&offset=0
+# Users        root
 # Query_time distribution
 #   1us
 #  10us
