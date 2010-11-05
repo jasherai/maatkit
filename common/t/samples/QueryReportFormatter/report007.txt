@@ -8,7 +8,7 @@
 # Exec time     89      9s      1s      8s      5s      8s      5s      5s
 # Lock time     68   310us   109us   201us   155us   201us    65us   155us
 # Rows sent    100       2       1       1       1       1       0       1
-# Rows examined100       3       1       2    1.50       2    0.71    1.50
+# Rows examine 100       3       1       2    1.50       2    0.71    1.50
 # String:
 # Databases    test1 (1/50%), test3 (1/50%)
 # Users        bob (1/50%), root (1/50%)

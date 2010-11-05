@@ -62,14 +62,13 @@ sub new {
 
    my $self = {
       %args,
-      label_width   => $label_width,
-      header_format => "# %-${label_width}s %3s %7s %7s %7s %7s %7s %7s %7s",
-      num_format    => "# %-${cheat_width}s%3s %7s %7s %7s %7s %7s %7s %7s",
-      bool_format   => "# %-${cheat_width}s %3d%% yes, %3d%% no",
-      string_format => "# %-${label_width}s %s",
-      global_headers=> [qw(    total min max avg 95% stddev median)],
-      event_headers => [qw(pct total min max avg 95% stddev median)],
-      hidden_attrib => {   # Don't sort/print these attribs in the reports.
+      label_width    => $label_width,
+      num_format     => "# %-${label_width}s %3s %7s %7s %7s %7s %7s %7s %7s",
+      bool_format    => "# %-${label_width}s %3d%% yes, %3d%% no",
+      string_format  => "# %-${label_width}s %s",
+      global_headers => [qw(    total min max avg 95% stddev median)],
+      event_headers  => [qw(pct total min max avg 95% stddev median)],
+      hidden_attrib  => {   # Don't sort/print these attribs in the reports.
          arg         => 1, # They're usually handled specially, or not
          fingerprint => 1, # printed at all.
          pos_in_log  => 1,
@@ -508,7 +507,7 @@ sub event_report {
 
    # Count line
    push @result,
-      sprintf $self->{header_format}, 'Count',
+      sprintf $self->{num_format}, 'Count',
          percentage_of($class_cnt, $global_cnt), $class_cnt, map { '' } (1..8);
 
    # Sort the attributes, removing any hidden attributes, if they're not
@@ -873,14 +872,14 @@ sub make_global_header {
    # First line: 
    # Attribute          total     min     max     avg     95%  stddev  median
    push @lines,
-      sprintf $self->{header_format}, "Attribute", '', @{$self->{global_headers}};
+      sprintf $self->{num_format}, "Attribute", '', @{$self->{global_headers}};
 
    # Underline first line:
    # =========        ======= ======= ======= ======= ======= ======= =======
    # The numbers 7, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @lines,
-      sprintf $self->{header_format},
+      sprintf $self->{num_format},
          (map { "=" x $_ } $self->{label_width}),
          (map { " " x $_ } qw(3)),  # no pct column in global header
          (map { "=" x $_ } qw(7 7 7 7 7 7 7));
@@ -899,12 +898,12 @@ sub make_event_header {
    return @lines if @lines;
 
    push @lines,
-      sprintf $self->{header_format}, "Attribute", @{$self->{event_headers}};
+      sprintf $self->{num_format}, "Attribute", @{$self->{event_headers}};
 
    # The numbers 6, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @lines,
-      sprintf $self->{header_format},
+      sprintf $self->{num_format},
          map { "=" x $_ } ($self->{label_width}, qw(3 7 7 7 7 7 7 7));
 
    # End result should be like:
@@ -921,14 +920,9 @@ sub make_label {
 
    $val =~ s/_/ /g;
 
-   # Some values are "cheaters": their full name is 1 character wider
-   # than the real label width.  For the sake of readability, we let
-   # let them cheat.
-
    if ( $val =~ m/^InnoDB/ ) {
       $val =~ s/^InnoDB //;
-      $val = $val eq 'rec lock wait' ? $val             # cheater
-           : $val eq 'trx id'        ? "InnoDB trxID"
+      $val = $val eq 'trx id' ? "InnoDB trxID"
            : substr($val, 0, $self->{label_width});
    }
 
@@ -938,10 +932,8 @@ sub make_label {
         : $val eq 'host'            ? 'Hosts'
         : $val eq 'Error no'        ? 'Errors'
         : $val eq 'bytes'           ? 'Query size'
-        : $val eq 'Tmp disk tables' ? 'Tmp disk tbls'    # cheater
-        : $val eq 'Tmp table sizes' ? 'Tmp tbl sizes'    # cheater
-        : $val eq 'Rows examined'   ? $val               # cheater
-        : $val eq 'Rows affected'   ? $val               # cheater
+        : $val eq 'Tmp disk tables' ? 'Tmp disk tbl'
+        : $val eq 'Tmp table sizes' ? 'Tmp tbl size'
         : substr($val, 0, $self->{label_width});
 
    return $val;
