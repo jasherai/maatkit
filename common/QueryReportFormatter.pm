@@ -1089,6 +1089,18 @@ sub format_time_range {
    my ( $self, $vals ) = @_;
    my $min = parse_timestamp($vals->{min} || '');
    my $max = parse_timestamp($vals->{max} || '');
+
+   if ( $min && $max && $min eq $max ) {
+      return "all events occurred at $min";
+   }
+
+   # Remove common prefix (day).
+   my ($min_day) = split(' ', $min) if $min;
+   my ($max_day) = split(' ', $max) if $max;
+   if ( ($min_day || '') eq ($max_day || '') ) {
+      (undef, $max) = split(' ', $max);
+   }
+
    return $min && $max ? "$min to $max" : '';
 }
 
