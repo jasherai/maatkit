@@ -55,16 +55,18 @@ sub new {
    }
 
    # If ever someone wishes for a wider label width.
-   my $label_width = $args{label_width} || 9;
+   my $label_width = $args{label_width} || 12;
    MKDEBUG && _d('Label width:', $label_width);
+
+   my $cheat_width = $label_width + 1;
 
    my $self = {
       %args,
       label_width   => $label_width,
-      global_format => "# %-${label_width}s        %7s %7s %7s %7s %7s %7s %7s",
-      event_format  => "# %-${label_width}s %6s %7s %7s %7s %7s %7s %7s %7s",
-      string_format => "# %-${label_width}s  %s",
-      bool_format   => "# %-${label_width}s  %3d%% yes, %3d%% no",
+      header_format => "# %-${label_width}s %3s %7s %7s %7s %7s %7s %7s %7s",
+      num_format    => "# %-${cheat_width}s%3s %7s %7s %7s %7s %7s %7s %7s",
+      bool_format   => "# %-${cheat_width}s %3d%% yes, %3d%% no",
+      string_format => "# %-${label_width}s %s",
       global_headers=> [qw(    total min max avg 95% stddev median)],
       event_headers => [qw(pct total min max avg 95% stddev median)],
       hidden_attrib => {   # Don't sort/print these attribs in the reports.
@@ -244,7 +246,8 @@ sub header {
          @values = map { defined $_ ? $func->($_) : '' } @values;
 
          push @result,
-            sprintf $self->{global_format}, $self->make_label($attrib), @values;
+            sprintf $self->{num_format},
+               $self->make_label($attrib), '', @values;
       }
    }
 
@@ -505,7 +508,7 @@ sub event_report {
 
    # Count line
    push @result,
-      sprintf $self->{event_format}, 'Count',
+      sprintf $self->{header_format}, 'Count',
          percentage_of($class_cnt, $global_cnt), $class_cnt, map { '' } (1..8);
 
    # Sort the attributes, removing any hidden attributes, if they're not
@@ -545,7 +548,7 @@ sub event_report {
             $vals->{sum}, $results->{globals}->{$attrib}->{sum});
 
          push @result,
-            sprintf $self->{event_format},
+            sprintf $self->{num_format},
                $self->make_label($attrib), $pct, @values;
       }
    }
@@ -870,15 +873,17 @@ sub make_global_header {
    # First line: 
    # Attribute          total     min     max     avg     95%  stddev  median
    push @lines,
-      sprintf $self->{global_format}, "Attribute", @{$self->{global_headers}};
+      sprintf $self->{header_format}, "Attribute", '', @{$self->{global_headers}};
 
    # Underline first line:
    # =========        ======= ======= ======= ======= ======= ======= =======
    # The numbers 7, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @lines,
-      sprintf $self->{global_format},
-         map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7));
+      sprintf $self->{header_format},
+         (map { "=" x $_ } $self->{label_width}),
+         (map { " " x $_ } qw(3)),  # no pct column in global header
+         (map { "=" x $_ } qw(7 7 7 7 7 7 7));
 
    # End result should be like:
    # Attribute          total     min     max     avg     95%  stddev  median
@@ -894,13 +899,13 @@ sub make_event_header {
    return @lines if @lines;
 
    push @lines,
-      sprintf $self->{event_format}, "Attribute", @{$self->{event_headers}};
+      sprintf $self->{header_format}, "Attribute", @{$self->{event_headers}};
 
    # The numbers 6, 7, 7, etc. are the field widths from make_header().
    # Hard-coded values aren't ideal but this code rarely changes.
    push @lines,
-      sprintf $self->{event_format},
-         map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7));
+      sprintf $self->{header_format},
+         map { "=" x $_ } ($self->{label_width}, qw(3 7 7 7 7 7 7 7));
 
    # End result should be like:
    # Attribute    pct   total     min     max     avg     95%  stddev  median
@@ -912,21 +917,34 @@ sub make_event_header {
 # Convert attribute names into labels
 sub make_label {
    my ( $self, $val ) = @_;
+   return '' unless $val;
+
+   $val =~ s/_/ /g;
+
+   # Some values are "cheaters": their full name is 1 character wider
+   # than the real label width.  For the sake of readability, we let
+   # let them cheat.
 
    if ( $val =~ m/^InnoDB/ ) {
-      # Shorten InnoDB attributes otherwise their short labels
-      # are indistinguishable.
-      $val =~ s/^InnoDB_(\w+)/IDB_$1/;
-      $val =~ s/r_(\w+)/r$1/;
+      $val =~ s/^InnoDB //;
+      $val = $val eq 'rec lock wait' ? $val             # cheater
+           : $val eq 'trx id'        ? "InnoDB trxID"
+           : substr($val, 0, $self->{label_width});
    }
 
-   return  $val eq 'user'       ? 'Users'
-         : $val eq 'db'         ? 'Databases'
-         : $val eq 'Query_time' ? 'Exec time'
-         : $val eq 'host'       ? 'Hosts'
-         : $val eq 'Error_no'   ? 'Errors'
-         : $val eq 'bytes'      ? 'Query size'
-         : do { $val =~ s/_/ /g; $val = substr($val, 0, $self->{label_width}); $val };
+   $val = $val eq 'user'            ? 'Users'
+        : $val eq 'db'              ? 'Databases'
+        : $val eq 'Query time'      ? 'Exec time'
+        : $val eq 'host'            ? 'Hosts'
+        : $val eq 'Error no'        ? 'Errors'
+        : $val eq 'bytes'           ? 'Query size'
+        : $val eq 'Tmp disk tables' ? 'Tmp disk tbls'    # cheater
+        : $val eq 'Tmp table sizes' ? 'Tmp tbl sizes'    # cheater
+        : $val eq 'Rows examined'   ? $val               # cheater
+        : $val eq 'Rows affected'   ? $val               # cheater
+        : substr($val, 0, $self->{label_width});
+
+   return $val;
 }
 
 sub bool_percents {
