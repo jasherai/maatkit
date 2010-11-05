@@ -5902,7 +5902,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6990
+# QueryReportFormatter package 7002
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -5925,39 +5925,30 @@ use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant LINE_LENGTH       => 74;
 use constant MAX_STRING_LENGTH => 10;
 
-my %formatting_function = (
-   ts => sub {
-      my ( $vals ) = @_;
-      my $min = parse_timestamp($vals->{min} || '');
-      my $max = parse_timestamp($vals->{max} || '');
-      return $min && $max ? "$min to $max" : '';
-   },
-);
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(OptionParser QueryRewriter Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my $label_width = $args{label_width} || 9;
+   my $label_width = $args{label_width} || 12;
    MKDEBUG && _d('Label width:', $label_width);
+
+   my $cheat_width = $label_width + 1;
 
    my $self = {
       %args,
-      bool_format => '# %3s%% %-6s %s',
-      label_width => $label_width,
-      dont_print  => {         # don't print these attribs in these reports
-         header => {
-            user        => 1,
-            db          => 1,
-            pos_in_log  => 1,
-            fingerprint => 1,
-         },
-         query_report => {
-            pos_in_log  => 1,
-            fingerprint => 1,
-         }
+      label_width    => $label_width,
+      num_format     => "# %-${label_width}s %3s %7s %7s %7s %7s %7s %7s %7s",
+      bool_format    => "# %-${label_width}s %3d%% yes, %3d%% no",
+      string_format  => "# %-${label_width}s %s",
+      global_headers => [qw(    total min max avg 95% stddev median)],
+      event_headers  => [qw(pct total min max avg 95% stddev median)],
+      hidden_attrib  => {   # Don't sort/print these attribs in the reports.
+         arg         => 1, # They're usually handled specially, or not
+         fingerprint => 1, # printed at all.
+         pos_in_log  => 1,
+         ts          => 1,
       },
    };
    return bless $self, $class;
@@ -6039,9 +6030,7 @@ sub header {
    }
    my $ea      = $args{ea};
    my $orderby = $args{orderby};
-
-   my $dont_print = $self->{dont_print}->{header};
-   my $results    = $ea->results();
+   my $results = $ea->results();
    my @result;
 
    my $global_cnt = $results->{globals}->{$orderby}->{cnt} || 0;
@@ -6068,55 +6057,56 @@ sub header {
       shorten(scalar keys %{$results->{classes}}, d=>1_000),
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000));
-   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 12));
    push @result, $line;
 
-   my ($format, @headers) = $self->make_header('global');
-   push @result, sprintf($format, "Attribute", @headers);
-   push @result, sprintf($format,
-      map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7)));
+   if ( my $ts = $results->{globals}->{ts} ) {
+      my $time_range = $self->format_time_range($ts) || "unknown";
+      push @result, "# Time range: $time_range";
+   }
 
-   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
-   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
-      next if $dont_print->{$attrib};
-      my $attrib_type = $ea->type_for($attrib);
-      next unless $attrib_type; 
-      next unless exists $results->{globals}->{$attrib};
-      if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, $self->make_label($attrib),
-            $formatting_function{$attrib}->($results->{globals}->{$attrib}),
-            (map { '' } 0..9); # just for good measure
+   push @result, $self->make_global_header();
+
+   my $attribs = $self->sort_attribs(
+      ($args{select} ? $args{select} : $ea->get_attributes()),
+      $ea,
+   );
+
+   foreach my $type ( qw(num innodb) ) {
+      if ( $type eq 'innodb' && @{$attribs->{$type}} ) {
+         push @result, "# InnoDB:";
+      };
+
+      NUM_ATTRIB:
+      foreach my $attrib ( @{$attribs->{$type}} ) {
+         next unless exists $results->{globals}->{$attrib};
+         
+         my $store   = $results->{globals}->{$attrib};
+         my $metrics = $ea->stats()->{globals}->{$attrib};
+         my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+         my @values  = ( 
+            @{$store}{qw(sum min max)},
+            $store->{sum} / $store->{cnt},
+            @{$metrics}{qw(pct_95 stddev median)},
+         );
+         @values = map { defined $_ ? $func->($_) : '' } @values;
+
+         push @result,
+            sprintf $self->{num_format},
+               $self->make_label($attrib), '', @values;
       }
-      else {
-         my $store = $results->{globals}->{$attrib};
-         my @values;
-         if ( $attrib_type eq 'num' ) {
-            my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
-            my $metrics = $ea->stats()->{globals}->{$attrib};
-            @values = (
-               @{$store}{qw(sum min max)},
-               $store->{sum} / $store->{cnt},
-               @{$metrics}{qw(pct_95 stddev median)},
-            );
-            @values = map { defined $_ ? $func->($_) : '' } @values;
-         }
-         elsif ( $attrib_type eq 'string' ) {
-            MKDEBUG && _d('Ignoring string attrib', $attrib);
-            next;
-         }
-         elsif ( $attrib_type eq 'bool' ) {
-            if ( $store->{sum} > 0 || $args{zero_bool} ) {
-               push @result,
-                  sprintf $self->{bool_format},
-                     $self->format_bool_attrib($store), $attrib;
-            }
-         }
-         else {
-            @values = ('', $store->{min}, $store->{max}, '', '', '', '');
-         }
+   }
 
-         push @result, sprintf $format, $self->make_label($attrib), @values
-            unless $attrib_type eq 'bool';  # bool does its own thing.
+   push @result, "# Boolean:" if @{$attribs->{bool}};
+   BOOL_ATTRIB:
+   foreach my $attrib ( @{$attribs->{bool}} ) {
+      next unless exists $results->{globals}->{$attrib};
+
+      my $store = $results->{globals}->{$attrib};
+      if ( $store->{sum} > 0 || $args{zero_bool} ) { 
+         push @result,
+            sprintf $self->{bool_format},
+               $self->make_label($attrib), $self->bool_percents($store);
       }
    }
 
@@ -6144,6 +6134,11 @@ sub query_report {
                . "# Report grouped by $groupby\n"
                . '# ' . ( '#' x 72 ) . "\n\n";
    }
+
+   my $attribs = $self->sort_attribs(
+      ($args{select} ? $args{select} : $ea->get_attributes()),
+      $ea,
+   );
 
    ITEM:
    foreach my $top_event ( @$worst ) {
@@ -6175,9 +6170,10 @@ sub query_report {
       $report .= "\n" if $rank > 1;  # space between each event report
       $report .= $self->event_report(
          %args,
-         item  => $item,
-         rank   => $rank,
-         reason => $reason,
+         item    => $item,
+         rank    => $rank,
+         reason  => $reason,
+         attribs => $attribs,
       );
 
       if ( $o->get('report-histogram') ) {
@@ -6247,9 +6243,7 @@ sub event_report {
    my $ea      = $args{ea};
    my $item    = $args{item};
    my $orderby = $args{orderby};
-
-   my $dont_print = $self->{dont_print}->{query_report};
-   my $results    = $ea->results();
+   my $results = $ea->results();
    my @result;
 
    my $store = $results->{classes}->{$item};
@@ -6281,8 +6275,14 @@ sub event_report {
       make_checksum($item),
       $results->{samples}->{$item}->{pos_in_log} || 0,
    );
-   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 12));
    push @result, $line;
+
+   if ( $args{reason} ) {
+      push @result,
+         "# This item is included in the report because it matches "
+            . ($args{reason} eq 'top' ? '--limit.' : '--outliers.');
+   }
 
    {
       my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
@@ -6295,70 +6295,79 @@ sub event_report {
          );
    }
 
-   if ( $args{reason} ) {
-      push @result,
-         "# This item is included in the report because it matches "
-            . ($args{reason} eq 'top' ? '--limit.' : '--outliers.');
+   if ( my $ts = $store->{ts} ) {
+      my $time_range = $self->format_time_range($ts) || "unknown";
+      push @result, "# Time range: $time_range";
    }
 
-   my ($format, @headers) = $self->make_header();
-   push @result, sprintf($format, "Attribute", @headers);
-   push @result, sprintf($format,
-      map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7)));
+   push @result, $self->make_event_header();
 
-   push @result, sprintf
-      $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
-         map { '' } (1 ..9);
+   push @result,
+      sprintf $self->{num_format}, 'Count',
+         percentage_of($class_cnt, $global_cnt), $class_cnt, map { '' } (1..8);
 
-   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
-   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
-      next if $dont_print->{$attrib};
-      my $attrib_type = $ea->type_for($attrib);
-      next unless $attrib_type; 
-      next unless exists $store->{$attrib};
+   my $attribs = $args{attribs};
+   if ( !$attribs ) {
+      $attribs = $self->sort_attribs(
+         ($args{select} ? $args{select} : $ea->get_attributes()),
+         $ea
+      );
+   }
+
+   foreach my $type ( qw(num innodb) ) {
+      if ( $type eq 'innodb' && @{$attribs->{$type}} ) {
+         push @result, "# InnoDB:";
+      };
+
+      NUM_ATTRIB:
+      foreach my $attrib ( @{$attribs->{$type}} ) {
+         next NUM_ATTRIB unless exists $store->{$attrib};
+         my $vals = $store->{$attrib};
+         next unless scalar %$vals;
+
+         my $pct;
+         my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+         my $metrics = $ea->stats()->{classes}->{$item}->{$attrib};
+         my @values = (
+            @{$vals}{qw(sum min max)},
+            $vals->{sum} / $vals->{cnt},
+            @{$metrics}{qw(pct_95 stddev median)},
+         );
+         @values = map { defined $_ ? $func->($_) : '' } @values;
+         $pct   = percentage_of(
+            $vals->{sum}, $results->{globals}->{$attrib}->{sum});
+
+         push @result,
+            sprintf $self->{num_format},
+               $self->make_label($attrib), $pct, @values;
+      }
+   }
+
+   push @result, "# Boolean:" if @{$attribs->{bool}};
+   BOOL_ATTRIB:
+   foreach my $attrib ( @{$attribs->{bool}} ) {
+      next BOOL_ATTRIB unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
       next unless scalar %$vals;
-      if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, $self->make_label($attrib),
-            $formatting_function{$attrib}->($vals),
-            (map { '' } 0..9); # just for good measure
-      }
-      else {
-         my @values;
-         my $pct;
-         if ( $attrib_type eq 'num' ) {
-            my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
-            my $metrics = $ea->stats()->{classes}->{$item}->{$attrib};
-            @values = (
-               @{$vals}{qw(sum min max)},
-               $vals->{sum} / $vals->{cnt},
-               @{$metrics}{qw(pct_95 stddev median)},
-            );
-            @values = map { defined $_ ? $func->($_) : '' } @values;
-            $pct = percentage_of($vals->{sum},
-               $results->{globals}->{$attrib}->{sum});
-         }
-         elsif ( $attrib_type eq 'string' ) {
-            push @values,
-               $self->format_string_list($attrib, $vals, $class_cnt),
-               (map { '' } 0..9); # just for good measure
-            $pct = '';
-         }
-         elsif ( $attrib_type eq 'bool' ) {
-            if ( $vals->{sum} > 0 || $args{zero_bool} ) {
-               push @result,
-                  sprintf $self->{bool_format},
-                     $self->format_bool_attrib($vals), $attrib;
-            }
-         }
-         else {
-            @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
-            $pct = 0;
-         }
 
-         push @result, sprintf $format, $self->make_label($attrib), $pct, @values
-            unless $attrib_type eq 'bool';  # bool does its own thing.
+      if ( $vals->{sum} > 0 || $args{zero_bool} ) {
+         push @result,
+            sprintf $self->{bool_format},
+               $self->make_label($attrib), $self->bool_percents($vals);
       }
+   }
+
+   push @result, "# String:" if @{$attribs->{string}};
+   STRING_ATTRIB:
+   foreach my $attrib ( @{$attribs->{string}} ) {
+      next STRING_ATTRIB unless exists $store->{$attrib};
+      my $vals = $store->{$attrib};
+      next unless scalar %$vals;
+
+      push @result,
+         sprintf $self->{string_format},
+            $self->make_label($attrib),
+            $self->format_string_list($attrib, $vals, $class_cnt);
    }
 
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
@@ -6606,39 +6615,69 @@ sub prepared {
    return $report->get_report();
 }
 
-sub make_header {
-   my ( $self, $global ) = @_;
-   my $format  = "# %-$self->{label_width}s %6s %7s %7s %7s %7s %7s %7s %7s";
-   my @headers = qw(pct total min max avg 95% stddev median);
-   if ( $global ) {
-      $format =~ s/%(\d+)s/' ' x $1/e;
-      shift @headers;
-   }
-   return $format, @headers;
+sub make_global_header {
+   my ( $self ) = @_;
+   my @lines;
+
+   push @lines,
+      sprintf $self->{num_format}, "Attribute", '', @{$self->{global_headers}};
+
+   push @lines,
+      sprintf $self->{num_format},
+         (map { "=" x $_ } $self->{label_width}),
+         (map { " " x $_ } qw(3)),  # no pct column in global header
+         (map { "=" x $_ } qw(7 7 7 7 7 7 7));
+
+   return @lines;
+}
+
+{
+my @lines;
+sub make_event_header {
+   my ( $self ) = @_;
+   return @lines if @lines;
+
+   push @lines,
+      sprintf $self->{num_format}, "Attribute", @{$self->{event_headers}};
+
+   push @lines,
+      sprintf $self->{num_format},
+         map { "=" x $_ } ($self->{label_width}, qw(3 7 7 7 7 7 7 7));
+
+   return @lines;
+}
 }
 
 sub make_label {
    my ( $self, $val ) = @_;
+   return '' unless $val;
+
+   $val =~ s/_/ /g;
 
    if ( $val =~ m/^InnoDB/ ) {
-      $val =~ s/^InnoDB_(\w+)/IDB_$1/;
-      $val =~ s/r_(\w+)/r$1/;
+      $val =~ s/^InnoDB //;
+      $val = $val eq 'trx id' ? "InnoDB trxID"
+           : substr($val, 0, $self->{label_width});
    }
 
-   return  $val eq 'ts'         ? 'Time range'
-         : $val eq 'user'       ? 'Users'
-         : $val eq 'db'         ? 'Databases'
-         : $val eq 'Query_time' ? 'Exec time'
-         : $val eq 'host'       ? 'Hosts'
-         : $val eq 'Error_no'   ? 'Errors'
-         : do { $val =~ s/_/ /g; $val = substr($val, 0, $self->{label_width}); $val };
+   $val = $val eq 'user'            ? 'Users'
+        : $val eq 'db'              ? 'Databases'
+        : $val eq 'Query time'      ? 'Exec time'
+        : $val eq 'host'            ? 'Hosts'
+        : $val eq 'Error no'        ? 'Errors'
+        : $val eq 'bytes'           ? 'Query size'
+        : $val eq 'Tmp disk tables' ? 'Tmp disk tbl'
+        : $val eq 'Tmp table sizes' ? 'Tmp tbl size'
+        : substr($val, 0, $self->{label_width});
+
+   return $val;
 }
 
-sub format_bool_attrib {
+sub bool_percents {
    my ( $self, $vals ) = @_;
-   my $p_true = percentage_of($vals->{sum},  $vals->{cnt});
-   my $n_true = '(' . shorten($vals->{sum} || 0, d=>1_000, p=>0) . ')';
-   return $p_true, $n_true;
+   my $p_true  = percentage_of($vals->{sum},  $vals->{cnt});
+   my $p_false = percentage_of(($vals->{cnt} - $vals->{sum}), $vals->{cnt});
+   return $p_true, $p_false;
 }
 
 sub format_string_list {
@@ -6655,7 +6694,7 @@ sub format_string_list {
       my ($str) = keys %$cnt_for;
       $str = substr($str, 0, LINE_LENGTH - 30) . '...'
          if length $str > LINE_LENGTH - 30;
-      return (1, $str);
+      return $str;
    }
    my $line = '';
    my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
@@ -6687,46 +6726,86 @@ sub format_string_list {
       $line .= "... " . (@top - $i) . " more";
    }
 
-   return (scalar keys %$cnt_for, $line);
+   return $line;
 }
 
-sub sorted_attribs {
+sub sort_attribs {
    my ( $self, $attribs, $ea ) = @_;
-   my %basic_attrib = (
-      Query_time    => 0,
-      Lock_time     => 1,
-      Rows_sent     => 2,
-      Rows_examined => 3,
-      user          => 4,
-      host          => 5,
-      db            => 6,
-      ts            => 7,
-   );
-   my @basic_attribs;
-   my @non_bool_attribs;
-   my @bool_attribs;
+   return unless $attribs && @$attribs;
+   MKDEBUG && _d("Sorting attribs:", @$attribs);
 
+   my @num_order = qw(
+      Query_time
+      Lock_time
+      Rows_sent
+      Rows_examined
+      Rows_affected
+      Rows_read
+      Bytes_sent
+      Merge_passes
+      Tmp_tables
+      Tmp_disk_tables
+      Tmp_table_sizes
+      bytes
+   );
+   my $i         = 0;
+   my %num_order = map { $_ => $i++ } @num_order;
+
+   my (@num, @innodb, @bool, @string);
    ATTRIB:
    foreach my $attrib ( @$attribs ) {
-      if ( exists $basic_attrib{$attrib} ) {
-         push @basic_attribs, $attrib;
-      }
-      else {
-         if ( ($ea->type_for($attrib) || '') ne 'bool' ) {
-            push @non_bool_attribs, $attrib;
+      next if $self->{hidden_attrib}->{$attrib};
+
+      my $type = $ea->type_for($attrib) || 'string';
+      if ( $type eq 'num' ) {
+         if ( $attrib =~ m/^InnoDB_/ ) {
+            push @innodb, $attrib;
          }
          else {
-            push @bool_attribs, $attrib;
+            push @num, $attrib;
          }
+      }
+      elsif ( $type eq 'bool' ) {
+         push @bool, $attrib;
+      }
+      elsif ( $type eq 'string' ) {
+         push @string, $attrib;
+      }
+      else {
+         MKDEBUG && _d("Unknown attrib type:", $type, "for", $attrib);
       }
    }
 
-   @non_bool_attribs = sort { uc $a cmp uc $b } @non_bool_attribs;
-   @bool_attribs     = sort { uc $a cmp uc $b } @bool_attribs;
-   @basic_attribs    = sort {
-         $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
+   @num    = sort { pref_sort($a, $num_order{$a}, $b, $num_order{$b}) } @num;
+   @innodb = sort { uc $a cmp uc $b } @innodb;
+   @bool   = sort { uc $a cmp uc $b } @bool;
+   @string = sort { uc $a cmp uc $b } @string;
 
-   return @basic_attribs, @non_bool_attribs, @bool_attribs;
+   return {
+      num     => \@num,
+      innodb  => \@innodb,
+      string  => \@string,
+      bool    => \@bool,
+   };
+}
+
+sub pref_sort {
+   my ( $attrib_a, $order_a, $attrib_b, $order_b ) = @_;
+
+   if ( !defined $order_a && !defined $order_b ) {
+      return $attrib_a cmp $attrib_b;
+   }
+
+   if ( defined $order_a && defined $order_b ) {
+      return $order_a <=> $order_b;
+   }
+
+   if ( !defined $order_a ) {
+      return 1;
+   }
+   else {
+      return -1;
+   }
 }
 
 sub tables_report {
@@ -6776,6 +6855,24 @@ sub explain_report {
       MKDEBUG && _d("EXPLAIN failed:", $query, $EVAL_ERROR);
    }
    return $explain ? $explain : "# EXPLAIN failed: $EVAL_ERROR";
+}
+
+sub format_time_range {
+   my ( $self, $vals ) = @_;
+   my $min = parse_timestamp($vals->{min} || '');
+   my $max = parse_timestamp($vals->{max} || '');
+
+   if ( $min && $max && $min eq $max ) {
+      return "all events occurred at $min";
+   }
+
+   my ($min_day) = split(' ', $min) if $min;
+   my ($max_day) = split(' ', $max) if $max;
+   if ( ($min_day || '') eq ($max_day || '') ) {
+      (undef, $max) = split(' ', $max);
+   }
+
+   return $min && $max ? "$min to $max" : '';
 }
 
 sub _d {
@@ -11728,6 +11825,9 @@ sub main {
             Status_code  => 'string',
             Statement_id => 'string',
             Error_no     => 'string',
+            Last_errno   => 'string',
+            Thread_id    => 'string',
+            Killed       => 'bool',
          },
       );
       push @ea, $ea;
