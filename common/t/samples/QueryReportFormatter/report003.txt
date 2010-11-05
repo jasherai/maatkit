@@ -12,9 +12,8 @@
 # Count        100       1
 # Exec time    100      1s      1s      1s      1s      1s       0      1s
 # Lock time    100     1ms     1ms     1ms     1ms     1ms       0     1ms
-# Databases              1   foodb
-# arg                    1 select col from tbl where id=42
-# cmd                    1   Query
+# cmd        Query
+# Databases  foodb
 # Query_time distribution
 #   1us
 #  10us

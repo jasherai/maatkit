@@ -6,11 +6,10 @@
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       1
 # Exec time     99    30ms    30ms    30ms    30ms    30ms       0    30ms
-# bytes         51      37      37      37      37      37       0      37
+# Query size     51      37      37      37      37      37       0      37
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
-# arg                    1 EXECUTE SELECT i FROM d.t WHERE i="3"
-# cmd                    1   Query
+# cmd        Query
 # Query_time distribution
 #   1us
 #  10us
@@ -35,11 +34,10 @@ SELECT i FROM d.t WHERE i="3"\G
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count         50       1
 # Exec time      0   286us   286us   286us   286us   286us       0   286us
-# bytes         48      35      35      35      35      35       0      35
+# Query size     48      35      35      35      35      35       0      35
 # Statement     50       2       2       2       2       2       0       2
 # Warning c      0       0       0       0       0       0       0       0
-# arg                    1 PREPARE SELECT i FROM d.t WHERE i=?
-# cmd                    1   Query
+# cmd        Query
 # Query_time distribution
 #   1us
 #  10us

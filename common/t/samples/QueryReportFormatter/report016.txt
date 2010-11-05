@@ -4,6 +4,7 @@
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time    100      8s      8s      8s      8s      8s       0      8s
+# InnoDB:
 # IDB IO rw    100     2ms     2ms     2ms     2ms     2ms       0     2ms
 # IDB queue    100     3ms     3ms     3ms     3ms     3ms       0     3ms
 # IDB rec l    100     1ms     1ms     1ms     1ms     1ms       0     1ms

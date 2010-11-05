@@ -367,7 +367,6 @@ foreach my $event (@$events) {
 $ea->calculate_statistical_metrics();
 $result = $qrf->header(
    ea      => $ea,
-   # select  => [ $ea->get_attributes() ],
    orderby => 'Query_time',
 );
 
@@ -385,21 +384,17 @@ ok(
 # #############################################################################
 
 # This test uses the $ea from the Bool pretty printer test above.
-my @sorted = $qrf->sorted_attribs($ea->get_attributes(), $ea);
+my $sorted = $qrf->sort_attribs($ea->get_attributes(), $ea);
 is_deeply(
-   \@sorted,
-   [qw(
-      ts
-      Query_time
-      Lock_time
-      InnoDB_IO_r_bytes
-      InnoDB_pages_distinct
-      Filesort
-      QC_Hit
-      )
-   ],
-   'sorted_attribs()'
-) or print Dumper(\@sorted);
+   $sorted,
+   {
+      num    => [qw(Query_time Lock_time)],
+      innodb => [qw(InnoDB_IO_r_bytes InnoDB_pages_distinct)],
+      bool   => [qw(Filesort QC_Hit)],
+      string => [qw()],
+   },
+   'sort_attribs()'
+) or print Dumper($sorted);
 
 # Make an ea with most of the common attributes.
 $events = [
@@ -428,6 +423,7 @@ $ea  = new EventAggregator(
    groupby => 'fingerprint',
    worst   => 'Query_time',
    ignore_attributes => [qw(arg cmd)],
+   type_for => { Thread_id => 'string' },
 );
 foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
@@ -435,29 +431,17 @@ foreach my $event (@$events) {
 }
 $ea->calculate_statistical_metrics();
 
-@sorted = $qrf->sorted_attribs($ea->get_attributes(), $ea);
+$sorted = $qrf->sort_attribs($ea->get_attributes(), $ea);
 is_deeply(
-   \@sorted,
-   [qw(
-      ts
-      Query_time
-      Lock_time
-      Rows_sent
-      Rows_examined
-      Rows_read
-      bytes
-      InnoDB_IO_r_bytes
-      InnoDB_pages_distinct
-      Merge_passes
-      Thread_id
-      user
-      host
-      db
-      Filesort
-      QC_Hit
-   )],
-   'more sorted_attribs()'
-) or print Dumper(\@sorted);
+   $sorted,
+   {
+      num    => [qw(Query_time Lock_time Rows_sent Rows_examined Rows_read Merge_passes bytes)],
+      innodb => [qw(InnoDB_IO_r_bytes InnoDB_pages_distinct)],
+      bool   => [qw(Filesort QC_Hit)],
+      string => [qw(db host Thread_id user)],
+   },
+   'more sort_attribs()'
+) or print Dumper($sorted);
 
 # ############################################################################
 # Test that --[no]zero-bool removes 0% vals.

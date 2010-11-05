@@ -6,5 +6,5 @@
 # ========= ====== ======= ======= ======= ======= ======= ======= =======
 # Count        100       1
 # Exec time      0       0       0       0       0       0       0       0
-# Users                  1 msandbox
-# Databases              1   mysql
+# Databases  mysql
+# Users      msandbox

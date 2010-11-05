@@ -4,4 +4,5 @@
 # =========        ======= ======= ======= ======= ======= ======= =======
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 # Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
-#  66% (2)    QC_Hit
+# Boolean:
+# QC Hit      66% yes,  33% no

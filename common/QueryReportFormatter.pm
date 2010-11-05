@@ -60,18 +60,18 @@ sub new {
 
    my $self = {
       %args,
-      bool_format => '# %3s%% %-6s %s',
-      label_width => $label_width,
-      dont_print  => {         # don't print these attribs in these reports
-         header => {
-            pos_in_log  => 1,
-            ts          => 1,
-         },
-         query_report => {
-            pos_in_log  => 1,
-            fingerprint => 1,
-            ts          => 1,
-         }
+      label_width   => $label_width,
+      global_format => "# %-${label_width}s        %7s %7s %7s %7s %7s %7s %7s",
+      event_format  => "# %-${label_width}s %6s %7s %7s %7s %7s %7s %7s %7s",
+      string_format => "# %-${label_width}s  %s",
+      bool_format   => "# %-${label_width}s  %3d%% yes, %3d%% no",
+      global_headers=> [qw(    total min max avg 95% stddev median)],
+      event_headers => [qw(pct total min max avg 95% stddev median)],
+      hidden_attrib => {   # Don't sort/print these attribs in the reports.
+         arg         => 1, # They're usually handled specially, or not
+         fingerprint => 1, # printed at all.
+         pos_in_log  => 1,
+         ts          => 1,
       },
    };
    return bless $self, $class;
@@ -164,7 +164,7 @@ sub files {
 #   * ea         obj: EventAggregator
 #   * orderby    scalar: attrib items ordered by
 # Optional arguments:
-#   * select     arrayref: attribs to print, mostly for testing; see dont_print
+#   * select     arrayref: attribs to print, mostly for testing
 #   * zero_bool  bool: print zero bool values (0%)
 # Print a report about the global statistics in the EventAggregator.
 # Formerly called "global_report()."
@@ -175,9 +175,7 @@ sub header {
    }
    my $ea      = $args{ea};
    my $orderby = $args{orderby};
-
-   my $dont_print = $self->{dont_print}->{header};
-   my $results    = $ea->results();
+   my $results = $ea->results();
    my @result;
 
    # Get global count
@@ -216,55 +214,52 @@ sub header {
       push @result, "# Time range: $time_range";
    }
 
-   # Column header line
-   my ($format, @headers) = $self->make_header('global');
-   push @result, sprintf($format, "Attribute", @headers);
-   # The numbers 7, 7, 7, etc. are the field widths from make_header().
-   # Hard-coded values aren't ideal but this code rarely changes.
-   push @result, sprintf($format,
-      map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7)));
+   # Global column headers
+   push @result, $self->make_global_header();
 
-   # Each additional line
-   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
-   ATTRIB:
-   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
-      next if $dont_print->{$attrib};
+   # Sort the attributes, removing any hidden attributes.
+   my $attribs = $self->sort_attribs(
+      ($args{select} ? $args{select} : $ea->get_attributes()),
+      $ea,
+   );
 
-      # Get, check attribute's type (num, string or bool).
-      my $attrib_type = $ea->type_for($attrib);
-      next unless $attrib_type; 
-      next if $attrib_type eq 'string';  # only nums and bools in header
+   foreach my $type ( qw(num innodb) ) {
+      # Add "InnoDB:" sub-header before grouped InnoDB_* attributes.
+      if ( $type eq 'innodb' && @{$attribs->{$type}} ) {
+         push @result, "# InnoDB:";
+      };
 
-      # Check that attribute exists in data store.
-      next unless exists $results->{globals}->{$attrib};
-      my $store = $results->{globals}->{$attrib};
-      my @values;
-
-      if ( $attrib_type eq 'num' ) {
-         my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+      NUM_ATTRIB:
+      foreach my $attrib ( @{$attribs->{$type}} ) {
+         next unless exists $results->{globals}->{$attrib};
+         
+         my $store   = $results->{globals}->{$attrib};
          my $metrics = $ea->stats()->{globals}->{$attrib};
-         @values = (
+         my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+         my @values  = ( 
             @{$store}{qw(sum min max)},
             $store->{sum} / $store->{cnt},
             @{$metrics}{qw(pct_95 stddev median)},
          );
          @values = map { defined $_ ? $func->($_) : '' } @values;
-      }
-      elsif ( $attrib_type eq 'bool' ) {
-         if ( $store->{sum} > 0 || $args{zero_bool} ) {
-            push @result, 
-               sprintf $self->{bool_format},
-                  $self->format_bool_attrib($store), $attrib;
-         }
-      }
-      else {
-         MKDEBUG && _d("Unknown attrib type:", $attrib_type, "for", $attrib);
-         next ATTRIB;
-      }
 
-      push @result, sprintf $format, $self->make_label($attrib), @values
-         unless $attrib_type eq 'bool';  # bool does its own thing.
-   } # ATTRIB
+         push @result,
+            sprintf $self->{global_format}, $self->make_label($attrib), @values;
+      }
+   }
+
+   push @result, "# Boolean:" if @{$attribs->{bool}};
+   BOOL_ATTRIB:
+   foreach my $attrib ( @{$attribs->{bool}} ) {
+      next unless exists $results->{globals}->{$attrib};
+
+      my $store = $results->{globals}->{$attrib};
+      if ( $store->{sum} > 0 || $args{zero_bool} ) { 
+         push @result,
+            sprintf $self->{bool_format},
+               $self->make_label($attrib), $self->bool_percents($store);
+      }
+   }
 
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
@@ -275,7 +270,7 @@ sub header {
 #   * orderby  scalar: attrib worst items ordered by
 #   * groupby  scalar: attrib worst items grouped by
 # Optional arguments:
-#   * select       arrayref: attribs to print, mostly for test; see dont_print
+#   * select       arrayref: attribs to print, mostly for test
 #   * explain_why  bool: print reason why item is reported
 #   * print_header  bool: "Report grouped by" header
 sub query_report {
@@ -299,6 +294,12 @@ sub query_report {
                . "# Report grouped by $groupby\n"
                . '# ' . ( '#' x 72 ) . "\n\n";
    }
+
+   # Sort the attributes, removing any hidden attributes.
+   my $attribs = $self->sort_attribs(
+      ($args{select} ? $args{select} : $ea->get_attributes()),
+      $ea,
+   );
 
    # Print each worst item: its stats/metrics (sum/min/max/95%/etc.),
    # Query_time distro chart, tables, EXPLAIN, fingerprint, etc.
@@ -343,9 +344,10 @@ sub query_report {
       $report .= "\n" if $rank > 1;  # space between each event report
       $report .= $self->event_report(
          %args,
-         item  => $item,
-         rank   => $rank,
-         reason => $reason,
+         item    => $item,
+         rank    => $rank,
+         reason  => $reason,
+         attribs => $attribs,
       );
 
       if ( $o->get('report-histogram') ) {
@@ -418,7 +420,7 @@ sub query_report {
 #   * item        scalar: Item in ea results
 #   * orderby     scalar: attribute that events are ordered by
 # Optional arguments:
-#   * select      arrayref: attribs to print, mostly for testing; see dont_print
+#   * select      arrayref: attribs to print, mostly for testing
 #   * reason      scalar: why this item is being reported (top|outlier)
 #   * rank        scalar: item rank among the worst
 #   * zero_bool   bool: print zero bool values (0%)
@@ -432,9 +434,7 @@ sub event_report {
    my $ea      = $args{ea};
    my $item    = $args{item};
    my $orderby = $args{orderby};
-
-   my $dont_print = $self->{dont_print}->{query_report};
-   my $results    = $ea->results();
+   my $results = $ea->results();
    my @result;
 
    # Return unless the item exists in the results (it should).
@@ -501,64 +501,81 @@ sub event_report {
    }
 
    # Column header line
-   my ($format, @headers) = $self->make_header();
-   push @result, sprintf($format, "Attribute", @headers);
-   # The numbers 6, 7, 7, etc. are the field widths from make_header().
-   # Hard-coded values aren't ideal but this code rarely changes.
-   push @result, sprintf($format,
-      map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7)));
+   push @result, $self->make_event_header();
 
    # Count line
-   push @result, sprintf
-      $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
-         map { '' } (1 ..9);
+   push @result,
+      sprintf $self->{event_format}, 'Count',
+         percentage_of($class_cnt, $global_cnt), $class_cnt, map { '' } (1..8);
 
-   # Each additional line
-   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
-   ATTRIB:
-   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
-      next if $dont_print->{$attrib};
-      my $attrib_type = $ea->type_for($attrib);
-      next unless $attrib_type; 
-      next unless exists $store->{$attrib};
-      my $vals = $store->{$attrib};
-      next unless scalar %$vals;
+   # Sort the attributes, removing any hidden attributes, if they're not
+   # already given to us.  In mk-query-digest, this sub is called from
+   # query_report(), but in testing it's called directly.  query_report()
+   # will sort and pass the attribs so they're not for every event.
+   my $attribs = $args{attribs};
+   if ( !$attribs ) {
+      $attribs = $self->sort_attribs(
+         ($args{select} ? $args{select} : $ea->get_attributes()),
+         $ea
+      );
+   }
 
-      my @values;
-      my $pct;
-      if ( $attrib_type eq 'num' ) {
+   foreach my $type ( qw(num innodb) ) {
+      # Add "InnoDB:" sub-header before grouped InnoDB_* attributes.
+      if ( $type eq 'innodb' && @{$attribs->{$type}} ) {
+         push @result, "# InnoDB:";
+      };
+
+      NUM_ATTRIB:
+      foreach my $attrib ( @{$attribs->{$type}} ) {
+         next NUM_ATTRIB unless exists $store->{$attrib};
+         my $vals = $store->{$attrib};
+         next unless scalar %$vals;
+
+         my $pct;
          my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
          my $metrics = $ea->stats()->{classes}->{$item}->{$attrib};
-         @values = (
+         my @values = (
             @{$vals}{qw(sum min max)},
             $vals->{sum} / $vals->{cnt},
             @{$metrics}{qw(pct_95 stddev median)},
          );
          @values = map { defined $_ ? $func->($_) : '' } @values;
-         $pct = percentage_of($vals->{sum},
-            $results->{globals}->{$attrib}->{sum});
-      }
-      elsif ( $attrib_type eq 'string' ) {
-         push @values,
-            $self->format_string_list($attrib, $vals, $class_cnt),
-            (map { '' } 0..9); # just for good measure
-         $pct = '';
-      }
-      elsif ( $attrib_type eq 'bool' ) {
-         if ( $vals->{sum} > 0 || $args{zero_bool} ) {
-            push @result,
-               sprintf $self->{bool_format},
-                  $self->format_bool_attrib($vals), $attrib;
-         }
-      }
-      else {
-         @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
-         $pct = 0;
-      }
+         $pct   = percentage_of(
+            $vals->{sum}, $results->{globals}->{$attrib}->{sum});
 
-      push @result, sprintf $format, $self->make_label($attrib), $pct, @values
-         unless $attrib_type eq 'bool';  # bool does its own thing.
-   } # ATTRIB
+         push @result,
+            sprintf $self->{event_format},
+               $self->make_label($attrib), $pct, @values;
+      }
+   }
+
+   push @result, "# Boolean:" if @{$attribs->{bool}};
+   BOOL_ATTRIB:
+   foreach my $attrib ( @{$attribs->{bool}} ) {
+      next BOOL_ATTRIB unless exists $store->{$attrib};
+      my $vals = $store->{$attrib};
+      next unless scalar %$vals;
+
+      if ( $vals->{sum} > 0 || $args{zero_bool} ) {
+         push @result,
+            sprintf $self->{bool_format},
+               $self->make_label($attrib), $self->bool_percents($vals);
+      }
+   }
+
+   push @result, "# String:" if @{$attribs->{bool}};
+   STRING_ATTRIB:
+   foreach my $attrib ( @{$attribs->{string}} ) {
+      next STRING_ATTRIB unless exists $store->{$attrib};
+      my $vals = $store->{$attrib};
+      next unless scalar %$vals;
+
+      push @result,
+         sprintf $self->{string_format},
+            $self->make_label($attrib),
+            $self->format_string_list($attrib, $vals, $class_cnt);
+   }
 
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
@@ -846,17 +863,50 @@ sub prepared {
    return $report->get_report();
 }
 
-# Makes a header format and returns the format and the column header names
-# The argument is either 'global' or anything else.
-sub make_header {
-   my ( $self, $global ) = @_;
-   my $format  = "# %-$self->{label_width}s %6s %7s %7s %7s %7s %7s %7s %7s";
-   my @headers = qw(pct total min max avg 95% stddev median);
-   if ( $global ) {
-      $format =~ s/%(\d+)s/' ' x $1/e;
-      shift @headers;
-   }
-   return $format, @headers;
+sub make_global_header {
+   my ( $self ) = @_;
+   my @lines;
+
+   # First line: 
+   # Attribute          total     min     max     avg     95%  stddev  median
+   push @lines,
+      sprintf $self->{global_format}, "Attribute", @{$self->{global_headers}};
+
+   # Underline first line:
+   # =========        ======= ======= ======= ======= ======= ======= =======
+   # The numbers 7, 7, 7, etc. are the field widths from make_header().
+   # Hard-coded values aren't ideal but this code rarely changes.
+   push @lines,
+      sprintf $self->{global_format},
+         map { "=" x $_ } ($self->{label_width}, qw(7 7 7 7 7 7 7));
+
+   # End result should be like:
+   # Attribute          total     min     max     avg     95%  stddev  median
+   # =========        ======= ======= ======= ======= ======= ======= =======
+   return @lines;
+}
+
+{
+# Event headers are all the same so we just make them once.
+my @lines;
+sub make_event_header {
+   my ( $self ) = @_;
+   return @lines if @lines;
+
+   push @lines,
+      sprintf $self->{event_format}, "Attribute", @{$self->{event_headers}};
+
+   # The numbers 6, 7, 7, etc. are the field widths from make_header().
+   # Hard-coded values aren't ideal but this code rarely changes.
+   push @lines,
+      sprintf $self->{event_format},
+         map { "=" x $_ } ($self->{label_width}, qw(6 7 7 7 7 7 7 7));
+
+   # End result should be like:
+   # Attribute    pct   total     min     max     avg     95%  stddev  median
+   # ========= ====== ======= ======= ======= ======= ======= ======= =======
+   return @lines;
+}
 }
 
 # Convert attribute names into labels
@@ -875,18 +925,18 @@ sub make_label {
          : $val eq 'Query_time' ? 'Exec time'
          : $val eq 'host'       ? 'Hosts'
          : $val eq 'Error_no'   ? 'Errors'
+         : $val eq 'bytes'      ? 'Query size'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, $self->{label_width}); $val };
 }
 
-# Does pretty-printing for bool (Yes/No) attributes like QC_Hit.
-sub format_bool_attrib {
+sub bool_percents {
    my ( $self, $vals ) = @_;
    # Since the value is either 1 or 0, the sum is the number of
    # all true events and the number of false events is the total
    # number of events minus those that were true.
-   my $p_true = percentage_of($vals->{sum},  $vals->{cnt});
-   my $n_true = '(' . shorten($vals->{sum} || 0, d=>1_000, p=>0) . ')';
-   return $p_true, $n_true;
+   my $p_true  = percentage_of($vals->{sum},  $vals->{cnt});
+   my $p_false = percentage_of(($vals->{cnt} - $vals->{sum}), $vals->{cnt});
+   return $p_true, $p_false;
 }
 
 # Does pretty-printing for lists of strings like users, hosts, db.
@@ -907,7 +957,7 @@ sub format_string_list {
       # - 30 for label, spacing etc.
       $str = substr($str, 0, LINE_LENGTH - 30) . '...'
          if length $str > LINE_LENGTH - 30;
-      return (1, $str);
+      return $str;
    }
    my $line = '';
    my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
@@ -939,78 +989,70 @@ sub format_string_list {
       $line .= "... " . (@top - $i) . " more";
    }
 
-   return (scalar keys %$cnt_for, $line);
+   return $line;
 }
 
-# Sort template:
-# 1. ts (time range)
-# 2. basic numeric attribs
-#    %numeric_attrib
-#    all other alphabetized
-# 3. string attribs
-#    %string_attrib
-#    all others alphabetized
-# 4. bool attribs
-#    alphabetized
-# 5. prepared statement attribs
-#    special order
-sub sorted_attribs {
+sub sort_attribs {
    my ( $self, $attribs, $ea ) = @_;
    return unless $attribs && @$attribs;
+   MKDEBUG && _d("Sorting attribs:", @$attribs);
 
-   # Sort order for numeric and string attribs.  Attribs not listed here
-   # come after these, in alphabetical order.
-   my %num_order = (
-      Query_time    => 2,
-      Lock_time     => 3,
-      Rows_sent     => 4,
-      Rows_examined => 5,
-      Rows_affected => 6,
-      Rows_read     => 7,
-      bytes         => 8,
+   # Sort order for numeric attribs.  Attribs not listed here come after these
+   # in alphabetical order.
+   my @num_order = qw(
+      Query_time
+      Lock_time
+      Rows_sent
+      Rows_examined
+      Rows_affected
+      Rows_read
+      Bytes_sent
+      Merge_passes
+      Tmp_tables
+      Tmp_disk_tables
+      Tmp_table_sizes
+      bytes
    );
-   my %string_order = (
-      user => 1,
-      host => 2,
-      db   => 3,
-   );
+   my $i         = 0;
+   my %num_order = map { $_ => $i++ } @num_order;
 
-   my (@ts, @num, @string, @bool, @unknown);
+   my (@num, @innodb, @bool, @string);
    ATTRIB:
    foreach my $attrib ( @$attribs ) {
-      if ( $attrib eq 'ts' ) {
-         # ts is type string but special so we handle it specially
-         push @ts, 'ts';
-         next ATTRIB;
-      }
+      next if $self->{hidden_attrib}->{$attrib};
 
       # Default type is string in EventAggregator::make_handler().
       my $type = $ea->type_for($attrib) || 'string';
       if ( $type eq 'num' ) {
-         push @num, $attrib;
-      }
-      elsif ( $type eq 'string' ) {
-         push @string, $attrib;
+         if ( $attrib =~ m/^InnoDB_/ ) {
+            push @innodb, $attrib;
+         }
+         else {
+            push @num, $attrib;
+         }
       }
       elsif ( $type eq 'bool' ) {
          push @bool, $attrib;
       }
+      elsif ( $type eq 'string' ) {
+         push @string, $attrib;
+      }
       else {
-         MKDEBUG && _d("Unknown attrib type:", $attrib);
-         push @unknown, $attrib;
+         MKDEBUG && _d("Unknown attrib type:", $type, "for", $attrib);
       }
    }
 
-   # Sorting with preferred orders.
-   @num     = sort { pref_sort($a, $num_order{$a}, $b, $num_order{$b}) }
-              @num;
-   @string  = sort { pref_sort($a, $string_order{$a}, $b, $string_order{$b}) }
-              @string;
+   @num    = sort { pref_sort($a, $num_order{$a}, $b, $num_order{$b}) } @num;
+   @innodb = sort { uc $a cmp uc $b } @innodb;
+   @bool   = sort { uc $a cmp uc $b } @bool;
+   @string = sort { uc $a cmp uc $b } @string;
 
-   @bool    = sort { uc $a cmp uc $b } @bool;
-   @unknown = sort { uc $a cmp uc $b } @unknown;
-
-   return @ts, @num, @string, @bool, @unknown;
+   return {
+      num     => \@num,
+      innodb  => \@innodb,
+      string  => \@string,
+      bool    => \@bool,
+   };
 }
 
 sub pref_sort {
