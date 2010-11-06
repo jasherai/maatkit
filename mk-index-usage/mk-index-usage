@@ -5123,11 +5123,11 @@ index usage.  The tables have the following CREATE TABLE definitions:
 MAGIC_create_indexes:
 
   CREATE TABLE IF NOT EXISTS indexes (
-    db            VARCHAR(64) NOT NULL,
-    tbl           VARCHAR(64) NOT NULL,
-    idx           VARCHAR(64) NOT NULL,
-    usage_cnt     BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY   (db, tbl, idx)
+    db           VARCHAR(64) NOT NULL,
+    tbl          VARCHAR(64) NOT NULL,
+    idx          VARCHAR(64) NOT NULL,
+    cnt          BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY  (db, tbl, idx)
   )
 
 MAGIC_create_queries:
@@ -5144,7 +5144,7 @@ MAGIC_create_tables:
   CREATE TABLE IF NOT EXISTS tables (
     db           VARCHAR(64) NOT NULL,
     tbl          VARCHAR(64) NOT NULL,
-    usage_cnt    BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    cnt          BIGINT UNSIGNED NOT NULL DEFAULT 0,
     PRIMARY KEY  (db, tbl)
   )
 
@@ -5155,6 +5155,7 @@ MAGIC_create_index_usage:
     db            VARCHAR(64) NOT NULL,
     tbl           VARCHAR(64) NOT NULL,
     idx           VARCHAR(64) NOT NULL,
+    cnt           BIGINT UNSIGNED NOT NULL DEFAULT 1,
     UNIQUE INDEX  (query_id, db, tbl, idx)
   )
 
@@ -5166,6 +5167,7 @@ MAGIC_create_index_alternatives:
     tbl           VARCHAR(64) NOT NULL,     --
     idx           VARCHAR(64) NOT NULL,     --
     alt_idx       VARCHAR(64) NOT NULL,     -- this index was an alternative
+    cnt           BIGINT UNSIGNED NOT NULL DEFAULT 1,
     UNIQUE INDEX  (query_id, db, tbl, idx, alt_idx)
   )
 

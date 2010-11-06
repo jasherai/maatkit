@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use IndexUsage;
@@ -109,8 +109,8 @@ is_deeply(
 # Test save results.
 # #############################################################################
 SKIP: {
-   skip "Cannot connect to sandbox master", 7 unless $dbh;
-   skip "Sakila database is not loaded",    7
+   skip "Cannot connect to sandbox master", 8 unless $dbh;
+   skip "Sakila database is not loaded",    8
       unless @{ $dbh->selectall_arrayref('show databases like "sakila"') };
 
    # Use mk-index-usage to create all the save results tables.
@@ -128,7 +128,7 @@ SKIP: {
    $iu->add_indexes(db=>'sakila', tbl=>'film',       indexes=>$film_idx );
    $iu->add_indexes(db=>'sakila', tbl=>'othertbl',   indexes=>$othertbl_idx);
    
-   my $rows = $dbh->selectall_arrayref("SELECT db,tbl,idx,usage_cnt FROM mk_iu.indexes ORDER BY db,tbl,idx");
+   my $rows = $dbh->selectall_arrayref("SELECT db,tbl,idx,cnt FROM mk_iu.indexes ORDER BY db,tbl,idx");
    is_deeply(
       $rows,
       [
@@ -142,7 +142,7 @@ SKIP: {
       "Add indexes to results"
    );
 
-   $rows = $dbh->selectall_arrayref("SELECT db,tbl,usage_cnt FROM mk_iu.tables ORDER BY db,tbl");
+   $rows = $dbh->selectall_arrayref("SELECT db,tbl,cnt FROM mk_iu.tables ORDER BY db,tbl");
    is_deeply(
       $rows,
       [
@@ -158,7 +158,7 @@ SKIP: {
    $iu->add_table_usage(qw(sakila film_actor));
    $iu->add_table_usage(qw(sakila   othertbl));    # But not sakila.film!
    
-   $rows = $dbh->selectall_arrayref("SELECT db,tbl,usage_cnt FROM mk_iu.tables ORDER BY db,tbl");
+   $rows = $dbh->selectall_arrayref("SELECT db,tbl,cnt FROM mk_iu.tables ORDER BY db,tbl");
    is_deeply(
       $rows,
       [
@@ -194,7 +194,7 @@ SKIP: {
       ],
    );
 
-   $rows = $dbh->selectall_arrayref("SELECT db,tbl,idx,usage_cnt FROM mk_iu.indexes ORDER BY db,tbl,idx");
+   $rows = $dbh->selectall_arrayref("SELECT db,tbl,idx,cnt FROM mk_iu.indexes ORDER BY db,tbl,idx");
    is_deeply(
       $rows,
       [
@@ -208,15 +208,42 @@ SKIP: {
       "Updates index usage in results"
    );
 
-   $rows = $dbh->selectall_arrayref("select db,tbl,idx,fingerprint from mk_iu.index_usage left join mk_iu.queries using (query_id) order by db,tbl,idx");
+   $rows = $dbh->selectall_arrayref("select db,tbl,idx,cnt,fingerprint from mk_iu.index_usage left join mk_iu.queries using (query_id) order by db,tbl,idx");
    is_deeply(
       $rows,
       [
-         [qw(sakila actor PRIMARY), $query],
-         [qw(sakila film_actor idx_fk_film_id), $query],
-         [qw(sakila film_actor PRIMARY), $query],
+         [qw(sakila actor PRIMARY 1), $query],
+         [qw(sakila film_actor idx_fk_film_id 1), $query],
+         [qw(sakila film_actor PRIMARY 1), $query],
       ],
       "Updates query-index usage in results"
+   );
+  
+   # Use the query/indexes again.  The index_usage cnt should update to 2. 
+   $iu->add_index_usage(
+      query_id => $query_id,
+      usage    => [
+         {  db  => 'sakila',
+            tbl => 'film_actor',
+            idx => [qw(PRIMARY idx_fk_film_id)],
+            alt => [],
+         },
+         {  db  => 'sakila',
+            tbl => 'actor',
+            idx => [qw(PRIMARY)],
+            alt => [qw(idx_actor_last_name)],
+         },
+      ],
+   );
+   $rows = $dbh->selectall_arrayref("select db,tbl,idx,cnt,fingerprint from mk_iu.index_usage left join mk_iu.queries using (query_id) order by db,tbl,idx");
+   is_deeply(
+      $rows,
+      [
+         [qw(sakila actor PRIMARY 2), $query],
+         [qw(sakila film_actor idx_fk_film_id 2), $query],
+         [qw(sakila film_actor PRIMARY 2), $query],
+      ],
+      "Updates query-index usage cnt"
    );
 
    @unused = ();
@@ -247,7 +274,7 @@ SKIP: {
    is_deeply(
       $rows,
       [
-         [qw(12852102680195556712 sakila actor PRIMARY idx_actor_last_name)],
+         [qw(12852102680195556712 sakila actor PRIMARY idx_actor_last_name 2)],
       ],
       "Updates index alternatives"
    );

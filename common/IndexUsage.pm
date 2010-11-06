@@ -58,21 +58,23 @@ sub new {
       # See mk-index-usage --save-results-database for the table defs.
       $self->{insert_index_sth} = $dbh->prepare(
          "INSERT INTO `$db`.`indexes` (db, tbl, idx) VALUES (?, ?, ?) "
-         . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
+         . "ON DUPLICATE KEY UPDATE cnt = cnt + 1");
       $self->{insert_query_sth} = $dbh->prepare(
          "INSERT IGNORE INTO `$db`.`queries` (query_id, fingerprint, sample) "
          . " VALUES (CONV(?, 16, 10), ?, ?)");
       $self->{insert_tbl_sth} = $dbh->prepare(
          "INSERT INTO `$db`.`tables` (db, tbl) "
          . "VALUES (?, ?) "
-         . "ON DUPLICATE KEY UPDATE usage_cnt = usage_cnt + 1");
+         . "ON DUPLICATE KEY UPDATE cnt = cnt + 1");
       $self->{insert_index_usage_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO `$db`.`index_usage` (query_id, db, tbl, idx) "
-         . "VALUES (CONV(?, 16, 10), ?, ?, ?)");
+         "INSERT INTO `$db`.`index_usage` (query_id, db, tbl, idx) "
+         . "VALUES (CONV(?, 16, 10), ?, ?, ?) "
+         . "ON DUPLICATE KEY UPDATE cnt = cnt + 1");
       $self->{insert_index_alt_sth} = $dbh->prepare(
-         "INSERT IGNORE INTO `$db`.`index_alternatives` "
+         "INSERT INTO `$db`.`index_alternatives` "
          . "(query_id, db, tbl, idx, alt_idx) "
-         . "VALUES (CONV(?, 16, 10), ?, ?, ?, ?)");
+         . "VALUES (CONV(?, 16, 10), ?, ?, ?, ?) "
+         . "ON DUPLICATE KEY UPDATE cnt = cnt + 1");
    }
 
    return bless $self, $class;
