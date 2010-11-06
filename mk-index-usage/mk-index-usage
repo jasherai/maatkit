@@ -5257,10 +5257,106 @@ MAGIC_create_index_alternatives:
     db            VARCHAR(64) NOT NULL,     -- this index, but...
     tbl           VARCHAR(64) NOT NULL,     --
     idx           VARCHAR(64) NOT NULL,     --
-    alt_idx       VARCHAR(64) NOT NULL,     -- this index was an alternative
+    alt_idx       VARCHAR(64) NOT NULL,     -- was an alternative
     cnt           BIGINT UNSIGNED NOT NULL DEFAULT 1,
-    UNIQUE INDEX  (query_id, db, tbl, idx, alt_idx)
+    UNIQUE INDEX  (query_id, db, tbl, idx, alt_idx),
+    INDEX         (db, tbl, idx)
+    INDEX         (db, tbl, alt_idx)
   )
+
+The following are some queries you can run against these tables to answer common
+questions you might have.
+
+Question: which queries sometimes use different indexes, and what fraction of
+the time is each index chosen?
+
+ SELECT CONCAT_WS('.', iu.query_id, iu.db, iu.tbl, iu.idx) AS idx,
+    variations, iu.cnt, iu.cnt / total_cnt * 100 AS pct
+ FROM index_usage AS iu
+    INNER JOIN (
+       SELECT query_id, db, tbl, SUM(cnt) AS total_cnt,
+         COUNT(*) AS variations
+       FROM index_usage
+       GROUP BY query_id, db, tbl
+       HAVING COUNT(*) > 1
+    ) AS qv USING(query_id, db, tbl);
+
+Question: which indexes have lots of alternatives, i.e. are chosen instead of
+other indexes, and for what queries?
+
+ SELECT CONCAT_WS('.', db, tbl, idx) AS idx,
+    GROUP_CONCAT(alt_idx) AS alternatives,
+    GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
+ FROM index_alternatives
+ GROUP BY db, tbl, idx
+ HAVING COUNT(*) > 1;
+
+Question: which indexes are considered as alternates for other indexes, and for
+what queries?
+
+ SELECT CONCAT_WS('.', db, tbl, alt_idx) AS idx,
+    GROUP_CONCAT(idx) AS alternative_to,
+    GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
+ FROM index_alternatives
+ GROUP BY db, tbl, alt_idx
+ HAVING COUNT(*) > 1;
+
+Question: which of those are never chosen by any queries, and are therefore
+superfluous?
+
+ SELECT CONCAT_WS('.', i.db, i.tbl, i.idx) AS idx,
+    alt.alternative_to, alt.queries, alt.cnt
+ FROM indexes AS i
+    INNER JOIN (
+       SELECT db, tbl, alt_idx, GROUP_CONCAT(idx) AS alternative_to,
+          GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
+       FROM index_alternatives
+       GROUP BY db, tbl, alt_idx
+       HAVING COUNT(*) > 1
+    ) AS alt ON i.db = alt.db AND i.tbl = alt.tbl
+      AND i.idx = alt.alt_idx
+ WHERE i.cnt = 0;
+
+Question: given a table, which indexes were used, by how many queries, with how
+many distinct fingerprints?  Were there alternatives?  Which indexes were not
+used?  You can edit the following query's SELECT list to also see the query IDs
+in question.
+
+ SELECT i.idx, iu.usage_cnt, iu.usage_total,
+    ia.alt_cnt, ia.alt_total
+ FROM indexes AS i
+    LEFT OUTER JOIN (
+       SELECT db, tbl, idx, COUNT(*) AS usage_cnt,
+          SUM(cnt) AS usage_total, GROUP_CONCAT(query_id) AS used_by
+       FROM index_usage
+       GROUP BY db, tbl, idx
+    ) AS iu ON i.db=iu.db AND i.tbl=iu.tbl AND i.idx = iu.idx
+    LEFT OUTER JOIN (
+       SELECT db, tbl, idx, COUNT(*) AS alt_cnt,
+          SUM(cnt) AS alt_total,
+          GROUP_CONCAT(query_id) AS alt_queries
+       FROM index_alternatives
+       GROUP BY db, tbl, idx
+    ) AS ia ON i.db=ia.db AND i.tbl=ia.tbl AND i.idx = ia.idx
+ WHERE i.db = 'wordpress' AND i.tbl = 'wp_posts';
+
+Question: which indexes on a given table are vital for at least one query (there
+is no alternative)?
+
+   SELECT i.db, i.tbl, i.idx, no_alt.queries
+   FROM indexes AS i
+      INNER JOIN (
+         SELECT iu.db, iu.tbl, iu.idx,
+            GROUP_CONCAT(iu.query_id) AS queries
+         FROM index_usage AS iu
+            LEFT OUTER JOIN index_alternatives AS ia
+               USING(db, tbl, idx)
+         WHERE ia.db IS NULL
+            AND iu.db = 'mpb_wordpress' AND iu.tbl = 'wp_posts'
+         GROUP BY iu.db, iu.tbl, iu.idx
+      ) AS no_alt ON no_alt.db = i.db AND no_alt.tbl = i.tbl
+         AND no_alt.idx = i.idx
+   ORDER BY i.db, i.tbl, i.idx, no_alt.queries;
 
 =item --set-vars
 
