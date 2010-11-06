@@ -23,4 +23,4 @@
 # 100ms
 #    1s
 #  10s+
-get my_key
+get my_key\G

@@ -3288,7 +3288,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7013
+# QueryReportFormatter package 7015
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3483,17 +3483,22 @@ sub header {
       }
    }
 
-   push @result, "# Boolean:" if @{$attribs->{bool}};
-   BOOL_ATTRIB:
-   foreach my $attrib ( @{$attribs->{bool}} ) {
-      next unless exists $results->{globals}->{$attrib};
+   if ( @{$attribs->{bool}} ) {
+      push @result, "# Boolean:";
+      my $printed_bools = 0;
+      BOOL_ATTRIB:
+      foreach my $attrib ( @{$attribs->{bool}} ) {
+         next unless exists $results->{globals}->{$attrib};
 
-      my $store = $results->{globals}->{$attrib};
-      if ( $store->{sum} > 0 || $args{zero_bool} ) { 
-         push @result,
-            sprintf $self->{bool_format},
-               $self->make_label($attrib), $self->bool_percents($store);
+         my $store = $results->{globals}->{$attrib};
+         if ( $store->{sum} > 0 || $args{zero_bool} ) { 
+            push @result,
+               sprintf $self->{bool_format},
+                  $self->make_label($attrib), $self->bool_percents($store);
+            $printed_bools = 1;
+         }
       }
+      pop @result unless $printed_bools;
    }
 
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
@@ -3729,31 +3734,41 @@ sub event_report {
       }
    }
 
-   push @result, "# Boolean:" if @{$attribs->{bool}};
-   BOOL_ATTRIB:
-   foreach my $attrib ( @{$attribs->{bool}} ) {
-      next BOOL_ATTRIB unless exists $store->{$attrib};
-      my $vals = $store->{$attrib};
-      next unless scalar %$vals;
+   if ( @{$attribs->{bool}} ) {
+      push @result, "# Boolean:";
+      my $printed_bools = 0;
+      BOOL_ATTRIB:
+      foreach my $attrib ( @{$attribs->{bool}} ) {
+         next BOOL_ATTRIB unless exists $store->{$attrib};
+         my $vals = $store->{$attrib};
+         next unless scalar %$vals;
 
-      if ( $vals->{sum} > 0 || $args{zero_bool} ) {
-         push @result,
-            sprintf $self->{bool_format},
-               $self->make_label($attrib), $self->bool_percents($vals);
+         if ( $vals->{sum} > 0 || $args{zero_bool} ) {
+            push @result,
+               sprintf $self->{bool_format},
+                  $self->make_label($attrib), $self->bool_percents($vals);
+            $printed_bools = 1;
+         }
       }
+      pop @result unless $printed_bools;
    }
 
-   push @result, "# String:" if @{$attribs->{string}};
-   STRING_ATTRIB:
-   foreach my $attrib ( @{$attribs->{string}} ) {
-      next STRING_ATTRIB unless exists $store->{$attrib};
-      my $vals = $store->{$attrib};
-      next unless scalar %$vals;
+   if ( @{$attribs->{string}} ) {
+      push @result, "# String:";
+      my $printed_strings = 0;
+      STRING_ATTRIB:
+      foreach my $attrib ( @{$attribs->{string}} ) {
+         next STRING_ATTRIB unless exists $store->{$attrib};
+         my $vals = $store->{$attrib};
+         next unless scalar %$vals;
 
-      push @result,
-         sprintf $self->{string_format},
-            $self->make_label($attrib),
-            $self->format_string_list($attrib, $vals, $class_cnt);
+         push @result,
+            sprintf $self->{string_format},
+               $self->make_label($attrib),
+               $self->format_string_list($attrib, $vals, $class_cnt);
+         $printed_strings = 1;
+      }
+      pop @result unless $printed_strings;
    }
 
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";

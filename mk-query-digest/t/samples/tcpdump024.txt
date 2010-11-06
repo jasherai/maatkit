@@ -10,7 +10,6 @@
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size    45      50      50      50      50      50       0      50
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1
@@ -43,7 +42,6 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size    54      59      59      59      59      59       0      59
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1

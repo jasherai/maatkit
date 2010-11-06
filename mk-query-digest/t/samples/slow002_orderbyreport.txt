@@ -19,7 +19,6 @@
 # pages distin  33      36      18      18      18      18       0      18
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts

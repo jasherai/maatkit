@@ -12,7 +12,6 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size   100       5       5       5       5       5       0       5
-# Boolean:
 # String:
 # Hosts
 # Users        [SQL_SLAVE]

@@ -55,7 +55,6 @@ select * from d.t where name="adam"\G
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size    37     217      42      45   43.40   44.60    1.31   42.48
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1
@@ -88,7 +87,6 @@ select * from d.t where name="daniel"\G
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size    10      60      20      20      20      20       0      20
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1

@@ -10,7 +10,6 @@
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size    50      42      42      42      42      42       0      42
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1

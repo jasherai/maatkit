@@ -110,7 +110,6 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 # Rows examine   0       1       1       1       1       1       0       1
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size    12      31      31      31      31      31       0      31
-# Boolean:
 # String:
 # Databases    db1
 # Query_time distribution

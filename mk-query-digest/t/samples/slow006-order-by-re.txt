@@ -12,7 +12,6 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size    50      69      23      23      23      23       0      23
-# Boolean:
 # String:
 # Databases    foo
 # Hosts
@@ -45,7 +44,6 @@ SELECT col FROM foo_tbl\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size    50      69      23      23      23      23       0      23
-# Boolean:
 # String:
 # Databases    bar
 # Hosts

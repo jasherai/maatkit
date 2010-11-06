@@ -7,7 +7,6 @@
 # Rows affecte           0       0       0       0       0       0       0
 # Query size           128      32      32      32      32       0      32
 # Warning coun           0       0       0       0       0       0       0
-# Boolean:
 
 # Query 1: 2.13 QPS, 0.36x concurrency, ID 0xE3A3649C5FAC418D at byte 2548
 # This item is included in the report because it matches --limit.
@@ -20,7 +19,6 @@
 # Rows affecte   0       0       0       0       0       0       0       0
 # Query size   100     128      32      32      32      32       0      32
 # Warning coun   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Errors       none
 # Hosts        127.0.0.1

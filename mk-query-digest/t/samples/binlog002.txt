@@ -31,7 +31,6 @@
 # @@session.sq   0       0       0       0       0       0       0       0
 # @@session.un 100       1       1       1       1       1       0       1
 # error code     0       0       0       0       0       0       0       0
-# String:
 # Query_time distribution
 #   1us
 #  10us

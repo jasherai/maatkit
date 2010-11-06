@@ -59,7 +59,6 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # pages distin  10      11      11      11      11      11       0      11
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts
@@ -102,7 +101,6 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # pages distin  33      36      18      18      18      18       0      18
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts
@@ -144,7 +142,6 @@ select     biz = '91848182522' from foo.bar \G
 # pages distin  16      18      18      18      18      18       0      18
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts
@@ -187,7 +184,6 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # pages distin  16      18      18      18      18      18       0      18
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts
@@ -226,7 +222,6 @@ VALUES ('211', '18')\G
 # pages distin  22      24      24      24      24      24       0      24
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
-# Boolean:
 # String:
 # Databases    db1
 # Hosts
@@ -259,7 +254,6 @@ VALUES ('', 'Exact')\G
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size     0       5       5       5       5       5       0       5
 # InnoDB:
-# Boolean:
 # String:
 # Hosts
 # Users        [SQL_SLAVE]
