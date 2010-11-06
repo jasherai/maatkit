@@ -3401,7 +3401,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 6949
+# SchemaIterator package 7025
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm
@@ -3621,10 +3621,18 @@ sub get_db_itr {
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
+
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-   return sub {
+   my $iterator = sub {
       return shift @dbs;
    };
+
+   if (wantarray) {
+      return ($iterator, scalar @dbs);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub get_tbl_itr {
@@ -3661,9 +3669,17 @@ sub get_tbl_itr {
    else {
       MKDEBUG && _d('No db given so no tables');
    }
-   return sub {
+
+   my $iterator = sub {
       return shift @tbls;
    };
+
+   if ( wantarray ) {
+      return ($iterator, scalar @tbls);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub _make_filter {
@@ -4330,6 +4346,8 @@ sub main {
    my $res_db;
    eval {
       my $dsn = $dp->parse_options($o) || {};
+
+      # dbh for EXPLAIN-ing.
       $dbh = get_cxn(
          dsn          => $dsn,
          OptionParser => $o,
@@ -4456,15 +4474,31 @@ sub main {
    # ########################################################################
    $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-   my $next_db = $si->get_db_itr(dbh => $si_dbh);
+   my ($next_db, $db_count) = $si->get_db_itr(dbh => $si_dbh);
+   my ($db_pr, $dbs_done);
+   if ( $o->get('progress') ) {
+      $db_pr = new Progress(
+         jobsize => $db_count,
+         spec    => $o->get('progress'),
+         name    => 'schema inventory',
+      );
+   }
    DATABASE:
    while ( my $database = $next_db->() ) {
       MKDEBUG && _d('Getting tables from', $database);
-      my $next_tbl = $si->get_tbl_itr(
+      my ($next_tbl, $tbl_count) = $si->get_tbl_itr(
          dbh   => $si_dbh,
          db    => $database,
          views => 0,
       );
+      my ($tbl_pr, $tbls_done);
+      if ( $o->get('progress') ) {
+         $tbl_pr = new Progress(
+            jobsize => $tbl_count,
+            spec    => $o->get('progress'),
+            name    => "table inventory for $database",
+         );
+      }
       TABLE:
       while ( my $table = $next_tbl->() ) {
          MKDEBUG && _d('Got table', $table);
@@ -4478,7 +4512,9 @@ sub main {
             warn $EVAL_ERROR unless $o->get('q');
             MKDEBUG && _d($EVAL_ERROR);
          }
+         $tbl_pr->update(sub { ++$tbls_done }) if $tbl_pr;
       }
+      $db_pr->update(sub { ++$dbs_done }) if $db_pr;
    }
    $si_dbh->disconnect();
 
@@ -4558,7 +4594,7 @@ sub main {
                $cur_db = $new_db;
             }
 
-            # See if we've EXPLAIN'ed this checksum before.  If so, just
+            # See if we've EXPLAINed this checksum before.  If so, just
             # increment counters with the saved info from $exa.  If not, EXPLAIN
             # and increment counters, then save to $exa.
             my $access = $exa->get_usage_for($chk, $cur_db);
@@ -4871,9 +4907,9 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-This tool is read-only.  It tries to read a log of queries and EXPLAIN them.  It
-also gathers information about all tables in all databases.  It should be very
-low-risk.
+This tool is read-only unless you use L<"--save-results-database">.  It reads a
+log of queries and EXPLAIN them.  It also gathers information about all tables
+in all databases.  It should be very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.
@@ -4888,8 +4924,8 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 =head1 DESCRIPTION
 
 This tool connects to a MySQL database server, reads through a query log, and
-asks MySQL how it will use each query.  When it is finished, it prints out a
-report on indexes that the queries didn't use.
+uses EXPLAIN to ask MySQL how it will use each query.  When it is finished, it
+prints out a report on indexes that the queries didn't use.
 
 The query log needs to be in MySQL's slow query log format.  If you need to
 input a different format, you can use L<mk-query-digest> to translate the
@@ -4898,9 +4934,13 @@ formats.  If you don't specify a filename, the tool reads from STDIN.
 The tool runs two stages.  In the first stage, the tool takes inventory of all
 the tables and indexes in your database, so it can compare the existing indexes
 to those that were actually used by the queries in the log.  In the second
-stage, it runs EXPLAIN on each query in the query log.  If the query is not a
-SELECT, it tries to transform it to a roughly equivalent SELECT query.  This is
-not a perfect process, but it is good enough to be useful.
+stage, it runs EXPLAIN on each query in the query log.  It uses separate
+database connections to inventory the tables and run EXPLAIN, so it opens two
+connections to the database.
+
+If a query is not a SELECT, it tries to transform it to a roughly equivalent
+SELECT query so it can be EXPLAINed.  This is not a perfect process, but it is
+good enough to be useful.
 
 The tool skips the EXPLAIN step for queries that are exact duplicates of those
 seen before.  It assumes that the same query will generate the same EXPLAIN plan
@@ -4921,11 +4961,11 @@ back to C<tbl1>.  This process involves complex parsing.  It is generally very
 accurate, but there is some chance that it might not work right.  If you find
 cases where it fails, submit a bug report and a reproducible test case.
 
-Queries that cannot be EXPLAIN'ed will cause all subsequent queries with the
+Queries that cannot be EXPLAINed will cause all subsequent queries with the
 same fingerprint to be blacklisted.  This is to reduce the work they cause, and
 prevent them from continuing to print error messages.  However, at least in this
 stage of the tool's development, it is my opinion that it's not a good idea to
-pre-emtively silence these, or prevent them from being EXPLAIN'ed at all.  I am
+pre-emtively silence these, or prevent them from being EXPLAINed at all.  I am
 looking for lots of feedback on how to improve things like the query parsing.
 So please submit your test cases based on the errors the tool prints!
 
@@ -4936,7 +4976,7 @@ for every index that was not used.  It skips indexes for tables that were never
 accessed by any queries in the log, to avoid false-positive results.
 
 If you don't specify L<"--quiet">, the tool also outputs warnings about
-statements that cannot be EXPLAIN'ed and similar.  These go to standard error.
+statements that cannot be EXPLAINed and similar.  These go to standard error.
 
 Progress reports are enabled by default (see L<"--progress">).  These also go to
 standard error.
