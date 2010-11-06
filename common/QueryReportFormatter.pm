@@ -390,10 +390,10 @@ sub query_report {
          $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
 
-         my $type = lc $o->get('type')->[0];
-         my $mark
-            = $type eq 'memcached' || $type eq 'http' || $type eq 'pglog' ? ''
-            : '\G';
+         my $log_type = $args{log_type} || '';
+         my $mark     = $log_type eq 'memcached'
+                     || $log_type eq 'http'
+                     || $log_type eq 'pglog' ? '' : '\G';
 
          if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
             if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
