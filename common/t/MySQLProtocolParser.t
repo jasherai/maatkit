@@ -1638,7 +1638,7 @@ like(
    qr/--THE END--'\)$/,
    '2nd, fragmented client query (issue 832)',
 );
-warn "WOW";
+
 # #############################################################################
 # Issue 670: Make mk-query-digest capture the error message from tcpdump
 # #############################################################################
