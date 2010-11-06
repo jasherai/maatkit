@@ -23,4 +23,4 @@
 # 100ms
 #    1s
 #  10s+
-get comment_v3_482685\G
+get comment_v3_482685

@@ -23,4 +23,4 @@
 # 100ms
 #    1s
 #  10s+
-delete comment_1873527\G
+delete comment_1873527
