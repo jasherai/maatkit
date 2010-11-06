@@ -5103,21 +5103,22 @@ See also L<"--[no]report">.
 
 type: DSN
 
-Save results to tables in this database.
+Save results to tables in this database.  Information about indexes, queries,
+tables and their usage is stored in several tables in the specified database.
+The tables are auto-created if they do not exist.  If the database doesn't
+exist, it can be auto-created with L<"--create-save-results-database">.  In this
+case the connection is initially created with no default database, then after
+the database is created, it is USE'ed.
 
-B<WARNING>: Saved results is a new, experimental feature.  It may change in
-future releases.  You should not save results to a production server because
-mk-index-usage executes many INSERT statements to save the results, therefore
-it can temporarily increase the load on the server.
+mk-index-usage executes INSERT statements to save the results.  Therefore, you
+should be careful if you use this feature on a production server.  It might
+increase load, or cause trouble if you don't want the server to be written to,
+or so on.
 
-Information about indexes, queries, tables and usage of those is stored in
-several tables in the specified database.  The tables are auto-created if they
-do not exist.
+This is a new feature.  It may change in future releases.  
 
-After a run, these tables can be queried to answer various questions about
-index usage.
-
-The tables have the following CREATE TABLE definitions:
+After a run, you can query the usage tables to answer various questions about
+index usage.  The tables have the following CREATE TABLE definitions:
 
 MAGIC_create_indexes:
 
