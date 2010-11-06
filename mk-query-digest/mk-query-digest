@@ -13180,8 +13180,9 @@ Execute queries on this DSN.
 
 Adds a callback into the chain, after filters but before the reports.  Events
 are executed on this DSN.  If they are successful, the time they take to execute
-overwrites the event's Query_time attribute.  If unsuccessful, the callback
-returns false and terminates the chain.
+overwrites the event's Query_time attribute and the original Query_time value
+(from the log) is saved as the Exec_orig_time attribute.  If unsuccessful,
+the callback returns false and terminates the chain.
 
 If the connection fails, mk-query-digest tries to reconnect once per second.
 
