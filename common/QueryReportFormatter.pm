@@ -390,23 +390,28 @@ sub query_report {
          $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
 
+         my $type = lc $o->get('type')->[0];
+         my $mark
+            = $type eq 'memcached' || $type eq 'http' || $type eq 'pglog' ? ''
+            : '\G';
+
          if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
             if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
-               $report .= "$samp_query\\G\n";
+               $report .= "$samp_query${mark}\n";
             }
             else {
-               $report .= "# EXPLAIN /*!50100 PARTITIONS*/\n$samp_query\\G\n"; 
+               $report .= "# EXPLAIN /*!50100 PARTITIONS*/\n$samp_query${mark}\n"; 
                $report .= $self->explain_report($samp_query, $default_db);
             }
          }
          else {
-            $report .= "$samp_query\\G\n"; 
+            $report .= "$samp_query${mark}\n"; 
             my $converted = $qr->convert_to_select($samp_query);
             if ( $o->get('for-explain')
                  && $converted
                  && $converted =~ m/^[\(\s]*select/i ) {
                # It converted OK to a SELECT
-               $report .= "# Converted for EXPLAIN\n# EXPLAIN /*!50100 PARTITIONS*/\n$converted\\G\n";
+               $report .= "# Converted for EXPLAIN\n# EXPLAIN /*!50100 PARTITIONS*/\n$converted${mark}\n";
             }
          }
       }
