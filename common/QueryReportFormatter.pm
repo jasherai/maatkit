@@ -1011,6 +1011,7 @@ sub sort_attribs {
    # in alphabetical order.
    my @num_order = qw(
       Query_time
+      Exec_orig_time
       Lock_time
       Rows_sent
       Rows_examined
