@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 35;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -377,6 +377,52 @@ ok(
       cmd_output => 1,
    ),
    'Bool (Yes/No) pretty printer'
+);
+
+$events = [
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '8.000652',
+      Lock_time     => '0.002300',
+      QC_Hit        => 'No',
+      Filesort      => 'No',
+      InnoDB_IO_r_bytes     => 2,
+      InnoDB_pages_distinct => 20,
+   },
+];
+$ea->reset_aggregated_data();
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+
+$result = $qrf->header(
+   ea      => $ea,
+   orderby => 'Query_time',
+);
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report023.txt",
+      cmd_output => 1,
+   ),
+   'No Boolean sub-header in gobal report when all zero bools'
+);
+
+$result = $qrf->event_report(
+   ea      => $ea,
+   orderby => 'Query_time',
+   item    => 'select id from users where name=?',
+);
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report024.txt",
+      cmd_output => 1,
+   ),
+   'No Boolean sub-header in event report with all zero bools'
 );
 
 # #############################################################################
