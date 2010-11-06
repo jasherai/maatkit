@@ -4451,7 +4451,8 @@ sub main {
    # Populate the IndexUsage object with indexes.  Also get a list of all
    # databases and tables before going on to parse the queries.  This will be
    # important when we see a query without any default database, and we have to
-   # guess which database to USE for EXPLAIN-ing it.
+   # guess which database to USE for EXPLAIN-ing it.  This code block doesn't
+   # read query logs, it's just inventorying the tables and indexes.
    # ########################################################################
    $si->set_filter($si->make_filter($o));
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
@@ -4551,7 +4552,9 @@ sub main {
             # Do we need to USE a new database before we EXPLAIN the query?
             my $new_db = $event->{db} || $event->{Schema};
             if ( $new_db && $new_db ne $cur_db ) {
-               $dbh->do('USE ' . $q->quote($new_db));
+               my $sql = 'USE ' . $q->quote($new_db);
+               MKDEBUG && _d($sql);
+               $dbh->do($sql);
                $cur_db = $new_db;
             }
 
@@ -4593,7 +4596,7 @@ sub main {
 
          };
          if ( $EVAL_ERROR ) {
-            # Skip statements with this fingerprint in the future.
+            # Skip statements with this fingerprint in the future (blacklist).
             $err_for{$fingerprint} = { event => $event, error => $EVAL_ERROR };
 
             # Log the error.
@@ -5011,11 +5014,8 @@ the C<ALTER TABLE ... DROP> for each will be printed on separate lines.
 
 =item --empty-save-results-tables
 
-Truncate all pre-existing tables in the L<"--save-results-database">.
-
-Specifying this option causes any previously saved results in the the
-L<"--save-results-database"> to be deleted before running.  This allows
-information from previous runs to be removed before the current run.
+Drop and re-create all pre-existing tables in the L<"--save-results-database">.
+This allows information from previous runs to be removed before the current run.
 
 =item --help
 
