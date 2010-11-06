@@ -36,7 +36,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 35;
+   plan tests => 37;
 }
 
 
@@ -82,7 +82,7 @@ sub get_all_db_tbls {
 $sb->load_file('master', 'common/t/samples/SchemaIterator.sql');
 my @dbs = sort grep { $_ !~ m/information_schema|lost\+found/; } map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
 
-my $next_db = $si->get_db_itr(dbh=>$dbh);
+my ($next_db, $size) = $si->get_db_itr(dbh=>$dbh);
 is(
    ref $next_db,
    'CODE',
@@ -95,11 +95,13 @@ is_deeply(
    'get_db_iter() found the databases'
 );
 
+is($size, 5, 'The schema iterator showed the correct number of DBs');
+
 # ###########################################################################
 # Test simple, unfiltered get_tbl_itr().
 # ###########################################################################
 
-my $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
+my ($next_tbl,$tbl_count) = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is(
    ref $next_tbl,
    'CODE',
@@ -126,6 +128,7 @@ is_deeply(
    'get_tbl_itr() found no db3 tables'
 );
 
+is($tbl_count, 3, 'Table iterator got right number of tables');
 
 # #############################################################################
 # Test make_filter().

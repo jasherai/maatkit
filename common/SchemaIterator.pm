@@ -256,10 +256,11 @@ sub set_filter {
 
 # Required args:
 #   * dbh  dbh: an active dbh
-# Returns: itr
+# Returns: list (itr, size) or scalar itr.
 # Can die: no
 # get_db_itr() returns an iterator which returns the next db found,
-# according to any set filters, when called successively.
+# according to any set filters, when called successively.  In list context, the
+# second element the list is the number of elements over which it will iterate.
 sub get_db_itr {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh);
@@ -280,10 +281,18 @@ sub get_db_itr {
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
+
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-   return sub {
+   my $iterator = sub {
       return shift @dbs;
    };
+
+   if (wantarray) {
+      return ($iterator, scalar @dbs);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 # Required args:
@@ -291,12 +300,13 @@ sub get_db_itr {
 #   * db     scalar: database name
 # Optional args:
 #   * views  bool: Permit/return views (default no)
-# Returns: itr
+# Returns: either list(itr,size) or scalar itr
 # Can die: no
 # get_tbl_itr() returns an iterator which returns the next table found,
 # in the given db, according to any set filters, when called successively.
 # Make sure $dbh->{FetchHashKeyName} = 'NAME_lc' was set, else engine
-# filters won't work.
+# filters won't work.  If the sub is called in list context, it also returns the
+# number of tables found.
 sub get_tbl_itr {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db);
@@ -338,9 +348,17 @@ sub get_tbl_itr {
    else {
       MKDEBUG && _d('No db given so no tables');
    }
-   return sub {
+
+   my $iterator = sub {
       return shift @tbls;
    };
+
+   if ( wantarray ) {
+      return ($iterator, scalar @tbls);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 # Required args:
