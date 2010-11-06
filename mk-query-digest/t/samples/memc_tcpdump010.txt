@@ -22,4 +22,4 @@
 # 100ms
 #    1s
 #  10s+
-delete my_key\G
+delete my_key
