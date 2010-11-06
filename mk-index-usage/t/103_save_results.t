@@ -28,7 +28,7 @@ if ( !@{ $dbh->selectall_arrayref('show databases like "sakila"') } ) {
    plan skip_all => "Sakila database is not loaded";
 }
 else {
-   plan tests => 12;
+   plan tests => 17;
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
@@ -160,7 +160,7 @@ is_deeply(
    "Queries added"
 );
 
-$rows = $dbh->selectall_arrayref("select query_id, db, tbl, idx, sample from index_usage iu left join queries q using (query_id) order by db, tbl, idx");
+$rows = $dbh->selectall_arrayref("select query_id, db, tbl, idx, sample, cnt from index_usage iu left join queries q using (query_id) order by db, tbl, idx");
 $res = $sandbox_version ge '5.1' ?
    # v5.1 and newer
    [
@@ -168,16 +168,19 @@ $res = $sandbox_version ge '5.1' ?
          4950186562421969363,
          qw(sakila  actor  idx_actor_last_name),
          "select * from sakila.actor where last_name like 'A%'",
+         1,
       ], 
       [
          10891801448710051322,
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where actor_id>10",
+         2,
       ],
       [
          10334408417593890092,
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where last_name like 'A%' order by actor_id",
+         1,
       ],
    ]
    :
@@ -187,16 +190,19 @@ $res = $sandbox_version ge '5.1' ?
          4950186562421969363,
          qw(sakila  actor  idx_actor_last_name),
          "select * from sakila.actor where last_name like 'A%'",
+         1,
       ], 
       [
          10334408417593890092,
          qw(sakila  actor  idx_actor_last_name),
          "select * from sakila.actor where last_name like 'A%' order by actor_id",
+         2,
       ],
       [
          10891801448710051322,
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where actor_id>10",
+         1,
       ],
    ];
 is_deeply(
@@ -214,6 +220,128 @@ is_deeply(
    $rows,
    $res,
    "Index alternatives"
+);
+
+# #############################################################################
+# Run again to check that cnt vals are properly updated.
+# #############################################################################
+mk_index_usage::main(@args, "$trunk/mk-index-usage/t/samples/slow007.txt",
+   qw(--no-report), '-t', 'sakila.actor,sakila.address');
+
+$rows = $dbh->selectall_arrayref("select * from mk.tables order by db, tbl");
+is_deeply(
+   $rows,
+   [
+      [qw( sakila actor         8 )],
+      [qw( sakila address       0 )],
+   ],
+   "Updated table access counts"
+);
+
+# EXPLAIN results differ a little between 5.0 and 5.1.  5.1 is smarter.
+$res = $sandbox_version ge '5.1' ?
+   # v5.1 and newer
+   [
+      [qw(sakila  actor   idx_actor_last_name 2)],
+      [qw(sakila  actor   PRIMARY             6)],
+      [qw(sakila  address idx_fk_city_id      0)],
+      [qw(sakila  address PRIMARY             0)],
+   ]
+   : # v5.0 and older
+   [
+      [qw(sakila  actor   idx_actor_last_name 4)],
+      [qw(sakila  actor   PRIMARY             4)],
+      [qw(sakila  address idx_fk_city_id      0)],
+      [qw(sakila  address PRIMARY             0)],
+   ];
+
+$rows = $dbh->selectall_arrayref("select * from mk.indexes order by db, tbl");
+is_deeply(
+   $rows,
+   $res,
+   "Updated index usage counts"
+);
+
+$rows = $dbh->selectall_arrayref("select * from mk.queries order by query_id");
+is_deeply(
+   $rows,
+   [
+      [  4950186562421969363,
+         "select * from sakila.actor where last_name like ?",
+         "select * from sakila.actor where last_name like 'A%'",
+      ],
+      [  10334408417593890092,
+         "select * from sakila.actor where last_name like ? order by actor_id",
+         "select * from sakila.actor where last_name like 'A%' order by actor_id",
+      ],
+      [  10891801448710051322,
+         "select * from sakila.actor where actor_id>?",
+         "select * from sakila.actor where actor_id>10",
+      ],
+   ],
+   "Same queries added"
+);
+
+$rows = $dbh->selectall_arrayref("select query_id, db, tbl, idx, sample, cnt from index_usage iu left join queries q using (query_id) order by db, tbl, idx");
+$res = $sandbox_version ge '5.1' ?
+   # v5.1 and newer
+   [
+      [
+         4950186562421969363,
+         qw(sakila  actor  idx_actor_last_name),
+         "select * from sakila.actor where last_name like 'A%'",
+         2,
+      ], 
+      [
+         10891801448710051322,
+         qw(sakila  actor  PRIMARY),
+         "select * from sakila.actor where actor_id>10",
+         4,
+      ],
+      [
+         10334408417593890092,
+         qw(sakila  actor  PRIMARY),
+         "select * from sakila.actor where last_name like 'A%' order by actor_id",
+         2,
+      ],
+   ]
+   :
+   # v5.0 and older
+   [
+      [
+         4950186562421969363,
+         qw(sakila  actor  idx_actor_last_name),
+         "select * from sakila.actor where last_name like 'A%'",
+         2,
+      ], 
+      [
+         10334408417593890092,
+         qw(sakila  actor  idx_actor_last_name),
+         "select * from sakila.actor where last_name like 'A%' order by actor_id",
+         4,
+      ],
+      [
+         10891801448710051322,
+         qw(sakila  actor  PRIMARY),
+         "select * from sakila.actor where actor_id>10",
+         2,
+      ],
+   ];
+is_deeply(
+   $rows,
+   $res,
+   "Same index usage",
+);
+
+$rows = $dbh->selectall_arrayref("select db,tbl,idx,alt_idx,sample from index_alternatives a left join queries q using (query_id)");
+$res = $sandbox_version ge '5.1' ?
+   [[qw(sakila actor PRIMARY idx_actor_last_name),
+    "select * from sakila.actor where last_name like 'A%' order by actor_id"]]
+   : [];
+is_deeply(
+   $rows,
+   $res,
+   "Same index alternatives"
 );
 
 # #############################################################################

@@ -1,5 +1,6 @@
 Changelog for mk-index-usage:
 
+   * Changed --save-results to save results at end of run.
    * Added progress reports to the schema & table inventory (issue 1174).
 
 2010-10-09: version 0.9.2
