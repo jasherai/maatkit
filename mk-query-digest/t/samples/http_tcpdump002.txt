@@ -6,8 +6,8 @@
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     11    74ms    74ms    74ms    74ms    74ms       0    74ms
-# Query size     1     414     414     414     414     414       0     414
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     1     414     414     414     414     414       0     414
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -30,8 +30,8 @@ get www.percona.com/images/menu_our-vision.gif
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    70ms    70ms    70ms    70ms    70ms       0    70ms
-# Query size     9   3.74k   3.74k   3.74k   3.74k   3.74k       0   3.74k
 # Transmit tim   0   720us   720us   720us   720us   720us       0   720us
+# Query size     9   3.74k   3.74k   3.74k   3.74k   3.74k       0   3.74k
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -54,8 +54,8 @@ get www.percona.com/about-us.html
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    69ms    69ms    69ms    69ms    69ms       0    69ms
-# Query size    25   9.69k   9.69k   9.69k   9.69k   9.69k       0   9.69k
 # Transmit tim  25    66ms    66ms    66ms    66ms    66ms       0    66ms
+# Query size    25   9.69k   9.69k   9.69k   9.69k   9.69k       0   9.69k
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -78,8 +78,8 @@ get www.percona.com/js/jquery.js
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    68ms    68ms    68ms    68ms    68ms       0    68ms
-# Query size     0     170     170     170     170     170       0     170
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     0     170     170     170     170     170       0     170
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -102,8 +102,8 @@ get www.percona.com/images/bg-gray-corner-top.gif
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    67ms    67ms    67ms    67ms    67ms       0    67ms
-# Query size    50  19.55k  19.55k  19.55k  19.55k  19.55k       0  19.55k
 # Transmit tim  51   135ms   135ms   135ms   135ms   135ms       0   135ms
+# Query size    50  19.55k  19.55k  19.55k  19.55k  19.55k       0  19.55k
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -126,8 +126,8 @@ get www.percona.com/images/handshake.jpg
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time     10    67ms    67ms    67ms    67ms    67ms       0    67ms
-# Query size     0     344     344     344     344     344       0     344
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     0     344     344     344     344     344       0     344
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -150,8 +150,8 @@ get www.percona.com/images/menu_team.gif
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    62ms    62ms    62ms    62ms    62ms       0    62ms
-# Query size     2     822     822     822     822     822       0     822
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     2     822     822     822     822     822       0     822
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -174,8 +174,8 @@ get hit.clickaider.com/s/forms.js
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    62ms    62ms    62ms    62ms    62ms       0    62ms
-# Query size    10   3.92k   3.92k   3.92k   3.92k   3.92k       0   3.92k
 # Transmit tim  22    60ms    60ms    60ms    60ms    60ms       0    60ms
+# Query size    10   3.92k   3.92k   3.92k   3.92k   3.92k       0   3.92k
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -198,8 +198,8 @@ get hit.clickaider.com/clickaider.js
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      9    60ms    60ms    60ms    60ms    60ms       0    60ms
-# Query size     0      43      43      43      43      43       0      43
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     0      43      43      43      43      43       0      43
 # String:
 # Hosts        10.112.2.144
 # Status code  200
@@ -222,8 +222,8 @@ get hit.clickaider.com/pv?lng=140&&lnks=&t=About%20Percona&c=73a41b95-2926&r=htt
 # ============ === ======= ======= ======= ======= ======= ======= =======
 # Count         10       1
 # Exec time      7    45ms    45ms    45ms    45ms    45ms       0    45ms
-# Query size     0      35      35      35      35      35       0      35
 # Transmit tim   0       0       0       0       0       0       0       0
+# Query size     0      35      35      35      35      35       0      35
 # String:
 # Hosts        10.112.2.144
 # Status code  200
