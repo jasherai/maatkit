@@ -116,7 +116,7 @@ SKIP: {
    # Use mk-index-usage to create all the save results tables.
    # Must --databases foo so it won't find anything, else it will
    # pre-populate the tables with mysql.*, sakila.*, etc.
-   `$trunk/mk-index-usage/mk-index-usage -F /tmp/12345/my.sandbox.cnf --create-save-results-database --save-results-database D=mk_iu --empty-save-results-tables --no-report --quiet --databases foo $trunk/common/t/samples/empty >/dev/null 2>&1`;
+   `$trunk/mk-index-usage/mk-index-usage -F /tmp/12345/my.sandbox.cnf --create-save-results-database --save-results-database D=mk_iu --empty-save-results-tables --no-report --quiet --databases foo $trunk/common/t/samples/empty >/dev/null`;
 
    $iu = new IndexUsage();
 
