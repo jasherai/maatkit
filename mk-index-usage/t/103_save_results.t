@@ -196,13 +196,13 @@ $res = $sandbox_version ge '5.1' ?
          10334408417593890092,
          qw(sakila  actor  idx_actor_last_name),
          "select * from sakila.actor where last_name like 'A%' order by actor_id",
-         2,
+         1,
       ],
       [
          10891801448710051322,
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where actor_id>10",
-         1,
+         2,
       ],
    ];
 is_deeply(
@@ -318,13 +318,13 @@ $res = $sandbox_version ge '5.1' ?
          10334408417593890092,
          qw(sakila  actor  idx_actor_last_name),
          "select * from sakila.actor where last_name like 'A%' order by actor_id",
-         4,
+         2,
       ],
       [
          10891801448710051322,
          qw(sakila  actor  PRIMARY),
          "select * from sakila.actor where actor_id>10",
-         2,
+         4,
       ],
    ];
 is_deeply(
