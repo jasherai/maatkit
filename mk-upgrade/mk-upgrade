@@ -2544,7 +2544,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6671
+# EventAggregator package 6978
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -2936,7 +2936,7 @@ sub bucket_value {
 }
 
 sub calculate_statistical_metrics {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $classes        = $self->{result_classes};
    my $globals        = $self->{result_globals};
    my $class_metrics  = $self->{class_metrics};
@@ -2958,6 +2958,15 @@ sub calculate_statistical_metrics {
                   $classes->{$class}->{$attrib}->{all},
                   $classes->{$class}->{$attrib}
                );
+
+            if ( $args{apdex_t} && $attrib eq 'Query_time' ) {
+               $class_metrics->{$class}->{$attrib}->{apdex_t} = $args{apdex_t};
+               $class_metrics->{$class}->{$attrib}->{apdex}
+                  = $self->calculate_apdex(
+                     t       => $args{apdex_t},
+                     samples => $classes->{$class}->{$attrib}->{all},
+                  );
+            }
          }
       }
    }
@@ -3082,6 +3091,9 @@ sub metrics {
       median => $metrics->{classes}->{$where}->{$attrib}->{median} || 0,
       pct_95 => $metrics->{classes}->{$where}->{$attrib}->{pct_95} || 0,
       stddev => $metrics->{classes}->{$where}->{$attrib}->{stddev} || 0,
+
+      apdex_t => $metrics->{classes}->{$where}->{$attrib}->{apdex_t},
+      apdex   => $metrics->{classes}->{$where}->{$attrib}->{apdex},
    };
 }
 
@@ -3395,6 +3407,51 @@ sub _deep_copy_attrib_vals {
       $copy = $vals;
    }
    return $copy;
+}
+
+sub calculate_apdex {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(t samples);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($t, $samples) = @args{@required_args};
+
+   if ( $t <= 0 ) {
+      die "Invalid target threshold (T): $t.  T must be greater than zero";
+   }
+
+   my $f = 4 * $t;
+   MKDEBUG && _d("Apdex T =", $t, "F =", $f);
+
+   my $satisfied  = 0;
+   my $tolerating = 0;
+   my $frustrated = 0;  # just for debug output
+   my $n_samples  = 0;
+   BUCKET:
+   for my $bucket ( keys %$samples ) {
+      my $n_responses   = $samples->{$bucket};
+      my $response_time = $buck_vals[$bucket];
+
+      if ( $response_time <= $t ) {
+         $satisfied += $n_responses;
+      }
+      elsif ( $response_time <= $f ) {
+         $tolerating += $n_responses;
+      }
+      else {
+         $frustrated += $n_responses;
+      }
+
+      $n_samples += $n_responses;
+   }
+
+   my $apdex = sprintf('%.2f', ($satisfied + ($tolerating / 2)) / $n_samples);
+   MKDEBUG && _d($n_samples, "samples,", $satisfied, "satisfied,",
+      $tolerating, "tolerating,", $frustrated, "frustrated, Apdex score:",
+      $apdex);
+
+   return $apdex;
 }
 
 sub _d {

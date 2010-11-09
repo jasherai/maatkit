@@ -4281,7 +4281,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 6949
+# SchemaIterator package 7025
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm
@@ -4501,10 +4501,18 @@ sub get_db_itr {
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
+
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-   return sub {
+   my $iterator = sub {
       return shift @dbs;
    };
+
+   if (wantarray) {
+      return ($iterator, scalar @dbs);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub get_tbl_itr {
@@ -4541,9 +4549,17 @@ sub get_tbl_itr {
    else {
       MKDEBUG && _d('No db given so no tables');
    }
-   return sub {
+
+   my $iterator = sub {
       return shift @tbls;
    };
+
+   if ( wantarray ) {
+      return ($iterator, scalar @tbls);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub _make_filter {
