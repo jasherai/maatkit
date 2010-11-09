@@ -5260,7 +5260,7 @@ MAGIC_create_index_alternatives:
     alt_idx       VARCHAR(64) NOT NULL,     -- was an alternative
     cnt           BIGINT UNSIGNED NOT NULL DEFAULT 1,
     UNIQUE INDEX  (query_id, db, tbl, idx, alt_idx),
-    INDEX         (db, tbl, idx)
+    INDEX         (db, tbl, idx),
     INDEX         (db, tbl, alt_idx)
   )
 
