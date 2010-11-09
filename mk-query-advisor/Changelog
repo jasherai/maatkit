@@ -1,5 +1,7 @@
 Changelog for mk-query-advisor:
 
+2010-11-08: version 1.0.2
+
    * Added rule CLA.006 to detect mixed table GROUP/ORDER BY (issue 1137).
 
 2010-09-11: version 1.0.1

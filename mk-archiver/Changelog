@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2010-11-08: version 1.0.25
+
    * Removed LIMIT 1 from DELETE only when index is unique (issue 1166).
    * Added --[no]bulk-delete-limit option (issue 1170).
 
