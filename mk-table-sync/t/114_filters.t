@@ -60,8 +60,8 @@ $slave_dbh->do('insert into issue_806_2.t2 values (42)');
 
 my $mk_table_checksum = "$trunk/mk-table-checksum/mk-table-checksum";
 
-`$mk_table_checksum -F $cnf --replicate test.checksum h=127.1,P=12345 --quiet`;
-`$mk_table_checksum -F $cnf --replicate test.checksum h=127.1,P=12345 --replicate-check 1 --quiet`;
+`$mk_table_checksum -F $cnf --replicate test.checksum h=127.1,P=12345 -d issue_806_1,issue_806_2 --quiet`;
+`$mk_table_checksum -F $cnf --replicate test.checksum h=127.1,P=12345 -d issue_806_1,issue_806_2 --replicate-check 1 --quiet`;
 
 $output = `$cmd h=127.1,P=12345 --replicate test.checksum --dry-run | tail -n 2`;
 is(
