@@ -5270,7 +5270,7 @@ questions you might have.
 Question: which queries sometimes use different indexes, and what fraction of
 the time is each index chosen?
 
- SELECT CONCAT_WS('.', iu.query_id, iu.db, iu.tbl, iu.idx) AS idx,
+ SELECT iu.query_id, CONCAT_WS('.', iu.db, iu.tbl, iu.idx) AS idx,
     variations, iu.cnt, iu.cnt / total_cnt * 100 AS pct
  FROM index_usage AS iu
     INNER JOIN (
@@ -5284,8 +5284,8 @@ the time is each index chosen?
 Question: which indexes have lots of alternatives, i.e. are chosen instead of
 other indexes, and for what queries?
 
- SELECT CONCAT_WS('.', db, tbl, idx) AS idx,
-    GROUP_CONCAT(alt_idx) AS alternatives,
+ SELECT CONCAT_WS('.', db, tbl, idx) AS idx_chosen,
+    GROUP_CONCAT(DISTINCT alt_idx) AS alternatives,
     GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
  FROM index_alternatives
  GROUP BY db, tbl, idx
@@ -5294,8 +5294,8 @@ other indexes, and for what queries?
 Question: which indexes are considered as alternates for other indexes, and for
 what queries?
 
- SELECT CONCAT_WS('.', db, tbl, alt_idx) AS idx,
-    GROUP_CONCAT(idx) AS alternative_to,
+ SELECT CONCAT_WS('.', db, tbl, alt_idx) AS idx_considered,
+    GROUP_CONCAT(DISTINCT idx) AS alternative_to,
     GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
  FROM index_alternatives
  GROUP BY db, tbl, alt_idx
