@@ -5270,7 +5270,7 @@ v5.0 and newer).  The view names are the strings after the C<MAGIC_view_>
 prefix.
 
 Question: which queries sometimes use different indexes, and what fraction of
-the time is each index chosen?  MAGIC_view_query_uses_alternate_indexes:
+the time is each index chosen?  MAGIC_view_query_uses_several_indexes:
 
  SELECT iu.query_id, CONCAT_WS('.', iu.db, iu.tbl, iu.idx) AS idx,
     variations, iu.cnt, iu.cnt / total_cnt * 100 AS pct
