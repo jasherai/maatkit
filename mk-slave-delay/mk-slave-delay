@@ -2004,6 +2004,10 @@ sub main {
    if ( !$status || ! %$status ) {
       die "No SLAVE STATUS found";
    }
+   if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
+      # http://code.google.com/p/maatkit/issues/detail?id=1169
+      die "Slave SQL thread is not running";
+   }
 
    my $master_dbh;
    if ( $master_dsn ) {

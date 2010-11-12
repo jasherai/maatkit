@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+   * The tool ran even if the SQL thread was not running (issue 1169).
+
 2010-08-01: version 1.0.22
 
    * The tool did not reconnect to the slave (issue 991).
