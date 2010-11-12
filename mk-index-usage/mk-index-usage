@@ -5265,10 +5265,12 @@ MAGIC_create_index_alternatives:
   )
 
 The following are some queries you can run against these tables to answer common
-questions you might have.
+questions you might have.  Each query is also created as a view (with MySQL
+v5.0 and newer).  The view names are the strings after the C<MAGIC_view_>
+prefix.
 
 Question: which queries sometimes use different indexes, and what fraction of
-the time is each index chosen?
+the time is each index chosen?  MAGIC_view_query_uses_alternate_indexes:
 
  SELECT iu.query_id, CONCAT_WS('.', iu.db, iu.tbl, iu.idx) AS idx,
     variations, iu.cnt, iu.cnt / total_cnt * 100 AS pct
@@ -5282,7 +5284,7 @@ the time is each index chosen?
     ) AS qv USING(query_id, db, tbl);
 
 Question: which indexes have lots of alternatives, i.e. are chosen instead of
-other indexes, and for what queries?
+other indexes, and for what queries?  MAGIC_view_index_has_alternates:
 
  SELECT CONCAT_WS('.', db, tbl, idx) AS idx_chosen,
     GROUP_CONCAT(DISTINCT alt_idx) AS alternatives,
@@ -5292,7 +5294,7 @@ other indexes, and for what queries?
  HAVING COUNT(*) > 1;
 
 Question: which indexes are considered as alternates for other indexes, and for
-what queries?
+what queries?  MAGIC_view_index_alternates:
 
  SELECT CONCAT_WS('.', db, tbl, alt_idx) AS idx_considered,
     GROUP_CONCAT(DISTINCT idx) AS alternative_to,
@@ -5302,7 +5304,7 @@ what queries?
  HAVING COUNT(*) > 1;
 
 Question: which of those are never chosen by any queries, and are therefore
-superfluous?
+superfluous?  MAGIC_view_unused_index_alternates:
 
  SELECT CONCAT_WS('.', i.db, i.tbl, i.idx) AS idx,
     alt.alternative_to, alt.queries, alt.cnt
@@ -5320,7 +5322,7 @@ superfluous?
 Question: given a table, which indexes were used, by how many queries, with how
 many distinct fingerprints?  Were there alternatives?  Which indexes were not
 used?  You can edit the following query's SELECT list to also see the query IDs
-in question.
+in question.  MAGIC_view_index_usage:
 
  SELECT i.idx, iu.usage_cnt, iu.usage_total,
     ia.alt_cnt, ia.alt_total
@@ -5337,11 +5339,10 @@ in question.
           GROUP_CONCAT(query_id) AS alt_queries
        FROM index_alternatives
        GROUP BY db, tbl, idx
-    ) AS ia ON i.db=ia.db AND i.tbl=ia.tbl AND i.idx = ia.idx
- WHERE i.db = 'wordpress' AND i.tbl = 'wp_posts';
+    ) AS ia ON i.db=ia.db AND i.tbl=ia.tbl AND i.idx = ia.idx;
 
 Question: which indexes on a given table are vital for at least one query (there
-is no alternative)?
+is no alternative)?  MAGIC_view_required_indexes:
 
    SELECT i.db, i.tbl, i.idx, no_alt.queries
    FROM indexes AS i
@@ -5352,7 +5353,6 @@ is no alternative)?
             LEFT OUTER JOIN index_alternatives AS ia
                USING(db, tbl, idx)
          WHERE ia.db IS NULL
-            AND iu.db = 'mpb_wordpress' AND iu.tbl = 'wp_posts'
          GROUP BY iu.db, iu.tbl, iu.idx
       ) AS no_alt ON no_alt.db = i.db AND no_alt.tbl = i.tbl
          AND no_alt.idx = i.idx
