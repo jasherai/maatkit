@@ -3342,7 +3342,7 @@ The type of log to L<"--split"> (default slowlog).  The permitted types are
 
 =item binlog
 
-Split a binary log file.
+Split the output of running C<mysqlbinlog> against a binary log file.
 
 =item genlog
 
