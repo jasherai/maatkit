@@ -3,8 +3,8 @@ Usage: $PROGRAM_NAME <options>
 
 Options:
 
-  --bar  DSN bar
-  --foo  DSN foo
+  --bar=d  DSN bar
+  --foo=d  DSN foo
 
 Rules:
 
@@ -27,5 +27,5 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
 
 Options and values after processing arguments:
 
-  --bar  D=DB,h=localhost,u=USER
-  --foo  D=DB,h=otherhost,u=USER
+  --bar    D=DB,h=localhost,u=USER
+  --foo    D=DB,h=otherhost,u=USER

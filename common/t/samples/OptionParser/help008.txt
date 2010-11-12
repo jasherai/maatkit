@@ -3,26 +3,26 @@ Usage: $PROGRAM_NAME <options>
 
 Options:
 
-  --algorithm         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
-  --schema            Checksum SHOW CREATE TABLE intead of table data
+  --algorithm=s         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
+  --schema              Checksum SHOW CREATE TABLE intead of table data
 
 Connection:
 
-  --defaults-file -F  Only read mysql options from the given file
+  --defaults-file=s -F  Only read mysql options from the given file
 
 Filter:
 
-  --databases     -d  Only checksum this comma-separated list of databases
+  --databases=h     -d  Only checksum this comma-separated list of databases
 
 Help:
 
-  --explain-hosts     Explain hosts
-  --help              Show help and exit
-  --version           Show version and exit
+  --explain-hosts       Explain hosts
+  --help                Show help and exit
+  --version             Show version and exit
 
 Output:
 
-  --tab               Print tab-separated output, not column-aligned output
+  --tab                 Print tab-separated output, not column-aligned output
 
 Rules:
 
@@ -30,11 +30,11 @@ Rules:
 
 Options and values after processing arguments:
 
-  --algorithm         (No value)
-  --databases         (No value)
-  --defaults-file     (No value)
-  --explain-hosts     FALSE
-  --help              FALSE
-  --schema            FALSE
-  --tab               FALSE
-  --version           FALSE
+  --algorithm           (No value)
+  --databases           (No value)
+  --defaults-file       (No value)
+  --explain-hosts       FALSE
+  --help                FALSE
+  --schema              FALSE
+  --tab                 FALSE
+  --version             FALSE

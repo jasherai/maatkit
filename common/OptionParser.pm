@@ -927,9 +927,9 @@ sub print_errors {
 }
 
 # Prints out command-line help.  The format is like this:
-# --foo  -F   Description of --foo
-# --bars -B   Description of --bar
-# --longopt   Description of --longopt
+# --foo=s  -F   Description of --foo
+# --bars   -B   Description of --bar
+# --longopt     Description of --longopt
 # Note that the short options are aligned along the right edge of their longest
 # long option, but long options that don't have a short option are allowed to
 # protrude past that.
@@ -940,12 +940,20 @@ sub print_usage {
 
    # Find how wide the widest long option is.
    my $maxl = max(
-      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      map {
+         length($_->{long})               # option long name
+         + ($_->{is_negatable} ? 4 : 0)   # "[no]" if opt is negatable
+         + ($_->{type} ? 2 : 0)           # "=x" where x is the opt type
+      }
       @opts);
 
    # Find how wide the widest option with a short option is.
    my $maxs = max(0,
-      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      map {
+         length($_)
+         + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0)
+         + ($self->{opts}->{$_}->{type} ? 2 : 0)
+      }
       values %{$self->{short_opts}});
 
    # Find how wide the 'left column' (long + short opts) is, and therefore how
@@ -974,6 +982,11 @@ sub print_usage {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
          my $short = $opt->{short};
          my $desc  = $opt->{desc};
+
+         # Append option type to long option name.
+         # http://code.google.com/p/maatkit/issues/detail?id=1177
+         $long .= $opt->{type} ? "=$opt->{type}" : "";
+
          # Expand suffix help for time options.
          if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;

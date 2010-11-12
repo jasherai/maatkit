@@ -3,12 +3,12 @@ Usage: $PROGRAM_NAME <options>
 
 Options:
 
-  --bar  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-         suffix, m is used.
-  --foo  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-         suffix, s is used.
+  --bar=m  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+           suffix, m is used.
+  --foo=m  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+           suffix, s is used.
 
 Options and values after processing arguments:
 
-  --bar  (No value)
-  --foo  (No value)
+  --bar    (No value)
+  --foo    (No value)

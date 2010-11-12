@@ -3,7 +3,7 @@ Usage: $PROGRAM_NAME <options>
 
 Options:
 
-  --database        -D  Specify the database for all tables
+  --database=s      -D  Specify the database for all tables
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
 
 Options and values after processing arguments:

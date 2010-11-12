@@ -3,11 +3,11 @@ Usage: $PROGRAM_NAME <options>
 
 Options:
 
-  --cat     cat option
-  --config  Read this comma-separated list of config files (must be the first
-            option on the command line).
+  --cat       cat option
+  --config=A  Read this comma-separated list of config files (must be the first
+              option on the command line).
 
 Options and values after processing arguments:
 
-  --cat     TRUE
-  --config  $trunk/common/t/samples/empty
+  --cat       TRUE
+  --config    $trunk/common/t/samples/empty
