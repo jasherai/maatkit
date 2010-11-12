@@ -62,7 +62,9 @@ sub new {
       current_section => '',
       current_item    => '',
       in_list         => 0,
-      items           => {},
+      items           => {},  # keyed off SECTION
+      magic           => {},  # keyed off SECTION->magic ident (without MAGIC_)
+      magic_ident     => '',  # set when next para is a magic para
    };
    return bless $self, $class;
 }
@@ -70,6 +72,11 @@ sub new {
 sub get_items {
    my ( $self, $section ) = @_;
    return $section ? $self->{items}->{$section} : $self->{items};
+}
+
+sub get_magic {
+   my ( $self, $section ) = @_;
+   return $section ? $self->{magic}->{$section} : $self->{magic};
 }
 
 sub parse_from_file {
@@ -152,7 +159,7 @@ sub textblock {
 
    $para =~ s/\s+\Z//;
 
-   if ( $para =~ m/^\w+[:;] / ) {
+   if ( $para =~ m/^[a-z]\w+[:;] / ) {
       MKDEBUG && _d('Item attributes:', $para);
       map {
          my ($attrib, $val) = split(/: /, $_);
@@ -160,10 +167,40 @@ sub textblock {
       } split(/; /, $para);
    }
    else {
+      # Handle MAGIC (verbatim) para signal by previous call/para.
+      if ( $self->{magic_ident} ) {
+
+         # Magical paras have to be indented (because they're verbatim paras).
+         my ($leading_space) = $para =~ m/^(\s+)/;
+         my $indent          = length($leading_space || '');
+         if ( $indent ) {
+            $para =~ s/^\s{$indent}//mg;
+            $para =~ s/\s+$//;
+            MKDEBUG && _d("MAGIC", $self->{magic_ident}, "para:", $para);
+            $self->{magic}->{$self->{current_section}}->{$self->{magic_ident}}
+               = $para;
+         }
+         else {
+            MKDEBUG && _d("MAGIC", $self->{magic_ident},
+               "para is not indented; treating as normal para");
+         }
+
+         $self->{magic_ident} = '';  # must unset this!
+      }
+
+      # Save the para text to the description for this item.
       MKDEBUG && _d('Item desc:', substr($para, 0, 40),
          length($para) > 40 ? '...' : '');
       $para =~ s/\n+/ /g;
       $item->{desc} .= $para;
+
+      # If this para contains a MAGIC identifier, the next para should be
+      # an indented (verbatim) para.  We set magic_ident to signal this and
+      # handle it next call in code block above.
+      if ( $para =~ m/MAGIC_(\w+)/ ) {
+         $self->{magic_ident} = $1;  # XXX
+         MKDEBUG && _d("MAGIC", $self->{magic_ident}, "follows");
+      }
    }
 
    return;
