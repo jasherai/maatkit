@@ -460,9 +460,14 @@ sub no_diff {
    }
 
    # Do optional arg stuff.
+   `cp $tmp_file $tmp_file_orig`;
    if ( my $trf = $args{trf} ) {
-      `cp $tmp_file $tmp_file_orig`;
       `$trf $tmp_file_orig > $tmp_file`;
+   }
+   if ( my $sed = $args{sed} ) {
+      foreach my $sed_args ( @{$args{sed}} ) {
+         `sed $sed_args $tmp_file`;
+      }
    }
 
    # diff the outputs.

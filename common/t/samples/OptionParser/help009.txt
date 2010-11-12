@@ -1,0 +1,13 @@
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
+Usage: $PROGRAM_NAME <options>
+
+Options:
+
+  --cat     cat option (default a,b)
+  --config  Read this comma-separated list of config files (must be the first
+            option on the command line).
+
+Options and values after processing arguments:
+
+  --cat     a,b
+  --config  /etc/maatkit/maatkit.conf,/etc/maatkit/OptionParser.t.conf,$ENV{HOME}/.maatkit.conf,$ENV{HOME}/.OptionParser.t.conf

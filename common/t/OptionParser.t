@@ -24,6 +24,7 @@ isa_ok($o, 'OptionParser');
 
 my @opt_specs;
 my %opts;
+my $output;
 
 # Prevent print_usage() from breaking lines in the first paragraph
 # at 80 chars width.  This paragraph contains $PROGRAM_NAME and that
@@ -677,35 +678,39 @@ is(
 
 # The following one test uses the dog opt specs from above.
 
+my $prog_name = $PROGRAM_NAME;
+$prog_name    =~ s/([\.\/\\])/\\$1/g;
+
+my $home_esc = $ENV{HOME};
+$home_esc   =~ s/([\.\/\\])/\\$1/g;
+
+my $trunk_esc = $trunk;
+$trunk_esc    =~ s/([\.\/\\])/\\$1/g;
+
+sub check_usage {
+   my ( $o, $file ) = @_;
+   die "I need an OptionParser object" unless $o;
+   die "I need a file name" unless $file;
+
+   no_diff(
+      $o->print_usage(),
+      "common/t/samples/OptionParser/$file",
+      cmd_output => 1,
+      sed        => [
+         "-i -e 's/ $prog_name/ \$PROGRAM_NAME/g'",
+         "-i -e 's/$trunk_esc/\$trunk/g'",
+         "-i -e 's/$home_esc/\$ENV\{HOME\}/g'",
+      ],
+   ),
+}
+
 # Clear values from previous tests.
 $o->set_defaults();
 @ARGV = ();
 $o->get_opts();
 
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME [OPTIONS]
-
-Options:
-
-  --defaults-file -F  alignment test
-  --[no]defaultset    alignment test with a very long thing that is longer than
-                      80 characters wide and must be wrapped
-  --dog           -D  Dogs are fun
-  --[no]foo           Foo
-  --love          -l  And peace
-
-Options and values after processing arguments:
-
-  --defaults-file     (No value)
-  --defaultset        FALSE
-  --dog               (No value)
-  --foo               FALSE
-  --love              0
-EOF
-,
+ok(
+   check_usage($o, "help001.txt"),
    'Options aligned and custom prompt included'
 );
 
@@ -717,23 +722,8 @@ $o->_parse_specs(
    { spec => 'nouniquechecks!', desc => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
 );
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --database        -D  Specify the database for all tables
-  --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
-
-Options and values after processing arguments:
-
-  --database            (No value)
-  --nouniquechecks      FALSE
-EOF
-,
+ok(
+   check_usage($o, "help002.txt"),
    'Really long option aligns with shorts, and prompt defaults to <options>'
 );
 
@@ -811,27 +801,8 @@ $o->_parse_specs(
 );
 
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --ignore  -i  Use IGNORE for INSERT statements
-  --replace -r  Use REPLACE instead of INSERT statements
-
-Rules:
-
-  --ignore and --replace are mutually exclusive.
-
-Options and values after processing arguments:
-
-  --ignore      FALSE
-  --replace     FALSE
-EOF
-,
+ok(
+   check_usage($o, "help003.txt"),
    'Usage with rules'
 );
 
@@ -1214,26 +1185,10 @@ $o->_parse_specs(
    { spec => 'bar=m', desc => 'Time (suffix m)' },
 );
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --bar  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-         suffix, m is used.
-  --foo  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-         suffix, s is used.
-
-Options and values after processing arguments:
-
-  --bar  (No value)
-  --foo  (No value)
-EOF
-,
-   'Usage for time value');
+ok(
+   check_usage($o, "help004.txt"),
+   'Usage for time value'
+);
 
 @ARGV = qw(--foo 5z);
 $o->get_opts();
@@ -1257,42 +1212,8 @@ $o->_parse_specs(
    'DSN values in --foo default to values in --bar if COPY is yes.',
 );
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --bar  DSN bar
-  --foo  DSN foo
-
-Rules:
-
-  DSN values in --foo default to values in --bar if COPY is yes.
-
-DSN syntax is key=value[,key=value...]  Allowable DSN keys:
-
-  KEY  COPY  MEANING
-  ===  ====  =============================================
-  A    yes   Default character set
-  D    yes   Database to use
-  F    yes   Only read default options from the given file
-  P    yes   Port number to use for connection
-  S    yes   Socket file to use for connection
-  h    yes   Connect to host
-  p    yes   Password to use when connecting
-  u    yes   User for login if not current user
-
-  If the DSN is a bareword, the word is treated as the 'h' key.
-
-Options and values after processing arguments:
-
-  --bar  (No value)
-  --foo  (No value)
-EOF
-,
+ok(
+   check_usage($o, "help005.txt"),
    'DSN is integrated into help output'
 );
 
@@ -1327,42 +1248,8 @@ is_deeply(
    'DSN parsing on type=d inheriting from --bar',
 );
 
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --bar  DSN bar
-  --foo  DSN foo
-
-Rules:
-
-  DSN values in --foo default to values in --bar if COPY is yes.
-
-DSN syntax is key=value[,key=value...]  Allowable DSN keys:
-
-  KEY  COPY  MEANING
-  ===  ====  =============================================
-  A    yes   Default character set
-  D    yes   Database to use
-  F    yes   Only read default options from the given file
-  P    yes   Port number to use for connection
-  S    yes   Socket file to use for connection
-  h    yes   Connect to host
-  p    yes   Password to use when connecting
-  u    yes   User for login if not current user
-
-  If the DSN is a bareword, the word is treated as the 'h' key.
-
-Options and values after processing arguments:
-
-  --bar  D=DB,h=localhost,u=USER
-  --foo  D=DB,h=otherhost,u=USER
-EOF
-,
+ok(
+   check_usage($o, "help006.txt"),
    'DSN stringified with inheritance into post-processed args'
 );
 
@@ -1451,29 +1338,8 @@ is_deeply(
    'Comma-separated lists: all processed when given',
 );
 
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --books     -b  books optional
-  --columns   -C  cols required
-  --databases -d  databases required
-  --foo           foo (default a,b,c)
-  --tables    -t  tables optional
-
-Options and values after processing arguments:
-
-  --books         o,p
-  --columns       a,b
-  --databases     f,g
-  --foo           a,b,c
-  --tables        d,e
-EOF
-,
+ok(
+   check_usage($o, "help007.txt"),
    'Lists properly expanded into usage information',
 );
 
@@ -1507,51 +1373,8 @@ is_deeply(
 
 @ARGV = ();
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --algorithm         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
-  --schema            Checksum SHOW CREATE TABLE intead of table data
-
-Connection:
-
-  --defaults-file -F  Only read mysql options from the given file
-
-Filter:
-
-  --databases     -d  Only checksum this comma-separated list of databases
-
-Help:
-
-  --explain-hosts     Explain hosts
-  --help              Show help and exit
-  --version           Show version and exit
-
-Output:
-
-  --tab               Print tab-separated output, not column-aligned output
-
-Rules:
-
-  --schema is restricted to option groups Connection, Filter, Output, Help.
-
-Options and values after processing arguments:
-
-  --algorithm         (No value)
-  --databases         (No value)
-  --defaults-file     (No value)
-  --explain-hosts     FALSE
-  --help              FALSE
-  --schema            FALSE
-  --tab               FALSE
-  --version           FALSE
-EOF
-,
+ok(
+   check_usage($o, "help008.txt"),
    'Option groupings usage',
 );
 
@@ -1674,24 +1497,8 @@ $o->_parse_specs(
 );
 
 $o->get_opts();
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --cat     cat option (default a,b)
-  --config  Read this comma-separated list of config files (must be the first
-            option on the command line).
-
-Options and values after processing arguments:
-
-  --cat     a,b
-  --config  /etc/maatkit/maatkit.conf,/etc/maatkit/OptionParser.t.conf,$ENV{HOME}/.maatkit.conf,$ENV{HOME}/.OptionParser.t.conf
-EOF
-,
+ok(
+   check_usage($o, "help009.txt"),
    'Sets special config file default value',
 );
 
@@ -1712,24 +1519,8 @@ like($EVAL_ERROR, qr/Cannot open/, 'No config file found');
 $o->get_opts();
 ok($o->got('config'), 'Got --config');
 
-is(
-   $o->print_usage(),
-<<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
-Usage: $PROGRAM_NAME <options>
-
-Options:
-
-  --cat     cat option
-  --config  Read this comma-separated list of config files (must be the first
-            option on the command line).
-
-Options and values after processing arguments:
-
-  --cat     TRUE
-  --config  $trunk/common/t/samples/empty
-EOF
-,
+ok(
+   check_usage($o, "help010.txt"),
    'Parses special --config option first',
 );
 
@@ -2136,7 +1927,6 @@ is(
 # #############################################################################
 # Done.
 # #############################################################################
-my $output = '';
 {
    local *STDERR;
    open STDERR, '>', \$output;
