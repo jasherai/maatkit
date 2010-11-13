@@ -8,6 +8,8 @@ Options:
   --foo=m  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
            suffix, s is used.
 
+Option types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time
+
 Options and values after processing arguments:
 
   --bar    (No value)

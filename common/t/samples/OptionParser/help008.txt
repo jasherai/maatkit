@@ -24,6 +24,8 @@ Output:
 
   --tab                 Print tab-separated output, not column-aligned output
 
+Option types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time
+
 Rules:
 
   --schema is restricted to option groups Connection, Filter, Output, Help.

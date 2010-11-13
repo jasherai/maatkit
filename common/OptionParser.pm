@@ -1007,6 +1007,8 @@ sub print_usage {
       }
    }
 
+   $usage .= "\nOption types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time\n";
+
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";

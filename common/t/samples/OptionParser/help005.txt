@@ -6,6 +6,8 @@ Options:
   --bar=d  DSN bar
   --foo=d  DSN foo
 
+Option types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time
+
 Rules:
 
   DSN values in --foo default to values in --bar if COPY is yes.
