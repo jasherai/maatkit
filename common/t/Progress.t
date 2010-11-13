@@ -156,7 +156,7 @@ $pr->set_callback(
 $pr->update(sub{return 60}, 35);
 is_deeply(
    $completion_arr,
-   [.1, 25, 225, 260 ],
+   [.1, 25, 225, 260, 60 ],
    'Got completion info for time-based stuff'
 );
 is($callbacks_called, 1, 'Callback called once');

@@ -180,7 +180,7 @@ sub update {
          $eta       = $now + int($remaining);
       }
    }
-   $self->{callback}->($fraction, $elapsed, $remaining, $eta);
+   $self->{callback}->($fraction, $elapsed, $remaining, $eta, $completed);
 }
 
 # Returns the number rounded to the nearest lower $self->{interval}, for use
