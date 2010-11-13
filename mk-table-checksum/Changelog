@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --progress option (1151).
+
 2010-09-11: version 1.2.18
 
    * Existing checksums were deleted before resuming (issue 304).

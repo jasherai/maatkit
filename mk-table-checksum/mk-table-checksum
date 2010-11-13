@@ -801,7 +801,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 6875
+# OptionParser package 7058
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -1524,11 +1524,19 @@ sub print_usage {
    my @opts = values %{$self->{opts}};
 
    my $maxl = max(
-      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      map {
+         length($_->{long})               # option long name
+         + ($_->{is_negatable} ? 4 : 0)   # "[no]" if opt is negatable
+         + ($_->{type} ? 2 : 0)           # "=x" where x is the opt type
+      }
       @opts);
 
    my $maxs = max(0,
-      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      map {
+         length($_)
+         + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0)
+         + ($self->{opts}->{$_}->{type} ? 2 : 0)
+      }
       values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
@@ -1552,6 +1560,9 @@ sub print_usage {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
          my $short = $opt->{short};
          my $desc  = $opt->{desc};
+
+         $long .= $opt->{type} ? "=$opt->{type}" : "";
+
          if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
@@ -1569,6 +1580,8 @@ sub print_usage {
          }
       }
    }
+
+   $usage .= "\nOption types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time\n";
 
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= "\nRules:\n\n";
@@ -4672,6 +4685,152 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Progress package 7059
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Progress.pm
+#   trunk/common/t/Progress.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package Progress;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg (qw(jobsize)) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   if ( (!$args{report} || !$args{interval}) ) {
+      if ( $args{spec} && @{$args{spec}} == 2 ) {
+         @args{qw(report interval)} = @{$args{spec}};
+      }
+      else {
+         die "I need either report and interval arguments, or a spec";
+      }
+   }
+
+   my $name  = $args{name} || "Progress";
+   $args{start} ||= time();
+   my $self;
+   $self = {
+      last_reported => $args{start},
+      fraction      => 0,       # How complete the job is
+      callback      => sub {
+         my ($fraction, $elapsed, $remaining, $eta) = @_;
+         printf STDERR "$name: %3d%% %s remain\n",
+            $fraction * 100,
+            Transformers::secs_to_time($remaining),
+            Transformers::ts($eta);
+      },
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub validate_spec {
+   shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
+   my ( $spec ) = @_;
+   if ( @$spec != 2 ) {
+      die "spec array requires a two-part argument\n";
+   }
+   if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+      die "spec array's first element must be one of "
+        . "percentage,time,iterations\n";
+   }
+   if ( $spec->[1] !~ m/^\d+$/ ) {
+      die "spec array's second element must be an integer\n";
+   }
+}
+
+sub set_callback {
+   my ( $self, $callback ) = @_;
+   $self->{callback} = $callback;
+}
+
+sub start {
+   my ( $self, $start ) = @_;
+   $self->{start} = $self->{last_reported} = $start || time();
+}
+
+sub update {
+   my ( $self, $callback, $now ) = @_;
+   my $jobsize   = $self->{jobsize};
+   $now        ||= time();
+   $self->{iterations}++; # How many updates have happened;
+
+   if ( $self->{report} eq 'time'
+         && $self->{interval} > $now - $self->{last_reported}
+   ) {
+      return;
+   }
+   elsif ( $self->{report} eq 'iterations'
+         && ($self->{iterations} - 1) % $self->{interval} > 0
+   ) {
+      return;
+   }
+   $self->{last_reported} = $now;
+
+   my $completed = $callback->();
+   $self->{updates}++; # How many times we have run the update callback
+
+   return if $completed > $jobsize;
+
+   my $fraction = $completed > 0 ? $completed / $jobsize : 0;
+
+   if ( $self->{report} eq 'percentage'
+         && $self->fraction_modulo($self->{fraction})
+            >= $self->fraction_modulo($fraction)
+   ) {
+      $self->{fraction} = $fraction;
+      return;
+   }
+   $self->{fraction} = $fraction;
+
+   my $elapsed   = $now - $self->{start};
+   my $remaining = 0;
+   my $eta       = $now;
+   if ( $completed > 0 && $completed <= $jobsize && $elapsed > 0 ) {
+      my $rate = $completed / $elapsed;
+      if ( $rate > 0 ) {
+         $remaining = ($jobsize - $completed) / $rate;
+         $eta       = $now + int($remaining);
+      }
+   }
+   $self->{callback}->($fraction, $elapsed, $remaining, $eta, $completed);
+}
+
+sub fraction_modulo {
+   my ( $self, $num ) = @_;
+   $num *= 100; # Convert from fraction to percentage
+   return sprintf('%d',
+      sprintf('%d', $num / $self->{interval}) * $self->{interval});
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Progress package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -4855,6 +5014,14 @@ sub main {
               || ($factor > 0 && $factor < 1) )  # can't be less than 1
          {
             $o->save_error('--chunk-size-limit must be >= 1 or 0 to disable');
+         }
+      }
+
+      if ( $o->get('progress') ) {
+         eval { Progress->validate_spec($o->get('progress')) };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            $o->save_error("--progress $EVAL_ERROR");
          }
       }
    }
@@ -5599,12 +5766,21 @@ sub checksum_chunks {
       }
 
       if ( $throttle_method eq 'slavelag' ) {
+         my $pr;
+         if ( $o->get('progress') ) {
+            $pr = new Progress(
+               jobsize => scalar @{$args{slaves}},
+               spec    => $o->get('progress'),
+               name    => "Wait for slave(s) to catch up",
+            );
+         }
          wait_for_slaves(
             slaves         => $args{slaves},
             max_lag        => $o->get('max-lag'),
             check_interval => $o->get('check-interval'),
             DSNParser      => $dp,
             MasterSlave    => $ms,
+            progress       => $pr,
          );
       }
 
@@ -6581,16 +6757,42 @@ sub wait_for_slaves {
    my $check_interval = $args{check_interval};
    my $dp             = $args{DSNParser};
    my $ms             = $args{MasterSlave};
+   my $pr             = $args{progress};
 
    return unless scalar @$slaves;
+   my $n_slaves = @$slaves;
 
-   foreach my $slave ( @$slaves ) {
+   my $pr_callback;
+   if ( $pr ) {
+      # If you use the default Progress report callback, you'll need to
+      # to add Transformers.pm to this tool.
+      $pr_callback = sub {
+         my ($fraction, $elapsed, $remaining, $eta, $slave_no) = @_;
+         my $msg = "Waiting for slave "
+                 . $dp->as_string($slaves->[$slave_no]->{dsn})
+                 . " to catch up...";
+         if ( $n_slaves > 1 && ($slave_no + 1) < $n_slaves ) {
+            $remaining = $n_slaves - ($slave_no + 1);
+            $msg .= " ($remaining more slaves to check)";
+         }
+         print STDERR "$msg\n";
+         return;
+      };
+      $pr->set_callback($pr_callback);
+   }
+
+   for my $slave_no ( 0..($n_slaves-1) ) {
+      my $slave = $slaves->[$slave_no];
       MKDEBUG && _d('Checking slave', $dp->as_string($slave->{dsn}),
          'lag for throttle');
       my $lag = $ms->get_slave_lag($slave->{dbh});
       while ( !defined $lag || $lag > $max_lag ) {
          MKDEBUG && _d('Slave lag', $lag, '>', $max_lag,
             '; sleeping', $check_interval);
+
+         # Report what we're waiting for before we wait.
+         $pr->update(sub { return $slave_no; }) if $pr;
+
          sleep $check_interval;
          $lag = $ms->get_slave_lag($slave->{dbh});
       }
@@ -7693,6 +7895,17 @@ when the probability is less than 100.  You can override this with
 L<"--single-chunk">.
 
 See also L<"--modulo">.
+
+=item --progress
+
+type: array; default: time,30
+
+Print progress reports to STDERR.  Currently, this feature is only for when
+L<"--throttle-method"> waits for slaves to catch up.
+
+The value is a comma-separated list with two parts.  The first part can be
+percentage, time, or iterations; the second part specifies how often an update
+should be printed, in percentage, seconds, or number of iterations.
 
 =item --quiet
 
