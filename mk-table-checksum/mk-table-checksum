@@ -6766,16 +6766,16 @@ sub wait_for_slaves {
    if ( $pr ) {
       # If you use the default Progress report callback, you'll need to
       # to add Transformers.pm to this tool.
+      my $reported = 0;
       $pr_callback = sub {
          my ($fraction, $elapsed, $remaining, $eta, $slave_no) = @_;
-         my $msg = "Waiting for slave "
-                 . $dp->as_string($slaves->[$slave_no]->{dsn})
-                 . " to catch up...";
-         if ( $n_slaves > 1 && ($slave_no + 1) < $n_slaves ) {
-            $remaining = $n_slaves - ($slave_no + 1);
-            $msg .= " ($remaining more slaves to check)";
+         if ( !$reported ) {
+            print STDERR "Waiting for slave(s) to catchup...\n";
+            $reported = 1;
          }
-         print STDERR "$msg\n";
+         else {
+            print STDERR "Still waiting ($elapsed seconds)...\n";
+         }
          return;
       };
       $pr->set_callback($pr_callback);

@@ -87,7 +87,7 @@ $output = output(
 
 like(
    $output,
-   qr/Waiting for slave.+?1 more slaves to check.+?Waiting for slave/s,
+   qr/Waiting for slave.+?Still waiting/s,
    "Progress reports while waiting for slaves"
 );
 
