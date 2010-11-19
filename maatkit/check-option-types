@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+# check-option-types checks standard option types (s, i, etc.) and short forms.
+# http://code.google.com/p/maatkit/issues/detail?id=1177
+
+BEGIN {
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
+};
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Test::More qw(no_plan);
+
+use MaatkitTest;
+
+# If you specify one program, it has to be given like ../mk-find/mk-find
+# I.e. you have to this tool from trunk/maatkit/.  If no tool is given,
+# then all mk-* tools are checked.
+my @progs = @ARGV;
+if ( !@progs ) {
+   @progs = <../mk-*/mk-*>;
+}
+
+# Standard options: http://code.google.com/p/maatkit/wiki/CommandLineOptions
+my $sop = {
+   'defaults-file'   => {type  => 's', short => 'F' },
+   'host'            => {type  => 's', short => 'h' },
+   'password'        => {type  => 's', short => 'p' },
+   'port'            => {type  => 'i', short => 'P' },
+   'socket'          => {type  => 's', short => 'S' },
+   'user'            => {type  => 's', short => 'u' },
+   'charset'         => {type  => 's', short => 'A' },
+   'ask-pass'        => {type  => '',  short => '', },
+   'database'        => {type  => 's', short => 'D' },
+   'set-vars'        => {type  => 's', short => '', },
+   'where'           => {type  => 's', short => '', },
+   'databases'       => {type  => 'h', short => 'd' },
+   'tables'          => {type  => 'h', short => 't' },
+   'columns'         => {type  => 'a', short => 'c' },
+   'engines'         => {type  => 'h', short => 'e' },
+   'ignore-databases'=> {type  => 'H', short => '', },
+   'ignore-tables'   => {type  => 'H', short => '', },
+   'ignore-columns'  => {type  => 'H', short => '', },
+   'ignore-engines'  => {type  => 'H', short => '', },
+   'config'          => {type  => 'A', short => '', },
+   'daemonize'       => {type  => '',  short => '', },
+   'dry-run'         => {type  => '',  short => '', },
+   'log'             => {type  => 's', short => '', },
+   'pid'             => {type  => 's', short => '', },
+   'progress'        => {type  => 'a', short => '', },
+   'quiet'           => {type  => '',  short => 'q' },
+   'sentinel'        => {type  => 's', short => '', },
+   'stop'            => {type  => '',  short => '', },
+   'run-time'        => {type  => 'm', short => '', },
+   'threads'         => {type  => 'i', short => '', },
+   'verbose'         => {type  => '',  short => 'v' },
+   'wait'            => {type  => 'm', short => 'w' },
+};
+   
+my %dir_for_tool = (
+   'mk-checksum-filter'   => 'mk-table-checksum',
+   'mk-merge-mqd-results' => 'mk-query-digest',
+   'mk-profile-compact'   => 'mk-query-profiler',
+);
+
+foreach my $prog ( @progs ) {
+   my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
+   next unless $program;
+
+   # This magic handles cases like mk-checksum-filter which is
+   # in mk-table-checksum/, not mk-checksum-filter/.
+   my $tool_dir  = $dir_for_tool{$program} || $program;
+   my $tool_path = "$trunk/$tool_dir";
+   my $help      = `$tool_path/$program --help`;
+
+   # Options are listed after the line "Options:" (default group).
+   # Each line is like:
+   #   --defaults-file=s      -F  Only read mysql options from the given file
+   # The short form (-F) is optional.  The list is terminated at
+   # the line "Option types:".  Problem is: there's a second list
+   # of options.  The second list shows each option's value.  So
+   # we stop parsing when we get an option that we already have.
+   my $opt    = {};
+   my $all_ok = 1;
+   while ( $help =~ m/^\s{2,}--(\S+?)(?:=(.))?\s+(?:-([a-zA-Z]))?\s+\w+/mg ) {
+      my ($long, $type, $short) = ($1, $2, $3);
+      die "Failed to match a long option name" unless $long;
+      last if $opt->{$long};
+      $opt->{$long} = 1;
+
+      if ( $sop->{$long} ) {
+         # The if() checks are redundant with the is() checks, but
+         # they keep us from reporting stuff that's ok, so we see
+         # just the problems or else "All mk-tool options are valid".
+
+         # Check option type.
+         if ( ($type || '') ne ($sop->{$long}->{type} || '') ) {
+            $all_ok = 0;
+            is(
+               ($type || ''),
+               ($sop->{$long}->{type} || ''),
+               "$program --$long "
+               . ($type ? "is type $type" : "has no type")
+               . " but should "
+               . ($sop->{$long}->{type} ? "be type $sop->{$long}->{type}"
+                                        : "have no type")
+            );
+         }
+
+         # Check short form.
+         if ( ($short || '') ne ($sop->{$long}->{short} || '') ) {
+            $all_ok = 0;
+            is(
+               ($short || ''),
+               ($sop->{$long}->{short} || ''),
+               "$program --$long "
+               . ($short ? "has short form -$short" : "has no short form")
+               . " but should have "
+               . ($sop->{$long}->{short} ? "short form -$sop->{$long}->{short}"
+                                         : "no short form")
+            );
+         }
+      }
+   }
+
+   ok(1, "All $program options are valid") if $all_ok;
+}
+
+exit;
