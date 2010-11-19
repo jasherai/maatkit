@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * --database option did not work.
+
 2010-09-11: version 1.0.14
 
    * Added "is [not] read_only" to summary report format (issue 1132).

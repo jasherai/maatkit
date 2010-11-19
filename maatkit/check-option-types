@@ -50,7 +50,9 @@ my $sop = {
    'dry-run'         => {type  => '',  short => '', },
    'log'             => {type  => 's', short => '', },
    'pid'             => {type  => 's', short => '', },
-   'progress'        => {type  => 'a', short => '', },
+   # --progress is not standard.  Some older tools had their own special
+   # progress, whereas newer tools use Progress.
+   # 'progress'        => {type  => 'a', short => '', },
    'quiet'           => {type  => '',  short => 'q' },
    'sentinel'        => {type  => 's', short => '', },
    'stop'            => {type  => '',  short => '', },

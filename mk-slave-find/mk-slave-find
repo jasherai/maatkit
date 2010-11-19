@@ -3026,7 +3026,7 @@ first option on the command line.
 
 =item --database
 
-short form: -D
+type: string; short form: -D
 
 Database to use.
 

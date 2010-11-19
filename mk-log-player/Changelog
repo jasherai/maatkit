@@ -1,5 +1,8 @@
 Changelog for mk-log-player:
 
+   * --charset (-A) did not work (issue 1177).
+   * Added -q short form for --quiet option.
+
 2010-06-08: version 1.0.8
 
    * Connections did not preserve server SQL modes (issue 801).

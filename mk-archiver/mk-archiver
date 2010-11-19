@@ -5079,6 +5079,8 @@ OPTIMIZE TABLE.  You can use L<"--optimize"> for this.
 
 =item --quiet
 
+short form: -q
+
 Do not print any output, such as for L<"--statistics">.
 
 Suppresses normal output, including the output of L<"--statistics">, but doesn't

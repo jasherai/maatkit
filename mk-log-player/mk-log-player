@@ -3108,9 +3108,7 @@ All files are saved in L<"--base-dir">.
 
 =item --charset
 
-group: Play
-
-short form: -A; type: string
+short form: -A; type: string; group: Play
 
 Default character set.  If the value is utf8, sets Perl's binmode on STDOUT to
 utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET NAMES UTF8
@@ -3268,6 +3266,8 @@ will not be executed, L<"--play"> is required to specify which session files to
 read.
 
 =item --quiet
+
+short form: -q
 
 Do not print anything; disables L<"--verbose">.
 
