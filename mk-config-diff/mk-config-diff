@@ -25,23 +25,23 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 6322
+# OptionParser package 7058
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
 #   trunk/common/t/OptionParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -120,7 +120,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -246,7 +246,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -748,11 +748,19 @@ sub print_usage {
    my @opts = values %{$self->{opts}};
 
    my $maxl = max(
-      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      map {
+         length($_->{long})               # option long name
+         + ($_->{is_negatable} ? 4 : 0)   # "[no]" if opt is negatable
+         + ($_->{type} ? 2 : 0)           # "=x" where x is the opt type
+      }
       @opts);
 
    my $maxs = max(0,
-      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      map {
+         length($_)
+         + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0)
+         + ($self->{opts}->{$_}->{type} ? 2 : 0)
+      }
       values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
@@ -776,6 +784,9 @@ sub print_usage {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
          my $short = $opt->{short};
          my $desc  = $opt->{desc};
+
+         $long .= $opt->{type} ? "=$opt->{type}" : "";
+
          if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
@@ -793,6 +804,8 @@ sub print_usage {
          }
       }
    }
+
+   $usage .= "\nOption types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time\n";
 
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= "\nRules:\n\n";

@@ -1107,18 +1107,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5985
+# OptionParser package 7058
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -1197,7 +1202,7 @@ sub get_specs {
 
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
-   close $file;
+   close $fh;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
@@ -1323,7 +1328,7 @@ sub _pod_to_specs {
          push @specs, {
             spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
@@ -1724,7 +1729,7 @@ sub _validate_type {
       $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
       $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
@@ -1825,11 +1830,19 @@ sub print_usage {
    my @opts = values %{$self->{opts}};
 
    my $maxl = max(
-      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      map {
+         length($_->{long})               # option long name
+         + ($_->{is_negatable} ? 4 : 0)   # "[no]" if opt is negatable
+         + ($_->{type} ? 2 : 0)           # "=x" where x is the opt type
+      }
       @opts);
 
    my $maxs = max(0,
-      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      map {
+         length($_)
+         + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0)
+         + ($self->{opts}->{$_}->{type} ? 2 : 0)
+      }
       values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
@@ -1853,6 +1866,9 @@ sub print_usage {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
          my $short = $opt->{short};
          my $desc  = $opt->{desc};
+
+         $long .= $opt->{type} ? "=$opt->{type}" : "";
+
          if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
@@ -1870,6 +1886,8 @@ sub print_usage {
          }
       }
    }
+
+   $usage .= "\nOption types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time\n";
 
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= "\nRules:\n\n";
@@ -3528,11 +3546,9 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $dp = new DSNParser;
    my $o  = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
-      dp          => $dp,
       description => q{examines MySQL schema for inefficiencies.  Specify }
                    . q{either files or DSNs.  Files can contain multiple }
                    . q{SHOW CREATE TABLE separated by blank lines. }
@@ -3541,6 +3557,7 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
+   my $dp = $o->DSNParser();
    $dp->prop('set-vars', $o->get('set-vars'));
 
    $o->usage_or_errors();
@@ -4117,6 +4134,70 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=back
+
+=head1 DSN OPTIONS
+
+These DSN options are used to create a DSN.  Each option is given like
+C<option=value>.  The options are case-sensitive, so P and p are not the
+same option.  There cannot be whitespace before or after the C<=> and
+if the value contains whitespace it must be quoted.  DSN options are
+comma-separated.  See the L<maatkit> manpage for full details.
+
+=over
+
+=item * A
+
+dsn: charset; copy: yes
+
+Default character set.
+
+=item * D
+
+dsn: database; copy: yes
+
+Default database.
+
+=item * F
+
+dsn: mysql_read_default_file; copy: yes
+
+Only read default options from the given file
+
+=item * h
+
+dsn: host; copy: yes
+
+Connect to host.
+
+=item * p
+
+dsn: password; copy: yes
+
+Password to use when connecting.
+
+=item * P
+
+dsn: port; copy: yes
+
+Port number to use for connection.
+
+=item * S
+
+dsn: mysql_socket; copy: yes
+
+Socket file to use for connection.
+
+=item * t
+
+Table to use as the query review table.
+
+=item * u
+
+dsn: user; copy: yes
+
+User for login if not current user.
 
 =back
 
