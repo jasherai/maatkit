@@ -12795,7 +12795,15 @@ approximate concurrency for this query (calculated as a function of the timespan
 and total Query_time).  Next there's a query ID.  This ID is a hex version of
 the query's checksum in the database, if you're using L<"--review">.  You can
 select the reviewed query's details from the database with a query like C<SELECT
-.... WHERE checksum=0xFDEA8D2993C9CAF3>.
+.... WHERE checksum=0xFDEA8D2993C9CAF3>.  
+
+If you are investigating the report and want to print out every sample of a
+particular query, then the following L<"--filter"> may be helpful:
+C<mk-query-digest slow-log.log --no-report --print --filter '$event->{fingerprint} 
+&& make_checksum($event->{fingerprint}) eq "FDEA8D2993C9CAF3"'>. 
+
+Notice that you must remove the 0x prefix from the checksum in order for this to work.
+
 
 Finally, in case you want to find a sample of the query in the log file, there's
 the byte offset where you can look.  (This is not always accurate, due to some
