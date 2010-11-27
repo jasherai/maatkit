@@ -326,8 +326,7 @@ sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
    my $ms  = $self->{MasterSlave};
-   my $all = $find_spec{all};
-   my $all_but_oldest = $find_spec{all_but_oldest};
+
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -372,12 +371,8 @@ sub find {
             MKDEBUG && _d('Query matches ignore', $property, 'spec');
             next QUERY;
          }
-         # If the proc's property value isn't ignored, then check if it
-         # matches.  If all or all but oldest, then it matches automatically.
-         if ( $all || $all_but_oldest ) {
-            $matched++;
-         }
-         elsif ( defined $find_spec{match}->{$property} ) {
+         # If the proc's property value isn't ignored, then check if it matches.
+         if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
                MKDEBUG && _d('Query does not match', $property, 'spec');
                next QUERY;
@@ -386,7 +381,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched ) {
+      if ( $matched || $find_spec{all} ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
@@ -395,16 +390,16 @@ sub find {
    } # QUERY
 
    if ( @matches
-        && ($find_spec{only_oldest} || $all_but_oldest) ) # these require sort
+        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
    { 
       @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
       my $oldest = $matches[0];
       MKDEBUG && _d('Oldest query:', Dumper($oldest));
       if ( $find_spec{only_oldest} ) {
-         @matches = ($oldest);
+         @matches = ($oldest);  # only return the oldest query
       }
-      elsif ( $all_but_oldest ) {
-         shift @matches; 
+      elsif ( $find_spec{all_but_oldest} ) {
+         shift @matches;  # remove fist/oldest query
       }
    }
 
