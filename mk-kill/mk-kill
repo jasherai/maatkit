@@ -3093,6 +3093,376 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# QueryRewriter package 6861
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package QueryRewriter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
+my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
+
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+sub strip_comments {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   if ( $query =~ m/$vlc_rf/i ) { # contains show + version
+      $query =~ s/$vlc_re//go;
+   }
+   return $query;
+}
+
+sub shorten {
+   my ( $self, $query, $length ) = @_;
+   $query =~ s{
+      \A(
+         (?:INSERT|REPLACE)
+         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
+         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
+      )
+      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
+      {$1 /*... omitted ...*/$2}xsi;
+
+   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
+
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
+      }
+      {
+         $1 . __shorten($2)
+      }gexsi;
+   }
+
+   return $query;
+}
+
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
+}
+
+sub fingerprint {
+   my ( $self, $query ) = @_;
+
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
+   $query =~ m/\Aadministrator command: /
+      && return $query;
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+  
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
+      && return $query;
+
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+   $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
+   $query =~ s{                          # Collapse IN and VALUES lists
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
+              }
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg;
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
+   return $query;
+}
+
+sub distill_verbs {
+   my ( $self, $query ) = @_;
+
+   $query =~ m/\A\s*call\s+(\S+)\(/i && return "CALL $1";
+   $query =~ m/\A\s*use\s+/          && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
+
+   if ( $query =~ m/\Aadministrator command:/ ) {
+      $query =~ s/administrator command:/ADMIN/;
+      $query = uc $query;
+      return $query;
+   }
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      MKDEBUG && _d($query);
+
+      $query = uc $query;
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /g;
+      $query =~ s/\s+COUNT[^)]+\)//g;
+
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//ms;
+
+      $query =~ s/\A(SHOW(?:\s+\S+){1,2}).*\Z/$1/s;
+      $query =~ s/\s+/ /g;
+      MKDEBUG && _d($query);
+      return $query;
+   }
+
+   eval $QueryParser::data_def_stmts;
+   eval $QueryParser::tbl_ident;
+   my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
+   if ( $dds) {
+      my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
+      $obj = uc $obj if $obj;
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
+      my ($db_or_tbl)
+         = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches db or table:', $db_or_tbl);
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
+   }
+
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
+
+   return $verb_str;
+}
+
+sub __distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
+
+   my @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
+      $_;
+   } grep { defined $_ } $qp->get_tables($query);
+
+   push @tables, $table if $table;
+
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   return @tables;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   if ( $args{generic} ) {
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      my ($verbs, $table)  = $self->distill_verbs($query, %args);
+
+      if ( $verbs && $verbs =~ m/^SHOW/ ) {
+         my %alias_for = qw(
+            SCHEMA   DATABASE
+            KEYS     INDEX
+            INDEXES  INDEX
+         );
+         map { $verbs =~ s/$_/$alias_for{$_}/ } keys %alias_for;
+         $query = $verbs;
+      }
+      else {
+         my @tables = $self->__distill_tables($query, $table, %args);
+         $query     = join(q{ }, $verbs, @tables); 
+      } 
+   }
+
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
+   return $query;
+}
+
+sub convert_to_select {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
+   $query =~ s{
+                 \A.*?
+                 update(?:\s+(?:low_priority|ignore))?\s+(.*?)
+                 \s+set\b(.*?)
+                 (?:\s*where\b(.*?))?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
+                 \Z
+              }
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
+                    values?\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    (?:.*?\binto)\b(.*?)\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select_with_set($1, $2)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
+   return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
+}
+
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   MKDEBUG && _d('Args:', @_);
+   my @cols = split(/,/, $cols);
+   MKDEBUG && _d('Cols:', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   MKDEBUG && _d('Vals:', @vals);
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
+}
+
+sub __insert_to_select_with_set {
+   my ( $from, $set ) = @_;
+   $set =~ s/,/ and /g;
+   return "select * from $from where $set ";
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
+}
+
+sub wrap_in_derived {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryRewriter package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -3124,6 +3494,7 @@ sub main {
    my $ms = new MasterSlave();
    my $pl = new Processlist(MasterSlave => $ms);
    my $vp = new VersionParser();
+   my $qr = new QueryRewriter();
 
    # ########################################################################
    # Get configuration information.
@@ -3241,13 +3612,21 @@ sub main {
    # ########################################################################
    # Start working.
    # ########################################################################
-   my $start    = time();
-   my $end      = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now      = $start;
+   my $group_by = $o->get('group-by');
+   if ( $group_by ) {
+      # Processlist.pm is case-sensitive.  It matches Id, Host, db, etc.
+      # So we'll do the same because if we set NAME_lc on the dbh then
+      # we'll break our Processlist obj.
+      $group_by = lc $group_by;
+      $group_by = ucfirst $group_by unless $group_by eq 'db';
+   }
 
    my %find_spec = (
       only_oldest         => $o->get('only-oldest'),
+      all_but_oldest      => $o->get('all-but-oldest'),
       busy_time           => $o->get('busy-time'),
+      each_busy_time      => $o->get('each-busy-time'),
+      query_count         => $o->get('query-count'), 
       idle_time           => $o->get('idle-time'),
       all                 => $o->get('all'),
       replication_threads => $o->get('replication-threads'),
@@ -3270,6 +3649,9 @@ sub main {
       },
    );
 
+   my $start      = time();
+   my $end        = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now        = $start;
    my $iters_done = 0;
    my $iters_todo = $o->get('iterations');
    while (                                              # Quit if:
@@ -3286,7 +3668,20 @@ sub main {
 
       my @queries;
       if ( $proclist ) {
-         @queries = $pl->find($proclist, %find_spec);
+         if ( $group_by ) {
+            my $query_classes = group_queries(
+               proclist      => $proclist,
+               group_by      => $group_by,
+               QueryRewriter => $qr,
+            );
+            foreach my $class ( keys %$query_classes ) {
+               MKDEBUG && _d("Finding matching queries for class", $class);
+               push @queries, $pl->find($query_classes->{$class}, %find_spec);
+            }
+         }
+         else {
+            @queries = $pl->find($proclist, %find_spec);
+         }
          heartbeat('Matched ' . scalar @queries . ' queries');
          MATCHING_QUERY:
          foreach my $query ( @queries ) {
@@ -3376,6 +3771,30 @@ sub heartbeat {
    print '# ', ts(time), " $msg\n" if $o->get('heartbeat');
    MKDEBUG && _d($msg);
    return;
+}
+
+sub group_queries {
+   my ( %args ) = @_;
+   my @required_args = qw(proclist group_by QueryRewriter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($proclist, $group_by, $qr) = @args{@required_args};
+   MKDEBUG && _d("Grouping queries by", $group_by);
+
+   my $query_classes = {};
+   foreach my $proc ( @$proclist ) {
+      my $class;
+      if ( $group_by eq 'fingerprint' ) {
+         $class = $proc->{Info} ? $qr->fingerprint($proc->{Info}) : 'NULL'; 
+      }
+      else {
+         $class = $proc->{$group_by} ? $proc->{$group_by} : 'NULL';
+      }
+      push @{$query_classes->{$class}}, $proc;
+   }
+
+   return $query_classes;
 }
 
 sub _d {
@@ -3696,9 +4115,10 @@ See also L<"--busy-time">.
 
 type: string; group: Matches
 
-Apply matches and actions to each class of queries grouped by this attribute.
-For a full list of attributes, see
-L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+Apply matches to each class of queries grouped by this SHOW PROCESSLIST column.
+In addition to the basic columns of SHOW PROCESSLIST (user, host, command,
+state, etc.), queries can be matched by C<fingerprint> which abstracts the
+SQL query in the C<Info> column.
 
 By default, queries are not grouped, so matches and actions apply to all
 queries.  Grouping allows matches and actions to apply to classes of
