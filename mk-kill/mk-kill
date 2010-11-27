@@ -1861,7 +1861,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 6590
+# Processlist package 7073
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2049,7 +2049,7 @@ sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
    my $ms  = $self->{MasterSlave};
-   my $all = $find_spec{all};
+
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -2097,7 +2097,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched || $all ) {
+      if ( $matched || $find_spec{all} ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
@@ -2105,10 +2105,18 @@ sub find {
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
 
-   if ( @matches && $find_spec{only_oldest} ) {
-      my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+   if ( @matches
+        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
+   { 
+      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      my $oldest = $matches[0];
       MKDEBUG && _d('Oldest query:', Dumper($oldest));
-      @matches = $oldest;
+      if ( $find_spec{only_oldest} ) {
+         @matches = ($oldest);  # only return the oldest query
+      }
+      elsif ( $find_spec{all_but_oldest} ) {
+         shift @matches;  # remove fist/oldest query
+      }
    }
 
    return @matches;
@@ -3476,6 +3484,11 @@ use English qw(-no_match_vars);
 use POSIX qw(setsid);
 use List::Util qw(max);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 Transformers->import qw(ts);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -3523,8 +3536,13 @@ sub main {
       $o->set('interval', max(1, $o->get('busy-time') / 2))
          unless $o->got('interval');
    }
-   
-   $o->set('only-oldest', 0) if $o->get('all') && !$o->got('only-oldest');
+
+   $o->set('only-oldest', 0) if $o->get('all');
+   $o->set('only-oldest', 0) if $o->get('all-but-oldest');
+
+   if ( $o->got('only-oldest') && $o->got('all-but-oldest') ) {
+      $o->save_error("--only-oldest contradicts --all-but-oldest.");
+   }
 
    # If parsing files, then don't wait.
    if ( @ARGV ) {
@@ -3612,7 +3630,11 @@ sub main {
    # ########################################################################
    # Start working.
    # ########################################################################
-   my $group_by = $o->get('group-by');
+
+   # Class-based match criteria.
+   my $query_count    = $o->get('query-count');
+   my $each_busy_time = $o->get('each-busy-time');
+   my $group_by       = $o->get('group-by');
    if ( $group_by ) {
       # Processlist.pm is case-sensitive.  It matches Id, Host, db, etc.
       # So we'll do the same because if we set NAME_lc on the dbh then
@@ -3621,12 +3643,11 @@ sub main {
       $group_by = ucfirst $group_by unless $group_by eq 'db';
    }
 
+   # Per-class match criteria.
    my %find_spec = (
       only_oldest         => $o->get('only-oldest'),
       all_but_oldest      => $o->get('all-but-oldest'),
       busy_time           => $o->get('busy-time'),
-      each_busy_time      => $o->get('each-busy-time'),
-      query_count         => $o->get('query-count'), 
       idle_time           => $o->get('idle-time'),
       all                 => $o->get('all'),
       replication_threads => $o->get('replication-threads'),
@@ -3668,21 +3689,38 @@ sub main {
 
       my @queries;
       if ( $proclist ) {
-         if ( $group_by ) {
-            my $query_classes = group_queries(
-               proclist      => $proclist,
-               group_by      => $group_by,
-               QueryRewriter => $qr,
-            );
-            foreach my $class ( keys %$query_classes ) {
-               MKDEBUG && _d("Finding matching queries for class", $class);
-               push @queries, $pl->find($query_classes->{$class}, %find_spec);
+
+         # Group queries into classes.  If --group-by wasn't specified
+         # then all queries will be put in the "default" class.
+         my $query_classes = group_queries(
+            proclist      => $proclist,
+            group_by      => $group_by,
+            QueryRewriter => $qr,
+         );
+
+         CLASS:
+         foreach my $class ( keys %$query_classes ) {
+            MKDEBUG && _d("Finding matching queries for class", $class);
+            my @matches = $pl->find($query_classes->{$class}, %find_spec);
+
+            if (  $query_count && @matches < $query_count ) {
+               MKDEBUG && _d("Class does not have enough queries; has",
+                  scalar @matches, "but needs at least", $query_count);
+               next CLASS;
             }
-         }
-         else {
-            @queries = $pl->find($proclist, %find_spec);
+            if ( $each_busy_time ) {
+               foreach my $proc ( @matches ) {
+                  if ( ($proc->{Time} || 0) < $each_busy_time ) {
+                     MKDEBUG && _d("This proc hasn't been running long enough:",
+                        Dumper($proc));
+                     next CLASS;
+                  }
+               }
+            }
+            push @queries, @matches;
          }
          heartbeat('Matched ' . scalar @queries . ' queries');
+
          MATCHING_QUERY:
          foreach my $query ( @queries ) {
             if ( $o->get('print') ) {
@@ -3775,12 +3813,13 @@ sub heartbeat {
 
 sub group_queries {
    my ( %args ) = @_;
-   my @required_args = qw(proclist group_by QueryRewriter);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my ($proclist, $group_by, $qr) = @args{@required_args};
+   my ($proclist, $group_by, $qr) = @args{qw(proclist group_by QueryRewriter)};
    MKDEBUG && _d("Grouping queries by", $group_by);
+
+   # If there's proclist then there's nothing to do.  If there's no group by
+   # then all the procs in the list are in the same class.
+   return $proclist unless $proclist;
+   return { 'default' => $proclist } unless $group_by;
 
    my $query_classes = {};
    foreach my $proc ( @$proclist ) {
@@ -3888,6 +3927,10 @@ Secondly, L<"--[no]only-oldest"> affects which matching query is killed.
 By default, the matching query with the highest Time value is killed.  So
 if you want to match and kill ALL queries for a certain criteria regardless
 of which is the "oldest", you must specify C<--no-only-oldest>.
+
+Usually you need to specify at least one C<--match-*> option, else no
+queries will match.  Or, you can specify L<"--all"> to match all queries
+that aren't ignored by an C<--ignore-*>.
 
 mk-kill is a work in progress, and there is much more it could do.
 
@@ -4082,13 +4125,17 @@ group: Matches
 Kill all but the oldest (longest) running query.  Matching queries are sorted
 by Time and all but the longest running query are killed.
 
-This option is meant to help prevent "cache stampedes", the condition where
+Unlike L<"--all">, the various C<--match-*> options do apply, as well as
+the C<--ignore-*> options.  So, for example, you can match all queries from
+a specific user (e.g. L<"--match-user"> john) and then kill all but the
+longest running of their queries.
+
+This option can be used to prevent "cache stampedes", the condition where
 serveral identical queries are executed and create a backlog while the first
 query attempts to finish.  Since all queries are identical, all but the first
 query are killed so that it can complete and populate the cache.
 
-This option is disabled if L<"--all"> is specified.  This option implies
-C<--no-only-oldest>.
+Implies C<--no-only-oldest>.
 
 =item --busy-time
 
