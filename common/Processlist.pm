@@ -375,7 +375,6 @@ sub find {
          # If the proc's property value isn't ignored, then check if it
          # matches.  If all or all but oldest, then it matches automatically.
          if ( $all || $all_but_oldest ) {
-            MKDEBUG && _d("Query matches all", $property);
             $matched++;
          }
          elsif ( defined $find_spec{match}->{$property} ) {
