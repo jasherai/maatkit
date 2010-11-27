@@ -3656,6 +3656,21 @@ connections are killed.
 
 Implies C<--no-only-oldest>.
 
+=item --all-but-oldest
+
+group: Matches
+
+Kill all but the oldest (longest) running query.  Matching queries are sorted
+by Time and all but the longest running query are killed.
+
+This option is meant to help prevent "cache stampedes", the condition where
+serveral identical queries are executed and create a backlog while the first
+query attempts to finish.  Since all queries are identical, all but the first
+query are killed so that it can complete and populate the cache.
+
+This option is disabled if L<"--all"> is specified.  This option implies
+C<--no-only-oldest>.
+
 =item --busy-time
 
 type: time; group: Matches
@@ -3663,6 +3678,41 @@ type: time; group: Matches
 Kill connections that have been running for longer than this time.  The queries
 must be in Command=Query status.  This matches a query's Time value as
 reported by SHOW PROCESSLIST.
+
+=item --each-busy-time
+
+type: time; group: Matches
+
+Match query class if each query has been running for longer than this time.
+When queries are grouped into classes by specifying L<"--group-by">, this
+option causes matches to apply only to classes in which all queries have
+been running for longer than this time.  If L<"--group-by">
+is not specified then this option causes matches to apply only if all queries
+shown by SHOW PROCESSLIST have been running for longer than this time.
+
+See also L<"--busy-time">.
+
+=item --group-by
+
+type: string; group: Matches
+
+Apply matches and actions to each class of queries grouped by this attribute.
+For a full list of attributes, see
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+
+By default, queries are not grouped, so matches and actions apply to all
+queries.  Grouping allows matches and actions to apply to classes of
+similar queries, if any queries in the class match.
+
+For example, detecting cache stampedes (see L<"--all-but-oldest"> for an
+explanation of that term) requires that queries are grouped by the C<arg>
+attribute.  This creates classes of identical queries (stripped of comments).
+So queries C<"SELECT c FROM t WHERE id=1"> and C<"SELECT c FROM t WHERE id=1">
+are grouped into the same class, but query c<"SELECT c FROM t WHERE id=3"> is
+not identical to the first two queries so it is grouped into another class.
+Then when L<"--all-but-oldest"> is specified, all but the oldest query
+in each class is killed for each class of queries that matches the match
+criteria.
 
 =item --idle-time
 
@@ -3815,7 +3865,8 @@ Only kill the single oldest query.  This is to prevent killing queries that
 aren't really long-running, they're just long-waiting.  This sorts matching
 queries by Time and kills the one with the highest Time value.
 
-This option is disabled if L<"--all"> is specified.
+This option is disabled if L<"--all"> is specified.  See also
+L<"--all-but-oldest">.
 
 =item --replication-threads
 
@@ -3826,6 +3877,16 @@ Allow matching and killing replication threads.
 By default, matches do not apply to replication threads; i.e. replication
 threads are completely ignored.  Specifying this option allows matches to
 match (and potentially kill) replication threads on masters and slaves.
+
+=item --query-count
+
+type: int; group: Matches
+
+Match query class if it has at least this many queries.  When queries are
+grouped into classes by specifying L<"--group-by">, this option causes matches
+to apply only to classes with at least this many queries.  If L<"--group-by">
+is not specified then this option causes matches to apply only if there
+are at least this many queries in the entire SHOW PROCESSLIST.
 
 =back
 
