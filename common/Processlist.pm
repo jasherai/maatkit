@@ -313,7 +313,8 @@ sub _get_rows {
 #
 # Possible find_spec are:
 #   * only_oldest    Match the oldest running query
-#   * all_but_oldest Match all but the oldest running query
+#   * all            Match all not-ignored queries
+#   * all_but_oldest Match all but the oldest, not-ignored query
 #   * busy_time      Match queries that have been Command=Query for longer than
 #                    this time
 #   * idle_time      Match queries that have been Command=Sleep for longer than
@@ -326,6 +327,7 @@ sub find {
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
    my $ms  = $self->{MasterSlave};
    my $all = $find_spec{all};
+   my $all_but_oldest = $find_spec{all_but_oldest};
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -362,12 +364,21 @@ sub find {
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
+         # Check ignored properties first.  If the proc has at least one
+         # property that matches an ignore value, then it is totally ignored.
+         # and we can skip to the next proc (query).
          if ( defined $find_spec{ignore}->{$property}
               && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
             MKDEBUG && _d('Query matches ignore', $property, 'spec');
             next QUERY;
          }
-         if ( defined $find_spec{match}->{$property} ) {
+         # If the proc's property value isn't ignored, then check if it
+         # matches.  If all or all but oldest, then it matches automatically.
+         if ( $all || $all_but_oldest ) {
+            MKDEBUG && _d("Query matches all", $property);
+            $matched++;
+         }
+         elsif ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
                MKDEBUG && _d('Query does not match', $property, 'spec');
                next QUERY;
@@ -376,7 +387,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched || $all ) {
+      if ( $matched ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
@@ -384,16 +395,17 @@ sub find {
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
 
-   if ( @matches ) {
+   if ( @matches
+        && ($find_spec{only_oldest} || $all_but_oldest) ) # these require sort
+   { 
+      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      my $oldest = $matches[0];
+      MKDEBUG && _d('Oldest query:', Dumper($oldest));
       if ( $find_spec{only_oldest} ) {
-         my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
-         MKDEBUG && _d('Oldest query:', Dumper($oldest));
-         @matches = $oldest;
+         @matches = ($oldest);
       }
-      elsif ( $find_spec{all_but_oldest} ) {
-         @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
-         my $oldest = shift @matches;
-         MKDEBUG && _d('Matching all but oldest query:', Dumper($oldest));
+      elsif ( $all_but_oldest ) {
+         shift @matches; 
       }
    }
 
