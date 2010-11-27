@@ -3693,9 +3693,10 @@ sub main {
          # Group queries into classes.  If --group-by wasn't specified
          # then all queries will be put in the "default" class.
          my $query_classes = group_queries(
-            proclist      => $proclist,
-            group_by      => $group_by,
-            QueryRewriter => $qr,
+            proclist       => $proclist,
+            group_by       => $group_by,
+            strip_comments => $o->get('strip-comments'),
+            QueryRewriter  => $qr,
          );
 
          CLASS:
@@ -3823,7 +3824,11 @@ sub group_queries {
 
    my $query_classes = {};
    foreach my $proc ( @$proclist ) {
-      my $class;
+      if ( $args{strip_comments} &&  $proc->{Info} ) {
+         $proc->{Info} = $qr->strip_comments($proc->{Info});
+      }
+
+      my $class; 
       if ( $group_by eq 'fingerprint' ) {
          $class = $proc->{Info} ? $qr->fingerprint($proc->{Info}) : 'NULL'; 
       }
@@ -4046,6 +4051,12 @@ it exists and the process with the matching PID exists, the program exits.
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --[no]strip-comments
+
+default: yes
+
+Remove SQL comments from queries in the Info column of the PROCESSLIST.
 
 =item --run-time
 

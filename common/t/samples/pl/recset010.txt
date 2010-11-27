@@ -6,7 +6,7 @@
 Command: Query
    Time: 10
   State: executing
-   Info: select c from t where id='foo';
+   Info: select c /* abc */from t where id='foo';
 *************************** 2. row ***************************
      Id: 2
    User: user1
@@ -15,7 +15,7 @@ Command: Query
 Command: Query
    Time: 9
   State: executing
-   Info: select c from t where id='foo';
+   Info: select c/* def */ from t where id='foo';
 *************************** 3. row ***************************
      Id: 3
    User: user1

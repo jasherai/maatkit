@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use MaatkitTest;
 use Sandbox;
@@ -81,6 +81,18 @@ is(
    $output,
    "",
    "Query count doesn't match"
+);
+
+# Without stripping comments, the queries won't be grouped into a class.
+$output = output(
+   sub { mk_kill::main("$sample/recset010.txt", qw(--print),
+      qw(--group-by info --query-count 2 --each-busy-time 2 --match-user user1),
+      qw(--all-but-oldest --print --no-strip-comments)); }
+);
+is(
+   $output,
+   "",
+   "Queries don't match unless comments are stripped"
 );
 
 # #############################################################################
