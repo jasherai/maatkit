@@ -149,7 +149,7 @@ SKIP: {
    my $repl_thd_ids = join("|", @repl_thds);
 
    $output = output(
-      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print)); }
+      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print --run-time 1 --interval 1)); }
    );
    is(
       $output,
@@ -158,7 +158,7 @@ SKIP: {
    );
 
    $output = output(
-      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print --replication-threads)); }
+      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print --replication-threads --run-time 1 --interval 1)); }
    );
    like(
       $output,

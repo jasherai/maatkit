@@ -32,7 +32,7 @@ SKIP: {
 
    # There's no hung queries so we'll just make sure it outputs anything,
    # its debug stuff in this case.
-   `$cmd --print --interval 1s --iterations 2 --pid /tmp/mk-kill.pid --log /tmp/mk-kill.log --daemonize`;
+   `$cmd --print --interval 1s --run-time 2 --pid /tmp/mk-kill.pid --log /tmp/mk-kill.log --daemonize`;
    $output = `ps -eaf | grep 'mk-kill \-F'`;
    like(
       $output,

@@ -50,7 +50,7 @@ SKIP: {
 
    system("/tmp/12345/use -e 'select sleep(2)' >/dev/null 2>&1 &");
 
-   $output = `$cmd --match-info 'select sleep' --run-time 2 --print --execute-command 'echo batty > /tmp/mk-kill-test.txt'`;
+   $output = `$cmd --match-info 'select sleep' --run-time 2 --interval 1 --print --execute-command 'echo batty > /tmp/mk-kill-test.txt'`;
    like(
       $output,
       qr/KILL .+ select sleep\(2\)/,

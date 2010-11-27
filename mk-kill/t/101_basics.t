@@ -34,7 +34,7 @@ my $cmd = "$trunk/mk-kill/mk-kill -F $cnf -h 127.1";
 # Backticks don't work here.
 system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(5)' >/dev/null&");
 
-$output = `$cmd --busy-time 1s --print --iterations 7`;
+$output = `$cmd --busy-time 1s --print --run-time 10`;
 
 # $output ought to be something like
 # 2009-05-27T22:19:40 KILL 5 (Query 1 sec) select sleep(10)
@@ -52,8 +52,9 @@ ok(@times > 2 && @times < 7, "There were 2 to 5 captures");
 # This is to catch a bad bug where there wasn't any sleep time when
 # --iterations  was 0, and another bug when --run-time was not respected.
 # Do it all over again, this time with --iterations 0.
+# Re issue 1181, --iterations no longer exists, but we'll still keep this test.
 system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(10)' >/dev/null&");
-$output = `$cmd --busy-time 1s --print --iterations 0 --run-time 11s`;
+$output = `$cmd --busy-time 1s --print --run-time 11s`;
 @times = $output =~ m/\(Query (\d+) sec\)/g;
 ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 0');
 

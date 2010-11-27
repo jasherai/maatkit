@@ -1,5 +1,10 @@
 Changelog for mk-kill:
 
+   * Removed --iterations option.
+   * Changed --run-time behavior to match other tools.
+   * Added options --sentinel and --stop.
+   * Added more --heartbeat messages.
+
 2010-09-11: version 0.9.7
 
    * Slave replication threads in "init" or "end" state were killed (issue 1121)

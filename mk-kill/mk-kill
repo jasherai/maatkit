@@ -3546,10 +3546,27 @@ sub main {
 
    # If parsing files, then don't wait.
    if ( @ARGV ) {
+      $o->set('run-time', 0);
       $o->set('interval', 0);
    }
 
    $o->usage_or_errors();
+
+   # ########################################################################
+   # First things first: if --stop was given, create the sentinel file.
+   # ########################################################################
+   if ( $o->get('stop') ) {
+      my $sentinel = $o->get('sentinel');
+      MKDEBUG && _d('Creating sentinel file', $sentinel);
+      open my $fh, '>', $sentinel
+         or die "Cannot open $sentinel: $OS_ERROR\n";
+      print $fh "Remove this file to permit mk-kill to run.\n"
+         or die "Cannot write to $sentinel: $OS_ERROR\n";
+      close $fh
+         or die "Cannot close $sentinel: $OS_ERROR\n";
+      print "Successfully created file $sentinel\n";
+      return 0;
+   }
 
    # ########################################################################
    # Connect to MySQL if not reading files.
@@ -3630,6 +3647,9 @@ sub main {
    # ########################################################################
    # Start working.
    # ########################################################################
+   heartbeat("$PROGRAM_NAME starting");
+   heartbeat(@ARGV ? "Reading files @ARGV"
+                   : "Connected to host " . $dp->as_string($dsn));
 
    # Class-based match criteria.
    my $query_count    = $o->get('query-count');
@@ -3669,17 +3689,18 @@ sub main {
          User     => $o->get('match-user'),
       },
    );
+   heartbeat("Find spec: " . Dumper(\%find_spec));
 
-   my $start      = time();
-   my $end        = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now        = $start;
-   my $iters_done = 0;
-   my $iters_todo = $o->get('iterations');
-   while (                                              # Quit if:
-      ($start == $end || $now < $end)                   # time is exceeded
-      && (!$iters_todo || $iters_done++ < $iters_todo ) # or iterations exceeded
-   ) {
-      heartbeat('Checking processlist, iteration '.$iters_done);
+   my $sentinel = $o->get('sentinel');
+   my $run_time = $o->get('run-time') || 0;
+   my $start    = time();
+   my $end      = $start + $run_time;  # When we should exit
+   my $now      = $start;
+   heartbeat("Run-time: " . ($run_time ? "$run_time seconds" : "forever")
+      . " at " . ($o->get('interval') || 0) . " second intervals");
+
+   while ( (!$run_time || $now < $end) && !-f $sentinel ) {
+      heartbeat('Checking processlist');
       my $proclist;
       eval { $proclist = $get_proclist->(); };
       if ( $EVAL_ERROR ) {
@@ -3735,39 +3756,40 @@ sub main {
                heartbeat('Executed ' . $o->get('execute-command'));
             }
             if ( $o->get('kill') || $o->get('kill-query') ) {
-               sleep $o->get('wait-before-kill') if $o->get('wait-before-kill');
+               if ( $o->get('wait-before-kill') ) {
+                  heartbeat("Sleeping " . $o->get('wait-before-kill')
+                     . " seconds before kill");
+                  sleep $o->get('wait-before-kill');
+               }
                $kill_sth->execute($query->{Id});
                heartbeat("Killed $query->{Id}");
-               MKDEBUG && _d('Killed', $query->{Id});
             }
          }
       }
       else {
-         MKDEBUG && _d('No proclist returned');
          heartbeat('Processlist returned no queries');
       }
 
-      # Don't sleep if we're going to exit after waking up.  If $iters_todo is
-      # 0 (infinity), always sleep.  And only sleep if we're live (i.e. not
-      # reading from files).
-      if ( (!$iters_todo || $iters_done < $iters_todo)
-            && $dbh ) {
+      if ( $dbh ) {
          if ( @queries && $o->get('wait-after-kill') ) {
-            MKDEBUG && _d("Sleeping after killing queries");
+            heartbeat("Sleeping " . $o->get('wait-after-kill')
+               . " seconds after killing queries");
             sleep $o->get('wait-after-kill');
          }
          else {
-            MKDEBUG && _d("Sleeping normal interval");
+            heartbeat("Sleeping " . $o->get('interval')
+               . " seconds after normal interval");
             sleep $o->get('interval');
          }
       }
+
       $now = time();
    }
 
-   heartbeat('Done checking processlist');
+   heartbeat("Sentinel file $sentinel exists") if $sentinel && -f $sentinel;
+   heartbeat("$PROGRAM_NAME ending");
    return 0;
 }
-
 
 # ############################################################################
 # Subroutines.
@@ -3959,7 +3981,7 @@ with the command.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--kill">, L<"--kill-query">, L<"--print"> or L<"--execute-command">.
+Specify at least one of L<"--kill">, L<"--kill-query">, L<"--print">, L<"--execute-command"> or L<"--stop">.
 
 =over
 
@@ -4018,12 +4040,7 @@ then the default interval is 30 seconds.  Else the default is half as often
 as L<"--busy-time">.  If both L<"--interval"> and L<"--busy-time"> are given,
 then the explicit L<"--interval"> value is used.
 
-=item --iterations
-
-type: int; default: 1
-
-How many times to iterate through the find-and-kill cycle.  If 0, iterate
-to infinity.  See also L<"--run-time">.
+See also L<"--run-time">.
 
 =item --log
 
@@ -4062,7 +4079,20 @@ Remove SQL comments from queries in the Info column of the PROCESSLIST.
 
 type: time
 
-How long to run before exiting.
+How long to run before exiting.  By default mk-kill runs forever, or until
+its process is killed or stopped by the creation of a L<"--sentinel"> file.
+If this option is specified, mk-kill runs for the specified amount of time
+and sleeps L<"--interval> seconds between each check of the PROCESSLIST.
+
+=item --sentinel
+
+type: string; default: /tmp/mk-kill-sentinel
+
+Exit if this file exists.
+
+The presence of the file specified by L<"--sentinel"> will cause all
+running instances of mk-kill to exit.  You might find this handy to stop cron
+jobs gracefully if necessary.  See also L<"--stop">.
 
 =item --set-vars
 
@@ -4076,6 +4106,14 @@ will be appended to SET and executed.
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --stop
+
+Stop running instances by creating the L<"--sentinel"> file.
+
+Causes mk-kill to create the sentinel file specified by L<"--sentinel"> and
+exit.  This should have the effect of stopping all running instances which are
+watching the same sentinel file.
 
 =item --user
 
