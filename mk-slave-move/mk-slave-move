@@ -2595,8 +2595,9 @@ you may not need to specify username, password and other common options at all.
 
 =head1 EXIT STATUS
 
-Successful exit status is 0.  Any other value represents the exit status of
-the Perl process itself.
+An exit status of 0 (sometimes also called a return value or return code)
+indicates success.  Any other value represents the exit status of the Perl
+process itself.
 
 =head1 OPTIONS
 

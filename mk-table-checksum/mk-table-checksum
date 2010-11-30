@@ -7345,8 +7345,9 @@ replicate table.
 
 =head1 EXIT STATUS
 
-A successful exit status is 0.  If there is an error checksumming any table,
-the exit status is 1.
+An exit status of 0 (sometimes also called a return value or return code)
+indicates success.  If there is an error checksumming any table, the exit status
+is 1.
 
 When running L<"--replicate-check">, if any slave has chunks that differ from
 the master, the exit status is 1.

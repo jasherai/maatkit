@@ -1189,7 +1189,9 @@ all read.
 
 =head1 EXIT STATUS
 
-Exit status is 0 if no differences were found, 1 if any were.
+An exit status of 0 (sometimes also called a return value or return code)
+indicates that no differences were found.  If there were any differences, the
+tool exits with status 1.
 
 =head1 OPTIONS
 

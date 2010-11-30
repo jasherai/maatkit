@@ -9036,7 +9036,8 @@ the command line.
 
 =head1 EXIT STATUS
 
-Exit status is as follows:
+The following are the exit statuses (also called return values, or return codes)
+when mk-table-sync finishes and exits.
 
    STATUS  MEANING
    ======  =======================================================

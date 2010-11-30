@@ -3017,9 +3017,10 @@ sleep time, whichever is less.
 
 =head1 EXIT STATUS
 
-Successful exit status is 0.  Any other value represents the exit status of
-the Perl process itself, or of the last forked process that exited if there
-were multiple servers to monitor.
+An exit status of 0 (sometimes also called a return value or return code)
+indicates success.  Any other value represents the exit status of the Perl
+process itself, or of the last forked process that exited if there were multiple
+servers to monitor.
 
 =head1 COMPATIBILITY
 
