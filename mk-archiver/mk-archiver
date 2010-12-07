@@ -4504,6 +4504,14 @@ mk-archiver - Archive rows from a MySQL table into another table or a file.
 
 =head1 SYNOPSIS
 
+Usage: mk-archiver [OPTION...] --source DSN --where WHERE
+
+mk-archiver nibbles records from a MySQL table.  The --source and --dest
+arguments use DSN syntax; if COPY is yes, --dest defaults to the key's value
+from --source.
+
+Examples:
+
 Archive all rows from oltp_server to olap_server and to a file:
 
   mk-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
@@ -4512,8 +4520,8 @@ Archive all rows from oltp_server to olap_server and to a file:
 
 Purge (delete) orphan rows from child table:
 
-  mk-archiver --source h=host,D=db,t=child \
-    --purge --where 'NOT EXISTS(SELECT * FROM parent WHERE col=child.col)'
+  mk-archiver --source h=host,D=db,t=child --purge \
+    --where 'NOT EXISTS(SELECT * FROM parent WHERE col=child.col)'
 
 =head1 RISKS
 
