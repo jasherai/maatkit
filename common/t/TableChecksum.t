@@ -660,7 +660,7 @@ my $query = $c->make_checksum_query(
    replicate  => undef,
    precision  => undef,
    trim       => undef,
-   ignorecols => ['c'],
+   ignorecols => {'c'=>1},
 );
 is($query,
    'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, COALESCE(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, \'0\'), CONV(CAST(CRC32(CONCAT(@crc, CRC32(CONCAT_WS(\'#\', `a`, `b`)))) AS UNSIGNED), 10, 16))), 16), 0) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',

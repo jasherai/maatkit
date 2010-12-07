@@ -287,13 +287,13 @@ sub make_row_checksum {
    $sep ||= '#';
 
    # This allows a simpler grep when building %cols below.
-   my %ignorecols = map { $_ => 1 } @{$args{ignorecols}};
+   my $ignorecols = $args{ignorecols} || {};
 
    # Generate the expression that will turn a row into a checksum.
    # Choose columns.  Normalize query results: make FLOAT and TIMESTAMP
    # stringify uniformly.
    my %cols = map { lc($_) => 1 }
-              grep { !exists $ignorecols{$_} }
+              grep { !exists $ignorecols->{$_} }
               ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
    my %seen;
    my @cols =
