@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 86;
+use Test::More tests => 87;
 
 use MaatkitTest;
 use PodParser;
@@ -460,6 +460,11 @@ my @cases = (
       name   => 'Issue 1163, RES.001 false-positive',
       query  => "SELECT YEAR(post_date) AS `year`, MONTH(post_date) AS `month`, count(ID) as posts FROM foo_posts  WHERE post_type = 'post' AND post_status = 'publish' GROUP BY YEAR(post_date), MONTH(post_date) ORDER BY post_date DESC",
       advice => [qw()],
+   },
+   {
+      name   => 'CLA.007 ORDER BY ASC and DESC',
+      query  => "select col1, col2 from tbl where i=1 order by col1, col2 desc",
+      advice => [qw(CLA.007)],
    },
 );
 

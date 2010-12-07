@@ -220,6 +220,26 @@ sub get_rules {
       },
    },
    {
+      id   => 'CLA.007',      # ORDER BY ASC/DESC mix can't use index
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $order_by = $event->{query_struct}->{order_by}; 
+         return unless $order_by;
+         my ($asc, $desc) = (0, 0);
+         foreach my $col ( @$order_by ) {
+            if ( ($col->{sort} || 'ASC') eq 'ASC' ) {
+               $asc++;
+            }
+            else {
+               $desc++;
+            }
+            return 0 if $asc && $desc;
+         }
+         return;
+      },
+   },
+   {
       id   => 'COL.001',      # SELECT *
       code => sub {
          my ( %args ) = @_;
