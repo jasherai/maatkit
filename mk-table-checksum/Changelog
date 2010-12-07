@@ -1,6 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
    * Added --progress option (1151).
+   * Added short form -c for option --columns.
 
 2010-09-11: version 1.2.18
 

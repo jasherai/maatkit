@@ -68,6 +68,25 @@ my %dir_for_tool = (
    'mk-profile-compact'   => 'mk-query-profiler',
 );
 
+# Exceptions are inevitable.  E.g., mk-deadlock-logger --columns is not the
+# standards filter --columns (e.g. same family as --databases, --tables, etc.)
+# These exceptions are good candidates for change, so our standard options
+# really are standard across all tools.
+my $exception = { 
+   'mk-deadlock-logger' => {  # not standard filter
+      columns => {
+         type  => 'h',
+         short => '',
+      },
+   },
+   'mk-checksum-filter' => {  # not standard filter
+      'ignore-databases' => {
+         type  => '',
+         short => '',
+      },
+   },
+};
+
 foreach my $prog ( @progs ) {
    my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
    next unless $program;
@@ -99,30 +118,38 @@ foreach my $prog ( @progs ) {
          # just the problems or else "All mk-tool options are valid".
 
          # Check option type.
-         if ( ($type || '') ne ($sop->{$long}->{type} || '') ) {
+         my $expected_type = $sop->{$long}->{type};
+         $expected_type = $exception->{$program}->{$long}->{type}
+            if exists $exception->{$program}->{$long}->{type};
+         $expected_type = '' unless defined $expected_type;
+         if ( ($type || '') ne $expected_type ) {
             $all_ok = 0;
             is(
                ($type || ''),
-               ($sop->{$long}->{type} || ''),
+               $expected_type,
                "$program --$long "
                . ($type ? "is type $type" : "has no type")
                . " but should "
-               . ($sop->{$long}->{type} ? "be type $sop->{$long}->{type}"
-                                        : "have no type")
+               . ($expected_type ? "be type $expected_type"
+                                 : "have no type")
             );
          }
 
          # Check short form.
-         if ( ($short || '') ne ($sop->{$long}->{short} || '') ) {
+         my $expected_short = $sop->{$long}->{short};
+         $expected_short = $exception->{$program}->{$long}->{short}
+            if exists $exception->{$program}->{$long}->{short};
+         $expected_short = '' unless defined $expected_short;
+         if ( ($short || '') ne $expected_short ) {
             $all_ok = 0;
             is(
                ($short || ''),
-               ($sop->{$long}->{short} || ''),
+               $expected_short,
                "$program --$long "
                . ($short ? "has short form -$short" : "has no short form")
                . " but should have "
-               . ($sop->{$long}->{short} ? "short form -$sop->{$long}->{short}"
-                                         : "no short form")
+               . ($expected_short ? "short form -$expected_short"
+                                  : "no short form")
             );
          }
       }

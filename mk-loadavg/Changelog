@@ -1,5 +1,7 @@
 Changelog for mk-loadavg:
 
+   * Added short form -w for option --wait.
+
 2010-06-08: version 0.9.6
 
    * Connections did not preserve server SQL modes (issue 801).

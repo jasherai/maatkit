@@ -3576,7 +3576,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6511
+# TableChecksum package 7080
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChecksum.pm
@@ -3800,10 +3800,10 @@ sub make_row_checksum {
    $sep =~ s/'//g;
    $sep ||= '#';
 
-   my %ignorecols = map { $_ => 1 } @{$args{ignorecols}};
+   my $ignorecols = $args{ignorecols} || {};
 
    my %cols = map { lc($_) => 1 }
-              grep { !exists $ignorecols{$_} }
+              grep { !exists $ignorecols->{$_} }
               ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
    my %seen;
    my @cols =

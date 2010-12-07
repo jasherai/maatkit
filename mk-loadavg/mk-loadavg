@@ -4073,7 +4073,7 @@ would get average values since last reboot.
 
 =item --wait
 
-type: time; default: 60s
+short form: -w; type: time; default: 60s
 
 Wait this long to reconnect to MySQL.
 
