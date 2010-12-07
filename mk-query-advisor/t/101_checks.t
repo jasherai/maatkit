@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 use MaatkitTest;
 shift @INC;  # These two shifts are required for tools that use base and
@@ -152,6 +152,14 @@ ok(
       'mk-query-advisor/t/samples/cla-006-01.txt',
    ),
    'CLA.001 and CLA.006'
+);
+
+ok(
+   no_diff(sub { mk_query_advisor::main(@args,
+         'select c1, c2 from t where i=1 order by c1 desc, c2 asc') },
+      'mk-query-advisor/t/samples/cla-007-01.txt',
+   ),
+   'CLA.007'
 );
 
 # #############################################################################

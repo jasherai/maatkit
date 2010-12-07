@@ -3183,7 +3183,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 7084
+# QueryAdvisorRules package 7086
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryAdvisorRules.pm
@@ -3378,6 +3378,26 @@ sub get_rules {
          map { delete $groupby_tbls{$_} } keys %orderby_tbls;
          return 0 if scalar keys %groupby_tbls;
 
+         return;
+      },
+   },
+   {
+      id   => 'CLA.007',      # ORDER BY ASC/DESC mix can't use index
+      code => sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         my $order_by = $event->{query_struct}->{order_by}; 
+         return unless $order_by;
+         my ($asc, $desc) = (0, 0);
+         foreach my $col ( @$order_by ) {
+            if ( ($col->{sort} || 'ASC') eq 'ASC' ) {
+               $asc++;
+            }
+            else {
+               $desc++;
+            }
+            return 0 if $asc && $desc;
+         }
          return;
       },
    },
@@ -6068,6 +6088,14 @@ ORDER BY constant column.
 severity: warn
 
 GROUP BY or ORDER BY different tables will force a temp table and filesort.
+
+=item CLA.007
+
+severity: warn
+
+ORDER BY different directions prevents index from being used. All tables
+in the ORDER BY clause must be either ASC or DESC, else MySQL cannot use
+an index.
 
 =item COL.001
 

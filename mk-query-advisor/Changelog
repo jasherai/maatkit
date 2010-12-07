@@ -1,6 +1,7 @@
 Changelog for mk-query-advisor:
 
    * Fixed false-positive ARG.001 matches (issue 1163).
+   * Added rule CLA.007 to detect different ORDER BY directions (issue 1158).
 
 2010-11-08: version 1.0.2
 
