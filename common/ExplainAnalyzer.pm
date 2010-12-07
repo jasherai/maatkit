@@ -205,6 +205,27 @@ sub save_usage_for {
    $self->{usage}->{$db}->{$checksum} = $usage;
 }
 
+# Sub: fingerprint
+#   Create a fingerprint/sparkline of EXPLAIN data from <normalize()>.
+#   See <issue 1141 at http://code.google.com/p/maatkit/issues/detail?id=1141>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   explain - Hashref of normalized EXPLAIN data
+#
+# Returns:
+#   Fingerprint/sparkline string
+sub fingerprint {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(explain);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($explain) = @args{@required_args};
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
