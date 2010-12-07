@@ -1,5 +1,7 @@
 Changelog for mk-query-advisor:
 
+   * Fixed false-positive ARG.001 matches (issue 1163).
+
 2010-11-08: version 1.0.2
 
    * Added rule CLA.006 to detect mixed table GROUP/ORDER BY (issue 1137).
