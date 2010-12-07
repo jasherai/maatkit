@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 84;
+use Test::More tests => 86;
 
 use MaatkitTest;
 use PodParser;
@@ -195,19 +195,19 @@ my @cases = (
       advice => [qw(CLA.003)],
    },
    {  name   => 'Leading %wildcard',
-      query  => 'select a from t where i="%hm"',
+      query  => 'select a from t where i like "%hm"',
       advice => [qw(ARG.001)],
    },
    {  name   => 'Leading _wildcard',
-      query  => 'select a from t where i="_hm"',
+      query  => 'select a from t where i LIKE "_hm"',
       advice => [qw(ARG.001)],
    },
    {  name   => 'Leading "% wildcard"',
-      query  => 'select a from t where i="% eh "',
+      query  => 'select a from t where i like "% eh "',
       advice => [qw(ARG.001)],
    },
    {  name   => 'Leading "_ wildcard"',
-      query  => 'select a from t where i="_ eh "',
+      query  => 'select a from t where i LIKE "_ eh "',
       advice => [qw(ARG.001)],
    },
    {  name   => 'GROUP BY number',
@@ -450,6 +450,16 @@ my @cases = (
    {  name   => "CLA.006 without full table qualifications",
       query  => "select id from tbl1 join tbl2 using(a) where 1 group by id order by tbl1.id",
       advice => [],
+   },
+   {
+      name   => 'Issue 1163, ARG.001 false-positive',
+      query  => "SELECT COUNT(*) FROM foo WHERE meta_key = '_edit_lock' AND post_id = 488",
+      advice => [qw()],
+   },
+   {
+      name   => 'Issue 1163, RES.001 false-positive',
+      query  => "SELECT YEAR(post_date) AS `year`, MONTH(post_date) AS `month`, count(ID) as posts FROM foo_posts  WHERE post_type = 'post' AND post_status = 'publish' GROUP BY YEAR(post_date), MONTH(post_date) ORDER BY post_date DESC",
+      advice => [qw()],
    },
 );
 

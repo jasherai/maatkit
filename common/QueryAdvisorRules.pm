@@ -98,7 +98,13 @@ sub get_rules {
       code => sub {
          my ( %args ) = @_;
          my $event = $args{event};
-         return 0 if $event->{arg} =~ m/[\'\"][\%\_]./;
+         my $where = $event->{query_struct}->{where};
+         return unless $where && @$where;
+         foreach my $arg ( @$where ) {
+            return 0
+               if ($arg->{operator} || '') eq 'like'
+                  && $arg->{value} =~ m/[\'\"][\%\_]./;
+         }
          return;
       },
    },
@@ -107,10 +113,12 @@ sub get_rules {
       code => sub {
          my ( %args ) = @_;
          my $event = $args{event};        
-         # TODO: this pattern doesn't handle spaces.
-         my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
-         foreach my $arg ( @like_args ) {
-            return 0 if $arg !~ m/[%_]/;
+         my $where = $event->{query_struct}->{where};
+         return unless $where && @$where;
+         foreach my $arg ( @$where ) {
+            return 0
+               if ($arg->{operator} || '') eq 'like'
+                  && $arg->{value} !~ m/[%_]/;
          }
          return;
       },
