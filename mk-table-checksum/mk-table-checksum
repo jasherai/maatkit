@@ -7280,7 +7280,9 @@ The table's storage engine.
 
 =item COUNT
 
-The table's row count, unless you specified to skip it.
+The table's row count, unless you specified to skip it.  If C<OVERSIZE> is
+printed, the chunk was skipped because the actual number of rows was greater
+than L<"--chunk-size"> times L<"--chunk-size-limit">.
 
 =item CHECKSUM
 
@@ -7572,7 +7574,8 @@ When L<"--chunk-size"> is given it specifies an ideal size for each chunk
 of a chunkable table (in rows; size values are converted to rows).  Before
 checksumming each chunk, mk-table-checksum checks how many rows are in the
 chunk with EXPLAIN.  If the number of rows reported by EXPLAIN is this many
-times greater than L<"--chunk-size">, then the chunk is skipped.
+times greater than L<"--chunk-size">, then the chunk is skipped and C<OVERSIZE>
+is printed for the C<COUNT> column of the L<"OUTPUT">.
 
 For example, if you specify L<"--chunk-size"> 100 and a chunk has 150 rows,
 then it is checksummed with the default L<"--chunk-size-limit"> value 2.0
