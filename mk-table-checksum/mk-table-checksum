@@ -6959,7 +6959,8 @@ what L<"--replicate"> does.  It is probably the option you want to use.
 
    mk-table-checksum --replicate=mydb.checksum master-host
    ... time passses, replication catches up ...
-   mk-table-checksum --replicate=mydb.checksum --replicate-check 2 master-host
+   mk-table-checksum --replicate=mydb.checksum --replicate-check 2 \
+      master-host
 
 Or,
 
