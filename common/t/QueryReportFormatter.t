@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 36;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -26,12 +26,13 @@ use ReportFormatter;
 use OptionParser;
 use DSNParser;
 use ReportFormatter;
+use ExplainAnalyzer;
 use Sandbox;
 use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
+my $dbh = $sb->get_dbh_for('master', {no_lc=>1});  # for explain sparkline
 
 my ($result, $events, $expected);
 
@@ -39,14 +40,16 @@ my $q   = new Quoter();
 my $qp  = new QueryParser();
 my $qr  = new QueryRewriter(QueryParser=>$qp);
 my $o   = new OptionParser(description=>'qrf');
+my $ex  = new ExplainAnalyzer(QueryRewriter => $qr, QueryParser => $qp);
 
 $o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 
 my $qrf = new QueryReportFormatter(
-   OptionParser  => $o,
-   QueryRewriter => $qr,
-   QueryParser   => $qp,
-   Quoter        => $q, 
+   OptionParser    => $o,
+   QueryRewriter   => $qr,
+   QueryParser     => $qp,
+   Quoter          => $q, 
+   ExplainAnalyzer => $ex,
 );
 
 my $ea  = new EventAggregator(
@@ -1090,26 +1093,22 @@ SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh;
    $sb->load_file('master', "common/t/samples/QueryReportFormatter/table.sql");
 
-   # Normally dbh would be passed to QueryReportFormatter::new().  If it's
-   # set earlier then previous tests cause EXPLAIN failures due to their
-   # fake dbs.
-   $qrf->{dbh} = $dbh;
+   @ARGV = qw(--explain F=/tmp/12345/my.sandbox.cnf);
+   $o->get_opts();
 
-   my $explain =
-"# *************************** 1. row ***************************
-#            id: 1
-#   select_type: SIMPLE
-#         table: t
-"
-. (($sandbox_version || '') ge '5.1' ? "#    partitions: NULL\n" : '') .
-"#          type: const
-# possible_keys: PRIMARY
-#           key: PRIMARY
-#       key_len: 4
-#           ref: const
-#          rows: 1
-#         Extra: 
-";
+   my $qrf = new QueryReportFormatter(
+      OptionParser    => $o,
+      QueryRewriter   => $qr,
+      QueryParser     => $qp,
+      Quoter          => $q, 
+      dbh             => $dbh,
+      ExplainAnalyzer => $ex,
+   );
+
+   my $explain = load_file(
+      $sandbox_version ge '5.1'
+         ? "common/t/samples/QueryReportFormatter/report025.txt"
+         : "common/t/samples/QueryReportFormatter/report026.txt");
 
    is(
       $qrf->explain_report("select * from qrf.t where i=2", 'qrf'),
@@ -1117,10 +1116,53 @@ SKIP: {
       "explain_report()"
    );
 
+   my $arg = "select t1.i from t as t1 join t as t2 where t1.i < t2.i and t1.v is not null order by t1.i";
+   my $fingerprint = $qr->fingerprint($arg);
+
+   $events = [
+      {
+         Query_time    => '0.000286',
+         arg           => $arg,
+         fingerprint   => $fingerprint,
+         bytes         => length $arg,
+         cmd           => 'Query',
+         db            => 'qrf',
+         pos_in_log    => 0,
+         ts            => '091208 09:23:49.637394',
+      },
+   ];
+   $ea = new EventAggregator(
+      groupby => 'fingerprint',
+      worst   => 'Query_time',
+   );
+   foreach my $event ( @$events ) {
+      $ea->aggregate($event);
+   }
+   $ea->calculate_statistical_metrics();
+   $report = new ReportFormatter(
+      line_width   => 74,
+      extend_right => 1,
+   );
+   ok(
+      no_diff(
+         sub {
+            $qrf->print_reports(
+               reports => ['query_report','profile'],
+               ea      => $ea,
+               worst   => [ [$fingerprint, 'top',1], ],
+               orderby => 'Query_time',
+               groupby => 'fingerprint',
+               ReportFormatter => $report,
+            );
+         },
+         "common/t/samples/QueryReportFormatter/report027.txt",
+      ),
+      "EXPLAIN sparkline (issue 1141)"
+   );
+
    $sb->wipe_clean($dbh);
    $dbh->disconnect();
 }
-
 
 # #############################################################################
 # files and date reports.
@@ -1170,10 +1212,11 @@ $ea->calculate_statistical_metrics();
 $o->get_opts();
 $report = new ReportFormatter(line_width=>74);
 $qrf    = new QueryReportFormatter(
-   OptionParser  => $o,
-   QueryRewriter => $qr,
-   QueryParser   => $qp,
-   Quoter        => $q, 
+   OptionParser    => $o,
+   QueryRewriter   => $qr,
+   QueryParser     => $qp,
+   Quoter          => $q, 
+   ExplainAnalyzer => $ex,
 );
 my $output = output(
    sub { $qrf->print_reports(

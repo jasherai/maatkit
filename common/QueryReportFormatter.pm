@@ -14,20 +14,20 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-
 # ###########################################################################
 # QueryReportFormatter package $Revision$
 # ###########################################################################
-package QueryReportFormatter;
 
-# This package is used primarily by mk-query-digest to print its reports.
+# Package: QueryReportFormatter
+# QueryReportFormatter is used primarily by mk-query-digest to print reports.
 # The main sub is print_reports() which prints the various reports for
 # mk-query-digest --report-format.  Each report is produced in a sub of
 # the same name; e.g. --report-format=query_report == sub query_report().
-# The given ea (EventAggregator object) is expected to be "complete"; i.e.
+# The given ea (<EventAggregator> object) is expected to be "complete"; i.e.
 # fully aggregated and $ea->calculate_statistical_metrics() already called.
 # Subreports "profile" and "prepared" require the ReportFormatter module,
 # which is also in mk-query-digest.
+package QueryReportFormatter;
 
 use strict;
 use warnings FATAL => 'all';
@@ -41,13 +41,24 @@ use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant LINE_LENGTH       => 74;
 use constant MAX_STRING_LENGTH => 10;
 
-# Arguments:
-#   * OptionParser
-#   * QueryRewriter
-#   * Quoter
+# Sub: new
+# 
+# Parameters:
+#   %args - Required arguments
+#
+# Required Arguments:
+#   OptionParser  - <OptionParser> object
+#   QueryRewriter - <QueryRewriter> object
+#   Quoter        - <Quoter> object
+#
 # Optional arguments:
-#   * QueryReview    Used in query_report()
-#   * dbh            Used in explain_report()
+#   * QueryReview     - <QueryReview> object used in <query_report()>
+#   * dbh             - dbh used in <explain_report()>
+#   * ExplainAnalyzer - <ExplainAnalyzer> object used in <explain_report()>.
+#                       This causes a sparkline to be printed (issue 1141).
+#
+# Returns:
+#   QueryReportFormatter object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(OptionParser QueryRewriter Quoter) ) {
@@ -352,6 +363,7 @@ sub query_report {
       $report .= $self->event_report(
          %args,
          item    => $item,
+         sample  => $sample,
          rank    => $rank,
          reason  => $reason,
          attribs => $attribs,
@@ -447,6 +459,7 @@ sub event_report {
    my $item    = $args{item};
    my $orderby = $args{orderby};
    my $results = $ea->results();
+   my $o       = $self->{OptionParser};
    my @result;
 
    # Return unless the item exists in the results (it should).
@@ -506,7 +519,25 @@ sub event_report {
          );
    }
 
-   # Fourth line: time range
+   # Fourth line: EXPLAIN sparkline if --explain.
+   if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
+      # Sparkline might have already been created by profile is it was
+      # printed before query report.
+      my $sparkline = $store->{sparkline};
+      if ( !$sparkline ) {
+         eval {
+            $sparkline = $self->explain_sparkline(
+               $results->{samples}->{$item}->{arg});
+            $store->{sparkline} = $sparkline;
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+         }
+      }
+      push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
+   }
+
+   # Last line before column headers: time range
    if ( my $ts = $store->{ts} ) {
       my $time_range = $self->format_time_range($ts) || "unknown";
       push @result, "# Time range: $time_range";
@@ -684,6 +715,7 @@ sub profile {
    my $groupby = $args{groupby};
 
    my $qr  = $self->{QueryRewriter};
+   my $o   = $self->{OptionParser};
 
    # Total response time of all events.
    my $results = $ea->results();
@@ -697,6 +729,7 @@ sub profile {
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
       my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
+
       my %profile    = (
          rank   => $rank,
          r      => $stats->{Query_time}->{sum},
@@ -707,6 +740,27 @@ sub profile {
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
+     
+      # This does not work yet because the result,
+      # # Rank Query ID           Response time     Calls R/Call   Apdx V/M   EXPL
+      # is 74 chars wide, the current line width limit.  So "AIN Item" gets
+      # dropped from the header.
+      #if ( $o->get('explain') && $samp_query ) {
+      #   # Sparkline might have already been created by query report is it was
+      #   # printed before profile.
+      #   my $sparkline = $stats->{sparkline};
+      #   if ( !$sparkline ) {
+      #      eval {
+      #         $sparkline = $self->explain_sparkline($samp_query);
+      #         $stats->{sparkline} = $sparkline;
+      #      };
+      #      if ( $EVAL_ERROR ) {
+      #         MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+      #      }
+      #   }
+      #   $profile{sparkline} = $sparkline || "";
+      #}
+
       push @profiles, \%profile;
    }
 
@@ -716,23 +770,25 @@ sub profile {
       extend_right     => 1,
    );
    $report->set_title('Profile');
-   $report->set_columns(
-      { name => 'Rank',          right_justify => 1, },
-      { name => 'Query ID',                          },
-      { name => 'Response time', right_justify => 1, },
-      { name => 'Calls',         right_justify => 1, },
-      { name => 'R/Call',        right_justify => 1, },
+   my @cols = (
+      { name => 'Rank',          right_justify => 1,             },
+      { name => 'Query ID',                                      },
+      { name => 'Response time', right_justify => 1,             },
+      { name => 'Calls',         right_justify => 1,             },
+      { name => 'R/Call',        right_justify => 1,             },
       { name => 'Apdx',          right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, width => 5, },
-      { name => 'Item',                              },
+      #( $o->get('explain') ? { name => 'EXPLAIN' } : () ),
+      { name => 'Item',                                          },
    );
+   $report->set_columns(@cols);
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
       my $rt  = sprintf('%10.4f', $item->{r});
       my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
       my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
       my $vmr = sprintf('%4.2f', $item->{vmr});
-      $report->add_line(
+      my @vals = (
          $item->{rank},
          "0x$item->{id}",
          "$rt $rtp",
@@ -740,8 +796,10 @@ sub profile {
          $rc,
          $item->{apdex},
          $vmr,
+         #( $o->get('explain') ? $item->{sparkline} || "" : () ),
          $item->{sample},
       );
+      $report->add_line(@vals);
    }
 
    # The last line of the profile is for all the other, non-worst items.
@@ -910,13 +968,13 @@ sub make_global_header {
    return @lines;
 }
 
-{
-# Event headers are all the same so we just make them once.
-my @lines;
 sub make_event_header {
    my ( $self ) = @_;
-   return @lines if @lines;
 
+   # Event headers are all the same so we just make them once.
+   return @{$self->{event_header_lines}} if $self->{event_header_lines};
+
+   my @lines;
    push @lines,
       sprintf $self->{num_format}, "Attribute", @{$self->{event_headers}};
 
@@ -929,8 +987,8 @@ sub make_event_header {
    # End result should be like:
    # Attribute    pct   total     min     max     avg     95%  stddev  median
    # ========= ====== ======= ======= ======= ======= ======= ======= =======
+   $self->{event_header_lines} = \@lines;
    return @lines;
-}
 }
 
 # Convert attribute names into labels
@@ -1129,10 +1187,13 @@ sub tables_report {
 
 sub explain_report {
    my ( $self, $query, $db ) = @_;
+   return '' unless $query;
+
    my $dbh = $self->{dbh};
    my $q   = $self->{Quoter};
    my $qp  = $self->{QueryParser};
-   return '' unless $dbh && $query;
+   return '' unless $dbh && $q && $qp;
+
    my $explain = '';
    eval {
       if ( !$qp->has_derived_table($query) ) {
@@ -1176,6 +1237,29 @@ sub format_time_range {
    }
 
    return $min && $max ? "$min to $max" : '';
+}
+
+sub explain_sparkline {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   my $dbh = $self->{dbh};
+   my $ex  = $self->{ExplainAnalyzer};
+   return unless $dbh && $ex;
+
+   my $res = $ex->normalize(
+      $ex->explain_query(
+         dbh   => $dbh,
+         query => $query,
+      )
+   );
+
+   my $sparkline;
+   if ( $res ) {
+      $sparkline = $ex->sparkline(explain => $res);
+   }
+
+   return $sparkline;
 }
 
 sub _d {
