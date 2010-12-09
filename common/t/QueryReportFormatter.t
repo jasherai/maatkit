@@ -946,8 +946,9 @@ $o->get_opts();
 # make ReportFormatters and pass them in.  Since ReporFormatters can't
 # be shared, we can only test one subreport at a time, else the
 # prepared statements subreport will reuse/reprint stuff from the
-# profile subreport.
-my $report = new ReportFormatter(line_width=>74);
+# profile subreport.  And the line width is 82 because that's the new
+# default to accommodate the EXPLAIN sparkline (issue 1141).
+my $report = new ReportFormatter(line_width=>82);
 
 ok(
    no_diff(
@@ -965,7 +966,7 @@ ok(
    "print_reports(header, query_report, profile)"
 );
 
-$report = new ReportFormatter(line_width=>74);
+$report = new ReportFormatter(line_width=>82);
 
 ok(
    no_diff(
@@ -1017,7 +1018,7 @@ foreach my $event ( @$events ) {
 }
 $ea->calculate_statistical_metrics();
 $report = new ReportFormatter(
-   line_width   => 74,
+   line_width   => 82,
    extend_right => 1,
 );
 ok(
@@ -1060,7 +1061,7 @@ foreach my $event ( @$events ) {
 }
 $ea->calculate_statistical_metrics();
 $report = new ReportFormatter(
-   line_width   => 74,
+   line_width   => 82,
    extend_right => 1,
 );
 ok(
@@ -1140,7 +1141,7 @@ SKIP: {
    }
    $ea->calculate_statistical_metrics();
    $report = new ReportFormatter(
-      line_width   => 74,
+      line_width   => 82,
       extend_right => 1,
    );
    ok(
@@ -1210,7 +1211,7 @@ foreach my $event ( @$events ) {
 $ea->calculate_statistical_metrics();
 @ARGV = qw();
 $o->get_opts();
-$report = new ReportFormatter(line_width=>74);
+$report = new ReportFormatter(line_width=>82);
 $qrf    = new QueryReportFormatter(
    OptionParser    => $o,
    QueryRewriter   => $qr,
@@ -1283,7 +1284,7 @@ foreach my $event ( @$events ) {
 }
 $ea->calculate_statistical_metrics();
 $report = new ReportFormatter(
-   line_width   => 74,
+   line_width   => 82,
    extend_right => 1,
 );
 ok(

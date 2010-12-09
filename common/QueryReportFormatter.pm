@@ -52,10 +52,10 @@ use constant MAX_STRING_LENGTH => 10;
 #   Quoter        - <Quoter> object
 #
 # Optional arguments:
-#   * QueryReview     - <QueryReview> object used in <query_report()>
-#   * dbh             - dbh used in <explain_report()>
-#   * ExplainAnalyzer - <ExplainAnalyzer> object used in <explain_report()>.
-#                       This causes a sparkline to be printed (issue 1141).
+#   QueryReview     - <QueryReview> object used in <query_report()>
+#   dbh             - dbh used in <explain_report()>
+#   ExplainAnalyzer - <ExplainAnalyzer> object used in <explain_report()>.
+#                     This causes a sparkline to be printed (issue 1141).
 #
 # Returns:
 #   QueryReportFormatter object
@@ -740,32 +740,33 @@ sub profile {
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
-     
-      # This does not work yet because the result,
-      # # Rank Query ID           Response time     Calls R/Call   Apdx V/M   EXPL
-      # is 74 chars wide, the current line width limit.  So "AIN Item" gets
-      # dropped from the header.
-      #if ( $o->get('explain') && $samp_query ) {
-      #   # Sparkline might have already been created by query report is it was
-      #   # printed before profile.
-      #   my $sparkline = $stats->{sparkline};
-      #   if ( !$sparkline ) {
-      #      eval {
-      #         $sparkline = $self->explain_sparkline($samp_query);
-      #         $stats->{sparkline} = $sparkline;
-      #      };
-      #      if ( $EVAL_ERROR ) {
-      #         MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
-      #      }
-      #   }
-      #   $profile{sparkline} = $sparkline || "";
-      #}
+
+      # Get EXPLAIN sparkline, maybe.
+      if ( $o->get('explain') && $samp_query ) {
+         # Sparkline might have already been created by query report is it was
+         # printed before profile.
+         my $sparkline = $stats->{sparkline};
+         if ( !$sparkline ) {
+            eval {
+               $sparkline = $self->explain_sparkline($samp_query);
+               $stats->{sparkline} = $sparkline;
+            };
+            if ( $EVAL_ERROR ) {
+               MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+            }
+         }
+         $profile{sparkline} = $sparkline || "";
+      }
 
       push @profiles, \%profile;
    }
 
+   # Why line_width 82 and not our LINE_LENGTH?  Because:
+   # http://code.google.com/p/maatkit/issues/detail?id=1141
+   # We need 8 extra chars for "EXPLAIN ".  If EXPLAIN isn't
+   # added, then by coincidence the header is exactly 74 anyways.
    my $report = $args{ReportFormatter} || new ReportFormatter(
-      line_width       => LINE_LENGTH,
+      line_width       => 82,
       long_last_column => 1,
       extend_right     => 1,
    );
@@ -778,7 +779,7 @@ sub profile {
       { name => 'R/Call',        right_justify => 1,             },
       { name => 'Apdx',          right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, width => 5, },
-      #( $o->get('explain') ? { name => 'EXPLAIN' } : () ),
+      ( $o->get('explain') ? { name => 'EXPLAIN' } : () ),
       { name => 'Item',                                          },
    );
    $report->set_columns(@cols);
@@ -796,7 +797,7 @@ sub profile {
          $rc,
          $item->{apdex},
          $vmr,
-         #( $o->get('explain') ? $item->{sparkline} || "" : () ),
+         ( $o->get('explain') ? $item->{sparkline} || "" : () ),
          $item->{sample},
       );
       $report->add_line(@vals);
