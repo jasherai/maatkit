@@ -3301,7 +3301,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7018
+# QueryReportFormatter package 7090
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3310,7 +3310,6 @@ sub _d {
 # ###########################################################################
 
 package QueryReportFormatter;
-
 
 use strict;
 use warnings FATAL => 'all';
@@ -3575,6 +3574,7 @@ sub query_report {
       $report .= $self->event_report(
          %args,
          item    => $item,
+         sample  => $sample,
          rank    => $rank,
          reason  => $reason,
          attribs => $attribs,
@@ -3653,6 +3653,7 @@ sub event_report {
    my $item    = $args{item};
    my $orderby = $args{orderby};
    my $results = $ea->results();
+   my $o       = $self->{OptionParser};
    my @result;
 
    my $store = $results->{classes}->{$item};
@@ -3702,6 +3703,21 @@ sub event_report {
             ($query_time->{cnt} < 100 ? "*" : ""),
             ($query_time->{stddev}**2 / ($query_time->{avg} || 1)),
          );
+   }
+
+   if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
+      my $sparkline = $store->{sparkline};
+      if ( !$sparkline ) {
+         eval {
+            $sparkline = $self->explain_sparkline(
+               $results->{samples}->{$item}->{arg});
+            $store->{sparkline} = $sparkline;
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+         }
+      }
+      push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
    }
 
    if ( my $ts = $store->{ts} ) {
@@ -3851,6 +3867,7 @@ sub profile {
    my $groupby = $args{groupby};
 
    my $qr  = $self->{QueryRewriter};
+   my $o   = $self->{OptionParser};
 
    my $results = $ea->results();
    my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
@@ -3863,6 +3880,7 @@ sub profile {
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
       my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
+
       my %profile    = (
          rank   => $rank,
          r      => $stats->{Query_time}->{sum},
@@ -3873,6 +3891,8 @@ sub profile {
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
+     
+
       push @profiles, \%profile;
    }
 
@@ -3882,23 +3902,24 @@ sub profile {
       extend_right     => 1,
    );
    $report->set_title('Profile');
-   $report->set_columns(
-      { name => 'Rank',          right_justify => 1, },
-      { name => 'Query ID',                          },
-      { name => 'Response time', right_justify => 1, },
-      { name => 'Calls',         right_justify => 1, },
-      { name => 'R/Call',        right_justify => 1, },
+   my @cols = (
+      { name => 'Rank',          right_justify => 1,             },
+      { name => 'Query ID',                                      },
+      { name => 'Response time', right_justify => 1,             },
+      { name => 'Calls',         right_justify => 1,             },
+      { name => 'R/Call',        right_justify => 1,             },
       { name => 'Apdx',          right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, width => 5, },
-      { name => 'Item',                              },
+      { name => 'Item',                                          },
    );
+   $report->set_columns(@cols);
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
       my $rt  = sprintf('%10.4f', $item->{r});
       my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
       my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
       my $vmr = sprintf('%4.2f', $item->{vmr});
-      $report->add_line(
+      my @vals = (
          $item->{rank},
          "0x$item->{id}",
          "$rt $rtp",
@@ -3908,6 +3929,7 @@ sub profile {
          $vmr,
          $item->{sample},
       );
+      $report->add_line(@vals);
    }
 
    if ( $other && @$other ) {
@@ -4050,12 +4072,12 @@ sub make_global_header {
    return @lines;
 }
 
-{
-my @lines;
 sub make_event_header {
    my ( $self ) = @_;
-   return @lines if @lines;
 
+   return @{$self->{event_header_lines}} if $self->{event_header_lines};
+
+   my @lines;
    push @lines,
       sprintf $self->{num_format}, "Attribute", @{$self->{event_headers}};
 
@@ -4063,8 +4085,8 @@ sub make_event_header {
       sprintf $self->{num_format},
          map { "=" x $_ } ($self->{label_width}, qw(3 7 7 7 7 7 7 7));
 
+   $self->{event_header_lines} = \@lines;
    return @lines;
-}
 }
 
 sub make_label {
@@ -4248,10 +4270,13 @@ sub tables_report {
 
 sub explain_report {
    my ( $self, $query, $db ) = @_;
+   return '' unless $query;
+
    my $dbh = $self->{dbh};
    my $q   = $self->{Quoter};
    my $qp  = $self->{QueryParser};
-   return '' unless $dbh && $query;
+   return '' unless $dbh && $q && $qp;
+
    my $explain = '';
    eval {
       if ( !$qp->has_derived_table($query) ) {
@@ -4294,6 +4319,29 @@ sub format_time_range {
    }
 
    return $min && $max ? "$min to $max" : '';
+}
+
+sub explain_sparkline {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   my $dbh = $self->{dbh};
+   my $ex  = $self->{ExplainAnalyzer};
+   return unless $dbh && $ex;
+
+   my $res = $ex->normalize(
+      $ex->explain_query(
+         dbh   => $dbh,
+         query => $query,
+      )
+   );
+
+   my $sparkline;
+   if ( $res ) {
+      $sparkline = $ex->sparkline(explain => $res);
+   }
+
+   return $sparkline;
 }
 
 sub _d {

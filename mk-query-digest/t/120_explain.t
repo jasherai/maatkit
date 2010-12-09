@@ -41,7 +41,7 @@ $dbh->do('use food');
 $dbh->do('create table trees (fruit varchar(24), unique index (fruit))');
 
 my $output = '';
-my @args   = ('--explain', 'h=127.1,P=12345,u=msandbox,p=msandbox', qw(--report-format=query_report --limit 10));
+my @args   = ('--explain', 'h=127.1,P=12345,u=msandbox,p=msandbox,D=food', qw(--report-format=query_report --limit 10));
 
 # The table has no rows so EXPLAIN will return NULL for most values.
 ok(

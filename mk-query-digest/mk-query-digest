@@ -2036,7 +2036,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 6590
+# Processlist package 7073
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2224,7 +2224,7 @@ sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
    my $ms  = $self->{MasterSlave};
-   my $all = $find_spec{all};
+
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -2272,7 +2272,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched || $all ) {
+      if ( $matched || $find_spec{all} ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
@@ -2280,10 +2280,18 @@ sub find {
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
 
-   if ( @matches && $find_spec{only_oldest} ) {
-      my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+   if ( @matches
+        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
+   { 
+      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      my $oldest = $matches[0];
       MKDEBUG && _d('Oldest query:', Dumper($oldest));
-      @matches = $oldest;
+      if ( $find_spec{only_oldest} ) {
+         @matches = ($oldest);  # only return the oldest query
+      }
+      elsif ( $find_spec{all_but_oldest} ) {
+         shift @matches;  # remove fist/oldest query
+      }
    }
 
    return @matches;
@@ -5915,7 +5923,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7018
+# QueryReportFormatter package 7090
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -5924,7 +5932,6 @@ sub _d {
 # ###########################################################################
 
 package QueryReportFormatter;
-
 
 use strict;
 use warnings FATAL => 'all';
@@ -6189,6 +6196,7 @@ sub query_report {
       $report .= $self->event_report(
          %args,
          item    => $item,
+         sample  => $sample,
          rank    => $rank,
          reason  => $reason,
          attribs => $attribs,
@@ -6267,6 +6275,7 @@ sub event_report {
    my $item    = $args{item};
    my $orderby = $args{orderby};
    my $results = $ea->results();
+   my $o       = $self->{OptionParser};
    my @result;
 
    my $store = $results->{classes}->{$item};
@@ -6316,6 +6325,21 @@ sub event_report {
             ($query_time->{cnt} < 100 ? "*" : ""),
             ($query_time->{stddev}**2 / ($query_time->{avg} || 1)),
          );
+   }
+
+   if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
+      my $sparkline = $store->{sparkline};
+      if ( !$sparkline ) {
+         eval {
+            $sparkline = $self->explain_sparkline(
+               $results->{samples}->{$item}->{arg});
+            $store->{sparkline} = $sparkline;
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+         }
+      }
+      push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
    }
 
    if ( my $ts = $store->{ts} ) {
@@ -6465,6 +6489,7 @@ sub profile {
    my $groupby = $args{groupby};
 
    my $qr  = $self->{QueryRewriter};
+   my $o   = $self->{OptionParser};
 
    my $results = $ea->results();
    my $total_r = $results->{globals}->{Query_time}->{sum} || 0;
@@ -6477,6 +6502,7 @@ sub profile {
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
       my $query_time = $ea->metrics(where => $item, attrib => 'Query_time');
+
       my %profile    = (
          rank   => $rank,
          r      => $stats->{Query_time}->{sum},
@@ -6487,6 +6513,8 @@ sub profile {
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
+     
+
       push @profiles, \%profile;
    }
 
@@ -6496,23 +6524,24 @@ sub profile {
       extend_right     => 1,
    );
    $report->set_title('Profile');
-   $report->set_columns(
-      { name => 'Rank',          right_justify => 1, },
-      { name => 'Query ID',                          },
-      { name => 'Response time', right_justify => 1, },
-      { name => 'Calls',         right_justify => 1, },
-      { name => 'R/Call',        right_justify => 1, },
+   my @cols = (
+      { name => 'Rank',          right_justify => 1,             },
+      { name => 'Query ID',                                      },
+      { name => 'Response time', right_justify => 1,             },
+      { name => 'Calls',         right_justify => 1,             },
+      { name => 'R/Call',        right_justify => 1,             },
       { name => 'Apdx',          right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, width => 5, },
-      { name => 'Item',                              },
+      { name => 'Item',                                          },
    );
+   $report->set_columns(@cols);
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
       my $rt  = sprintf('%10.4f', $item->{r});
       my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
       my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
       my $vmr = sprintf('%4.2f', $item->{vmr});
-      $report->add_line(
+      my @vals = (
          $item->{rank},
          "0x$item->{id}",
          "$rt $rtp",
@@ -6522,6 +6551,7 @@ sub profile {
          $vmr,
          $item->{sample},
       );
+      $report->add_line(@vals);
    }
 
    if ( $other && @$other ) {
@@ -6664,12 +6694,12 @@ sub make_global_header {
    return @lines;
 }
 
-{
-my @lines;
 sub make_event_header {
    my ( $self ) = @_;
-   return @lines if @lines;
 
+   return @{$self->{event_header_lines}} if $self->{event_header_lines};
+
+   my @lines;
    push @lines,
       sprintf $self->{num_format}, "Attribute", @{$self->{event_headers}};
 
@@ -6677,8 +6707,8 @@ sub make_event_header {
       sprintf $self->{num_format},
          map { "=" x $_ } ($self->{label_width}, qw(3 7 7 7 7 7 7 7));
 
+   $self->{event_header_lines} = \@lines;
    return @lines;
-}
 }
 
 sub make_label {
@@ -6862,10 +6892,13 @@ sub tables_report {
 
 sub explain_report {
    my ( $self, $query, $db ) = @_;
+   return '' unless $query;
+
    my $dbh = $self->{dbh};
    my $q   = $self->{Quoter};
    my $qp  = $self->{QueryParser};
-   return '' unless $dbh && $query;
+   return '' unless $dbh && $q && $qp;
+
    my $explain = '';
    eval {
       if ( !$qp->has_derived_table($query) ) {
@@ -6908,6 +6941,29 @@ sub format_time_range {
    }
 
    return $min && $max ? "$min to $max" : '';
+}
+
+sub explain_sparkline {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   my $dbh = $self->{dbh};
+   my $ex  = $self->{ExplainAnalyzer};
+   return unless $dbh && $ex;
+
+   my $res = $ex->normalize(
+      $ex->explain_query(
+         dbh   => $dbh,
+         query => $query,
+      )
+   );
+
+   my $sparkline;
+   if ( $res ) {
+      $sparkline = $ex->sparkline(explain => $res);
+   }
+
+   return $sparkline;
 }
 
 sub _d {
@@ -10846,7 +10902,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Progress package 6326
+# Progress package 7059
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Progress.pm
@@ -10967,7 +11023,7 @@ sub update {
          $eta       = $now + int($remaining);
       }
    }
-   $self->{callback}->($fraction, $elapsed, $remaining, $eta);
+   $self->{callback}->($fraction, $elapsed, $remaining, $eta, $completed);
 }
 
 sub fraction_modulo {
@@ -11076,6 +11132,226 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# ExplainAnalyzer package 7089
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ExplainAnalyzer.pm
+#   trunk/common/t/ExplainAnalyzer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package ExplainAnalyzer;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(QueryRewriter QueryParser) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub explain_query {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh query) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($query, $dbh) = @args{qw(query dbh)};
+   $query = $self->{QueryRewriter}->convert_to_select($query);
+   if ( $query !~ m/^\s*select/i ) {
+      MKDEBUG && _d("Cannot EXPLAIN non-SELECT query:",
+         (length $query <= 100 ? $query : substr($query, 0, 100) . "..."));
+      return;
+   }
+   my $sql = "EXPLAIN $query";
+   MKDEBUG && _d($dbh, $sql);
+   my $explain = $dbh->selectall_arrayref($sql, { Slice => {} });
+   MKDEBUG && _d("Result of EXPLAIN:", Dumper($explain));
+   return $explain;
+}
+
+sub normalize {
+   my ( $self, $explain ) = @_;
+   my @result; # Don't modify the input.
+
+   foreach my $row ( @$explain ) {
+      $row = { %$row }; # Make a copy -- don't modify the input.
+
+      foreach my $col ( qw(key possible_keys key_len ref) ) {
+         $row->{$col} = [ split(/,/, $row->{$col} || '') ];
+      }
+
+      $row->{Extra} = {
+         map {
+            my $var = $_;
+
+            if ( my ($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
+               $key => [ split(/,/, $vals) ];
+            }
+
+            else {
+               $var => 1;
+            }
+         }
+         split(/; /, $row->{Extra} || '') # Split on semicolons.
+      };
+
+      push @result, $row;
+   }
+
+   return \@result;
+}
+
+sub get_alternate_indexes {
+   my ( $self, $keys, $possible_keys ) = @_;
+   my %used = map { $_ => 1 } @$keys;
+   return [ grep { !$used{$_} } @$possible_keys ];
+}
+
+sub get_index_usage {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query explain) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($query, $explain) = @args{qw(query explain)};
+   my @result;
+
+   my $lookup = $self->{QueryParser}->get_aliases($query);
+
+   foreach my $row ( @$explain ) {
+
+      next if !defined $row->{table}
+         || $row->{table} =~ m/^<(derived|union)\d/;
+
+      my $table = $lookup->{TABLE}->{$row->{table}} || $row->{table};
+      my $db    = $lookup->{DATABASE}->{$table}     || $args{db};
+      push @result, {
+         db  => $db,
+         tbl => $table,
+         idx => $row->{key},
+         alt => $self->get_alternate_indexes(
+                  $row->{key}, $row->{possible_keys}),
+      };
+   }
+
+   MKDEBUG && _d("Index usage for",
+      (length $query <= 100 ? $query : substr($query, 0, 100) . "..."),
+      ":", Dumper(\@result));
+   return \@result;
+}
+
+sub get_usage_for {
+   my ( $self, $checksum, $db ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   my $usage;
+   if ( exists $self->{usage}->{$db} # Don't auto-vivify
+     && exists $self->{usage}->{$db}->{$checksum} )
+   {
+      $usage = $self->{usage}->{$db}->{$checksum};
+   }
+   MKDEBUG && _d("Usage for",
+      (length $checksum <= 100 ? $checksum : substr($checksum, 0, 100) . "..."),
+      "on", $db, ":", Dumper($usage));
+   return $usage;
+}
+
+sub save_usage_for {
+   my ( $self, $checksum, $db, $usage ) = @_;
+   die "I need a checksum and db" unless defined $checksum && defined $db;
+   $self->{usage}->{$db}->{$checksum} = $usage;
+}
+
+sub fingerprint {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(explain);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($explain) = @args{@required_args};
+}
+
+sub sparkline {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(explain);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($explain) = @args{@required_args};
+   MKDEBUG && _d("Making sparkline for", Dumper($explain));
+
+   my $access_code = {
+      'ALL'             => 'a',
+      'const'           => 'c',
+      'eq_ref'          => 'e',
+      'fulltext'        => 'f',
+      'index'           => 'i',
+      'index_merge'     => 'm',
+      'range'           => 'n',
+      'ref_or_null'     => 'o',
+      'ref'             => 'r',
+      'system'          => 's',
+      'unique_subquery' => 'u',
+   };
+
+   my $sparkline = '';
+   my ($T, $F);  # Using temporary, Using filesort
+
+   foreach my $tbl ( @$explain ) {
+      my $code;
+      if ( defined $tbl->{type} ) {
+         $code = $access_code->{$tbl->{type}} || "?";
+         $code = uc $code if $tbl->{Extra}->{'Using index'};
+      }
+      else {
+         $code = '-'
+      };
+      $sparkline .= $code;
+
+      $T = 1 if $tbl->{Extra}->{'Using temporary'};
+      $F = 1 if $tbl->{Extra}->{'Using filesort'};
+   }
+
+   if ( $T || $F ) {
+      if (    $explain->[-1]->{Extra}->{'Using temporary'}
+           || $explain->[-1]->{Extra}->{'Using filesort'} ) {
+         $sparkline .= ">" . ($T ? "T" : "") . ($F ? "F" : "");
+      }
+      else {
+         $sparkline = ($T ? "T" : "") . ($F ? "F" : "") . ">$sparkline";
+      }
+   }
+
+   MKDEBUG && _d("sparkline:", $sparkline);
+   return $sparkline;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ExplainAnalyzer package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -11104,9 +11380,6 @@ use sigtrap 'handler', \&sig_int, 'normal-signals';
 
 # Global variables.  Only really essential variables should be here.
 my $oktorun = 1;
-my $q  = new Quoter();
-my $qp = new QueryParser();
-my $qr = new QueryRewriter(QueryParser=>$qp);
 my $ex_dbh;  # For --execute
 my $ep_dbh;  # For --explain
 my $ps_dbh;  # For Processlist
@@ -11211,8 +11484,23 @@ sub main {
    $o->usage_or_errors();
 
    # ########################################################################
+   # Common modules.
+   # #######################################################################
+   my $q  = new Quoter();
+   my $qp = new QueryParser();
+   my $qr = new QueryRewriter(QueryParser=>$qp);
+   my %common_modules = (
+      OptionParser  => $o,
+      DSNParser     => $dp,
+      Quoter        => $q,
+      QueryParser   => $qp,
+      QueryRewriter => $qr,
+   );
+
+   # ########################################################################
    # Set up for --explain
    # ########################################################################
+   my $exa;
    if ( my $ep_dsn = $o->get('explain') ) {
       $ep_dbh = get_cxn(
          for          => '--explain',
@@ -11222,6 +11510,11 @@ sub main {
          opts         => { AutoCommit => 1 },
       );
       $ep_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
+
+      $exa = new ExplainAnalyzer(
+         QueryRewriter => $qr,
+         QueryParser   => $qp,
+      );
    }
 
    # ########################################################################
@@ -12113,12 +12406,10 @@ sub main {
                }
 
                my $qrf = new QueryReportFormatter(
-                  OptionParser  => $o,
-                  QueryRewriter => $qr,
-                  QueryParser   => $qp,
-                  Quoter        => $q,
-                  QueryReview   => $qv,
-                  dbh           => $ep_dbh,
+                  QueryReview     => $qv,
+                  dbh             => $ep_dbh,
+                  ExplainAnalyzer => $exa,
+                  %common_modules,
                );
                $qrf->print_reports(
                   reports      => \@reports,
@@ -12151,11 +12442,9 @@ sub main {
 
             if ( $o->get('table-access') ) {  # --table-access
                print_table_access_report(
-                  ea           => $ea[$i],
-                  worst        => $worst,
-                  QueryParser  => $qp,
-                  OptionParser => $o,
-                  Quoter       => $q,
+                  ea    => $ea[$i],
+                  worst => $worst,
+                  %common_modules,
                );
             }
 
@@ -12436,13 +12725,11 @@ sub get_worst_queries {
 
 sub print_table_access_report {
    my ( %args ) = @_;
-   foreach my $arg ( qw(ea worst QueryParser OptionParser Quoter) ) {
+   my @required_args = qw(ea worst QueryParser QueryRewriter OptionParser Quoter);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $ea    = $args{ea};
-   my $worst = $args{worst};
-   my $qp    = $args{QueryParser};
-   my $o     = $args{OptionParser};
+   my ($ea, $worst, $qp, $qr, $o, $q) = @args{@required_args};
 
    my %seen;
    MKDEBUG && _d('Doing table access report');
