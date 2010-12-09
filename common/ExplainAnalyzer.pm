@@ -94,7 +94,7 @@ sub normalize {
             my $var = $_;
 
             # Index merge query plans have an array of indexes to split up.
-            if ( my($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
+            if ( my ($key, $vals) = $var =~ m/(Using union)\(([^)]+)\)/ ) {
                $key => [ split(/,/, $vals) ];
             }
 
@@ -103,7 +103,7 @@ sub normalize {
                $var => 1;
             }
          }
-         split(/; /, $row->{Extra}) # Split on semicolons.
+         split(/; /, $row->{Extra} || '') # Split on semicolons.
       };
 
       push @result, $row;

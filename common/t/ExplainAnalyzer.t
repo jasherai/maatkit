@@ -32,7 +32,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 15;
+   plan tests => 16;
 }
 
 $dbh->do('use sakila');
@@ -222,6 +222,39 @@ is_deeply(
    'Normalizes a more complex EXPLAIN',
 );
 
+is_deeply(
+   $exa->normalize(
+      [
+         { id            => 1,
+           select_type   => 'SIMPLE',
+           table         => 't1',
+           type          => 'ALL',
+           possible_keys => 'PRIMARY',
+           key           => undef,
+           key_len       => undef,
+           ref           => undef,
+           rows          => '4',
+           # Extra         => 'Using where; Using temporary; Using filesort',
+         },
+      ],
+   ),
+   [
+      {
+         Extra          => {},  # is auto-vivified
+         id             => 1,
+         select_type    => 'SIMPLE',
+         table          => 't1',
+         type           => 'ALL',
+         possible_keys  => ['PRIMARY'],
+         key            => [],
+         key_len        => [],
+         ref            => [],
+         rows           => '4',
+      }
+   ],
+   "normalize() doesn't crash if EXPLAIN Extra is missing"
+);
+
 # #############################################################################
 # Tests for trimming indexes out of possible_keys.
 # #############################################################################
@@ -394,7 +427,6 @@ is_deeply(
       },
    ],
    'Got saved usage for 0xdeadbeef');
-
 
 # #############################################################################
 # Issue 1141: Add "spark charts" to mk-query-digest profile
