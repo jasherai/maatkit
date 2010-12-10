@@ -19,7 +19,44 @@
 # ###########################################################################
 
 # Package: OptionParser
-# OptionParser parses command line options from a tool's POD.
+# OptionParser parses command line options from a tool's POD.  By default
+# it parses a description and usage from the POD's SYNOPSIS section and
+# command line options from the OPTIONS section.
+#
+# The SYNOPSIS section should look like,
+# (start code)
+#   =head1 SYNOPSIS
+#
+#   Usage: mk-archiver [OPTION...] --source DSN --where WHERE
+#
+#   mk-archiver nibbles records from a MySQL table.  The --source and --dest
+#   arguments use DSN syntax; if COPY is yes, --dest defaults to the key's value
+#   from --source.
+#
+#   Examples:
+#   ...
+# (end code)
+# The key, required parts are the "Usage:" line and the following description
+# paragraph.
+#
+# The OPTIONS section shoud look like,
+# (start code)
+#   =head1 OPTIONS
+#
+#   Optional rules, one per line.
+#
+#   =over
+#
+#   =item --analyze
+#
+#   type: string
+#
+#   Run ANALYZE TABLE afterwards on L<"--source"> and/or L<"--dest">.
+#   ect.
+# (end code)
+# The option's full name is given as the "=item".  The next, optional para
+# is the option's attributes.  And the next, required para is the option's
+# description (the first period-terminated sentence).
 package OptionParser;
 
 use strict;
@@ -37,14 +74,26 @@ my $POD_link_re = '[LC]<"?([^">]+)"?>';
 # Parameters:
 #   %args - Arguments
 #
-# Required Arguments:
-#   description - Description of the tool
+# Optional Arguments:
+#   file             - Filename to parse POD stuff from.  Several subs take
+#                      a $file param mostly for testing purposes.  This arg
+#                      provides a "global" default for even easier testing.
+#   strict           - All cmd line args must be opts (no leftovers in @ARGV)
+#                      (default yes)
+#   description      - Tool's description (overrides description from SYNOPSIS).
+#   usage            - Tool's usage line (overrides Usage from SYNOPSIS).
+#   head1            - head1 heading under which options are listed
+#   skip_rules       - Don't read paras before options as rules
+#   item             - Regex pattern to match options after =item
+#   attributes       - Hashref of allowed option attributes
+#   parse_attributes - Coderef for parsing option attributes
 #
 # Returns:
 #   OptionParser object
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(description) ) {
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -63,16 +112,14 @@ sub new {
    );
 
    my $self = {
-      # default args
       strict            => 1,
-      prompt            => '<options>',
-      head1             => 'OPTIONS',
-      skip_rules        => 0,
-      item              => '--(.*)',
-      attributes        => \%attributes,
-      parse_attributes  => \&_parse_attribs,
+      head1             => 'OPTIONS',        # These args are used internally
+      skip_rules        => 0,                # to instantiate another Option-
+      item              => '--(.*)',         # Parser obj that parses the
+      attributes        => \%attributes,     # DSN OPTIONS section.  Tools
+      parse_attributes  => \&_parse_attribs, # don't tinker with these args.
 
-      # override default args
+      # override the above optional args' default
       %args,
 
       # private, not configurable args
@@ -124,7 +171,7 @@ sub new {
 #   $file - File name to read, __FILE__ if none given
 sub get_specs {
    my ( $self, $file ) = @_;
-   $file ||= __FILE__;
+   $file ||= $self->{file} || __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
 
@@ -219,7 +266,7 @@ sub get_defaults_files {
 #   Array of opt spec hashrefs to pass to <_parse_specs()>.
 sub _pod_to_specs {
    my ( $self, $file ) = @_;
-   $file ||= __FILE__;
+   $file ||= $self->{file} || __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my @specs = ();
@@ -873,6 +920,7 @@ sub set {
 sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
+   return;
 }
 
 # Sub: errors
@@ -882,14 +930,16 @@ sub errors {
    return $self->{errors};
 }
 
-sub prompt {
+sub usage {
    my ( $self ) = @_;
-   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
+   warn "No usage string is set" unless $self->{usage}; # XXX
+   return "Usage: " . ($self->{usage} || '') . "\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+   warn "No description string is set" unless $self->{description}; # XXX
+   my $descr  = ($self->{description} || $self->{program_name} || '')
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
@@ -902,23 +952,36 @@ sub descr {
 }
 
 sub usage_or_errors {
-   my ( $self ) = @_;
+   my ( $self, $file, $return ) = @_;
+   $file ||= $self->{file} || __FILE__;
+
+   # First make sure we have a description and usage, else print_usage()
+   # and print_errors() will die.
+   if ( !$self->{description} || !$self->{usage} ) {
+      MKDEBUG && _d("Getting description and usage from SYNOPSIS in", $file);
+      my %synop = $self->_parse_synopsis($file);
+      $self->{description} ||= $synop{description};
+      $self->{usage}       ||= $synop{usage};
+      MKDEBUG && _d("Description:", $self->{description},
+         "\nUsage:", $self->{usage});
+   }
+
    if ( $self->{opts}->{help}->{got} ) {
       print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
-      exit 0;
    }
    elsif ( scalar @{$self->{errors}} ) {
       print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
-      exit 0;
    }
-   return;
+
+   exit 0 unless $return;  # tools should exit but
+   return;                 # tests need us to return
 }
 
 # Explains what errors were found while processing command-line arguments and
 # gives a brief overview so you can get more information.
 sub print_errors {
    my ( $self ) = @_;
-   my $usage = $self->prompt() . "\n";
+   my $usage = $self->usage() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
       $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
               . "\n";
@@ -966,7 +1029,7 @@ sub print_usage {
    $maxs = max($lcol - 3, $maxs);
 
    # Format and return the options.
-   my $usage = $self->descr() . "\n" . $self->prompt();
+   my $usage = $self->descr() . "\n" . $self->usage();
 
    # Sort groups alphabetically but make 'default' first.
    my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
@@ -1218,6 +1281,44 @@ sub _parse_attribs {
       . ($attribs->{'cumulative'} ? '+'                              : '' )
       . ($attribs->{'type'}       ? '=' . $types->{$attribs->{type}} : '' );
 }
+
+sub _parse_synopsis {
+   my ( $self, $file ) = @_;
+   $file ||= $self->{file} || __FILE__;
+   MKDEBUG && _d("Parsing SYNOPSIS in", $file);
+
+   # Slurp the file.
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $para;
+   1 while defined($para = <$fh>) && $para !~ m/^=head1 SYNOPSIS/;
+   die "$file does not contain a SYNOPSIS section" unless $para;
+   my @synop;
+   for ( 1..2 ) {  # 1 for the usage, 2 for the description
+      my $para = <$fh>;
+      push @synop, $para;
+   }
+   close $fh;
+   MKDEBUG && _d("Raw SYNOPSIS text:", @synop);
+   my ($usage, $desc) = @synop;
+   die "The SYNOPSIS section in $file is not formatted properly"
+      unless $usage && $desc;
+
+   # Strip "Usage:" from the usage string.
+   $usage =~ s/^\s*Usage:\s+(.+)/$1/;
+   chomp $usage;
+
+   # Make the description one long string without newlines.
+   $desc =~ s/\n/ /g;
+   $desc =~ s/\s{2,}/ /g;
+   $desc =~ s/\. ([A-Z][a-z])/.  $1/g;
+   $desc =~ s/\s+$//;
+
+   return (
+      description => $desc,
+      usage       => $usage,
+   );
+};
 
 sub _d {
    my ($package, undef, $line) = caller 0;
