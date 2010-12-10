@@ -10230,14 +10230,7 @@ sub main {
    # ##########################################################################
    # Get configuration information.
    # ##########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] DSN [DSN...] [FILE]',
-      description => q{compares query execution on two hosts by executing }
-                   . q{queries in the given file (or STDIN if no file given) }
-                   . q{and examining the results, errors, warnings, etc. }
-                   . q{produced on each.},
-   );
+   my $o  = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -10978,6 +10971,12 @@ if ( !caller ) { exit main(@ARGV); }
 mk-upgrade - Execute queries on multiple servers and check for differences.
 
 =head1 SYNOPSIS
+      
+Usage: mk-upgrade [OPTION...] DSN [DSN...] [FILE]
+
+mk-upgrade compares query execution on two hosts by executing queries in the
+given file (or STDIN if no file given) and examining the results, errors,
+warnings, etc.produced on each.
 
 Execute and compare all queries in slow.log on host1 to host2:
 
@@ -11045,6 +11044,9 @@ will read from C<STDIN>.
 TODO
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

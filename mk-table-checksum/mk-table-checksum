@@ -4938,14 +4938,7 @@ sub main {
    # ########################################################################
    # Because of --arg-table, $final_o is the OptionParser obj used to get
    # most options (see my $final_o below).
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] DSN [DSN...]',
-      description => 'checksums MySQL tables efficiently on one or more hosts. '
-                   . ' Each host is specified as a DSN and missing values are '
-                   . 'inherited from the first host.  If you specify multiple '
-                   . 'hosts, the first is assumed to be the master.',
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -7009,6 +7002,13 @@ checksum MySQL tables efficiently on one or many servers.
 
 =head1 SYNOPSIS
 
+Usage: mk-table-checksum [OPTION...] DSN [DSN...]
+
+mk-table-checksum checksums MySQL tables efficiently on one or more hosts.
+Each host is specified as a DSN and missing values are inherited from the
+first host.  If you specify multiple hosts, the first is assumed to be the
+master.
+
 STOP! Are you checksumming a slave(s) against its master?  Then be sure to learn
 what L<"--replicate"> does.  It is probably the option you want to use.
 
@@ -7431,6 +7431,9 @@ checksumming chunk 2 of 5 in table test.test_tbl.
 L<"--schema"> is restricted to option groups Connection, Filter, Output, Help, Config, Safety.
 
 L<"--empty-replicate-table">, L<"--resume"> and L<"--resume-replicate"> are mutually exclusive.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

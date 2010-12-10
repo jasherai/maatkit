@@ -2025,14 +2025,7 @@ sub main {
    @ARGV = @_;  # set global ARGV for this package
 
    my $vp = new VersionParser();
-   $o     = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] SLAVE-HOST [MASTER-HOST]',
-      description => 'starts and stops a slave server as needed '
-                   . 'to make it lag behind the master.  The SLAVE-HOST '
-                   . 'and MASTER-HOST use DSN syntax, and values are copied '
-                   . 'from the SLAVE-HOST to the MASTER-HOST if omitted.',
-   );
+   $o     = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2339,6 +2332,12 @@ mk-slave-delay - Make a MySQL slave server lag behind its master.
 
 =head1 SYNOPSIS
 
+Usage: mk-slave-delay [OPTION...] SLAVE-HOST [MASTER-HOST]
+
+mk-slave-delay starts and stops a slave server as needed to make it lag
+behind the master.  The SLAVE-HOST and MASTER-HOST use DSN syntax, and
+values are copied from the SLAVE-HOST to the MASTER-HOST if omitted.
+
 To hold slavehost one minute behind its master for ten minutes:
 
    mk-slave-delay --delay 1m --interval 15s --run-time 10m slavehost
@@ -2408,6 +2407,9 @@ C<mk-slave-delay> is doing: starting the slave, stopping the slave, or just
 observing.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

@@ -7235,11 +7235,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] DSN [DSN...]',
-      description => 'synchronizes data efficiently between MySQL tables.',
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -8749,6 +8745,10 @@ if ( !caller ) { exit main(@ARGV); }
 mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
+      
+Usage: mk-table-sync [OPTION...] DSN [DSN...]
+
+mk-table-sync synchronizes data efficiently between MySQL tables.
 
 This tool changes data, so for maximum safety, you should back up your data
 before you use it.
@@ -9106,6 +9106,9 @@ when mk-table-sync finishes and exits.
 Specify at least one of L<"--print">, L<"--execute">, or L<"--dry-run">.
 
 L<"--where"> and L<"--replicate"> are mutually exclusive.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

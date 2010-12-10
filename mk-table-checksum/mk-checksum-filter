@@ -1060,13 +1060,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my $o = new OptionParser(
-   strict      => 0,
-   prompt      => '[OPTION]... FILE',
-   description => 'filters checksums from mk-table-checksum and prints those '
-                . 'that differ.  With no FILE, or when FILE is -, read '
-                . 'standard input.',
-);
+my $o = new OptionParser();
 $o->get_specs();
 $o->get_opts();
 
@@ -1206,9 +1200,18 @@ mk-checksum-filter - Filter checksums from mk-table-checksum.
 
 =head1 SYNOPSIS
 
-   mk-checksum-filter checksums.txt
-   mk-table-checksum host1 host2 | mk-checksum-filter
-   mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignore-databases
+Usage: mk-checksum-filter [OPTION]... FILE
+
+mk-checksum-filter filters checksums from mk-table-checksum and prints those
+that differ.  With no FILE, or when FILE is -, read standard input.
+
+Examples:
+
+  mk-checksum-filter checksums.txt
+
+  mk-table-checksum host1 host2 | mk-checksum-filter
+
+  mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignore-databases
 
 =head1 RISKS
 
@@ -1251,6 +1254,9 @@ tool exits with status 1.
 =head1 OPTIONS
 
 L<"--ignore-databases"> and L<"--equal-databases"> are mutually exclusive.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

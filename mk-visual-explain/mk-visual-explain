@@ -2287,14 +2287,7 @@ sub main {
    # #######################################################################
    # Get configuration information and parse command line options.
    # #######################################################################
-   my $o  = new OptionParser(
-      strict       => 0,
-      prompt       => '[OPTION...] [FILE...]',
-      description  => q{transforms EXPLAIN output into a tree } 
-                    . q{representation of the query plan.  If FILE is }
-                    . q{given, input is read from the file(s).  With no }
-                    . q{FILE, or when FILE is -, read standard input.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2370,9 +2363,19 @@ mk-visual-explain - Format EXPLAIN output as a tree.
 
 =head1 SYNOPSIS
 
- mk-visual-explain <file_containing_explain_output>
- mk-visual-explain -c <file_containing_query>
- mysql -e "explain select * from mysql.user" | mk-visual-explain
+Usage: mk-visual-explain [OPTION...] [FILE...]
+
+mk-visual-explain transforms EXPLAIN output into a tree representation of
+the query plan.  If FILE isgiven, input is read from the file(s).  With no
+FILE, or when FILE is -, read standard input.
+
+Examples:
+
+  mk-visual-explain <file_containing_explain_output>
+  
+  mk-visual-explain -c <file_containing_query>
+  
+  mysql -e "explain select * from mysql.user" | mk-visual-explain
 
 =head1 RISKS
 
@@ -2826,6 +2829,9 @@ three-node subtree.  However, after the above node-ordering and scoping stuff,
 the rest of the process is pretty simple.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

@@ -11472,12 +11472,7 @@ sub main {
    # ##########################################################################
    # Get configuration information.
    # ##########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [FILE]',
-      description => q{parses and analyzes MySQL log files.  With no }
-                   . q{FILE, or when FILE is -, read standard input.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -13003,6 +12998,11 @@ report on queries.
 
 =head1 SYNOPSIS
 
+Usage: mk-query-digest [OPTION...] [FILE]
+
+mk-query-digest parses and analyzes MySQL log files.  With no FILE, or when
+FILE is -, it read standard input.
+
 Analyze, aggregate, and report on a slow query log:
 
  mk-query-digest /path/to/slow.log
@@ -13438,6 +13438,9 @@ Collapse multiple identical UNION queries into a single one.
 
 DSN values in L<"--review-history"> default to values in L<"--review"> if COPY
 is yes.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

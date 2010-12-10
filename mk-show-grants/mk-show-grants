@@ -1612,11 +1612,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser( 
-      strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => q{shows grants (user privileges) from a MySQL server.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -1870,8 +1866,15 @@ mk-show-grants - Canonicalize and print MySQL grants so you can effectively
 replicate, compare and version-control them.
 
 =head1 SYNOPSIS
+      
+Usage: mk-show-grants [OPTION...] [DSN]
+
+mk-show-grants shows grants (user privileges) from a MySQL server.
+
+Examples:
 
    mk-show-grants
+
    mk-show-grants --separate --revoke | diff othergrants.sql -
 
 =head1 RISKS
@@ -1932,6 +1935,9 @@ also makes it easy to revoke specific privileges from users.  This is tedious
 otherwise.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

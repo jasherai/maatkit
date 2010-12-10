@@ -5502,13 +5502,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [FILE]',
-      description => q{analyzes queries and advises on possible problems.  }
-                   . q{Queries are given either by specifying slowlog files, }
-                   . q{--query, or --review.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -6003,6 +5997,12 @@ mk-query-advisor - Analyze queries and advise on possible problems.
 
 =head1 SYNOPSIS
 
+Usage: mk-query-advisor [OPTION...] [FILE]
+
+mk-query-advisor analyzes queries and advises on possible problems.
+Queries are given either by specifying slowlog files, --query, or --review.
+
+   # Analyzer all queries in the given slowlog
    mk-query-advisor /path/to/slow-query.log
 
    # Get queries from tcpdump using mk-query-digest
@@ -6262,6 +6262,9 @@ LEFT OUTER JOIN, respectively.
 =head1 OPTIONS
 
 L<"--query"> and L<"--review"> are mutually exclusive.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

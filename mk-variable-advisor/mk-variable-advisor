@@ -2814,11 +2814,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => q{analyzes variables and advises on possible problems.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -3053,6 +3049,10 @@ if ( !caller ) { exit main(@ARGV); }
 mk-variable-advisor - Analyze MySQL variables and advise on possible problems.
 
 =head1 SYNOPSIS
+      
+Usage: mk-variable-advisor [OPTION...] [DSN]
+
+mk-variable-advisor analyzes variables and advises on possible problems.
 
 Get SHOW VARIABLES from localhost:
 
@@ -3600,6 +3600,9 @@ Every release older than 5.1 is now officially end-of-life.
 =back
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

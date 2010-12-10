@@ -1819,11 +1819,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[options] [FILE ...]',
-      description => q{reads a slow query log and outputs statistics on it.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
    $o->set('progress', undef) if $o->get('q');
@@ -1931,8 +1927,10 @@ sub _d {
 mk-trend - Compute statistics over a set of time-series data points.
 
 =head1 SYNOPSIS
+      
+Usage: mk-trend [OPTION...] [FILE ...]
 
-mk-trend
+mk-trend reads a slow query log and outputs statistics on it.
 
 =head1 RISKS
 
@@ -1959,6 +1957,9 @@ You can specify multiple files on the command line.  If you don't specify any,
 or if you use the special filename C<->, lines are read from standard input.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

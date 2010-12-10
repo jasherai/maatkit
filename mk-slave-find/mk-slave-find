@@ -2743,11 +2743,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] MASTER-HOST',
-      description => 'finds and prints a hierarchy tree of MySQL slaves.',
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -3000,6 +2996,12 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-find - Find and print replication hierarchy tree of MySQL slaves.
 
 =head1 SYNOPSIS
+      
+Usage: mk-slave-find [OPTION...] MASTER-HOST
+
+mk-slave-find finds and prints a hierarchy tree of MySQL slaves.
+
+Examples:
 
    mk-slave-find --host master-host
 
@@ -3056,6 +3058,9 @@ indicates success.  Any other value represents the exit status of
 the Perl process itself.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

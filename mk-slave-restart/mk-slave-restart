@@ -2565,12 +2565,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => 'watches one or more MySQL replication slaves for '
-                   . 'errors, and tries to restart replication if it stops.',
-   );
+   $o  = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2994,8 +2989,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 SYNOPSIS
+      
+Usage: mk-slave-restart [OPTION...] [DSN]
 
- mk-slave-restart --verbose
+mk-slave-restart watches one or more MySQL replication slaves for
+errors, and tries to restart replication if it stops.
 
 =head1 RISKS
 
@@ -3084,6 +3082,9 @@ output columns from SHOW SLAVE STATUS has changed over time, so it treats them
 all as lowercase.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

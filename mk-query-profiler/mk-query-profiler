@@ -1663,20 +1663,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [FILE...]',
-      description =>
-         q{reads and executes queries, and prints statistics about }
-         . q{MySQL server load.  Connection options are read from MySQL }
-         . q{option files.  If FILE is given, queries are read and }
-         . q{executed from the file(s).  With no FILE, or when FILE is -, }
-         . q{read standard input.  If --external is specified, lines in }
-         . q{FILE are executed by the shell.  You must specify - if no }
-         . q{FILE and you want --external to read and execute from }
-         . q{standard input.  Queries in FILE must be terminated with a }
-         . q{semicolon and separated by a blank line.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2305,6 +2292,16 @@ activity caused by other processes.
 
 =head1 SYNOPSIS
 
+Usage: mk-query-profiler [OPTION...] [FILE...]
+
+mk-query-profiler reads and executes queries, and prints statistics about
+MySQL server load.  Connection options are read from MySQL option files.
+If FILE is given, queries are read and executed from the file(s).  With no
+FILE, or when FILE is -, read standard input.  If --external is specified,
+lines in FILE are executed by the shell.  You must specify - if no FILE and
+you want --external to read and execute from standard input.  Queries in
+FILE must be terminated with a semicolon and separated by a blank line.
+
 mk-query-profiler can profile the (semicolon-terminated, blank-line
 separated) queries in a file:
 
@@ -2521,6 +2518,9 @@ the information is protected.  You'll see statistics about how many pages were
 affected, how many operations took place, and how many bytes were affected.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

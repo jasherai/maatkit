@@ -3601,14 +3601,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
-      description => q{examines MySQL schema for inefficiencies.  Specify }
-                   . q{either files or DSNs.  Files can contain multiple }
-                   . q{SHOW CREATE TABLE separated by blank lines. }
-                   . q{Or, schema objects are gotten from DSNs.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -3917,8 +3910,12 @@ if ( !caller ) { exit main(@ARGV); }
 mk-schema-advisor - Analyze schema and find inefficiencies.
 
 =head1 SYNOPSIS
+      
+Usage: mk-schema-advisor [OPTION...] FILE|DSN [FILE|DSN...]
 
-   mk-schema-advisor
+mk-schema-advisor examines MySQL schema for inefficiencies.  Specify
+either files or DSNs.  Files can contain multiple SHOW CREATE TABLE
+separated by blank lines. Or, schema objects are gotten from DSNs.
 
 =head1 RISKS
 
@@ -3944,6 +3941,9 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 mk-schema audit audits schemas.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

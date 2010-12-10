@@ -4153,11 +4153,7 @@ sub main {
    # ##########################################################################
    # Get configuration information.
    # ##########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [FILE]',
-      description => q{pipelines relay logs to pre-warm the slave's caches.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -4762,10 +4758,18 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
 
 =head1 SYNOPSIS
+      
+Usage: mk-slave-prefech [OPTION...] [FILE]
 
- mk-slave-prefetch
- mk-slave-prefetch --statistics > /path/to/saved/statistics
- mk-slave-prefetch /path/to/saved/statistics
+mk-slave-prefetch pipelines relay logs to pre-warm the slave's caches.
+
+Example:
+
+  mk-slave-prefetch
+ 
+  mk-slave-prefetch --statistics > /path/to/saved/statistics
+ 
+  mk-slave-prefetch /path/to/saved/statistics
 
 =head1 RISKS
 
@@ -4855,6 +4859,9 @@ User-contributed benchmarks are welcome.
 =head1 OPTIONS
 
 Specify at least one of L<"--print">, L<"--execute"> or L<"--stop">.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

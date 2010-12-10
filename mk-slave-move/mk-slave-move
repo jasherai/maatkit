@@ -2476,11 +2476,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o  = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] SLAVE_DSN [DSN...]',
-      description => 'moves replication slave(s) around in the hierarchy.',
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2597,10 +2593,18 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-move - Move a MySQL slave around in the replication hierarchy.
 
 =head1 SYNOPSIS
+      
+Usage: mk-slave-move [OPTION...] SLAVE_DSN [DSN...]
 
- mk-slave-move slave --sibling-of-master
- mk-slave-move slave --slave-of-sibling sibling
- mk-slave-move slave --slave-of-uncle uncle
+mk-slave-move moves replication slave(s) around in the hierarchy.
+
+Examples:
+
+  mk-slave-move slave --sibling-of-master
+
+  mk-slave-move slave --slave-of-sibling sibling
+
+  mk-slave-move slave --slave-of-uncle uncle
 
 =head1 RISKS
 
@@ -2658,6 +2662,9 @@ process itself.
 
 Specify one and only one of L<"--sibling-of-master">, L<"--slave-of-sibling">,
 L<"--slave-of-uncle">, or L<"--detach">.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 
