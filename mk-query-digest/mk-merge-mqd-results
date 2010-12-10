@@ -2957,7 +2957,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 6190
+# ReportFormatter package 7093
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -3301,7 +3301,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7090
+# QueryReportFormatter package 7094
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3350,6 +3350,17 @@ sub new {
       },
    };
    return bless $self, $class;
+}
+
+sub set_report_formatter {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(report formatter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless exists $args{$arg};
+   }
+   my ($report, $formatter) = @args{@required_args};
+   $self->{formatter_for}->{$report} = $formatter;
+   return;
 }
 
 sub print_reports {
@@ -3891,12 +3902,25 @@ sub profile {
          vmr    => ($query_time->{stddev}**2) / ($query_time->{avg} || 1),
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
-     
+
+      if ( $o->get('explain') && $samp_query ) {
+         my $sparkline = $stats->{sparkline};
+         if ( !$sparkline ) {
+            eval {
+               $sparkline = $self->explain_sparkline($samp_query);
+               $stats->{sparkline} = $sparkline;
+            };
+            if ( $EVAL_ERROR ) {
+               MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
+            }
+         }
+         $profile{sparkline} = $sparkline || "";
+      }
 
       push @profiles, \%profile;
    }
 
-   my $report = $args{ReportFormatter} || new ReportFormatter(
+   my $report = $self->{formatter_for}->{profile} || new ReportFormatter(
       line_width       => LINE_LENGTH,
       long_last_column => 1,
       extend_right     => 1,
@@ -3910,6 +3934,7 @@ sub profile {
       { name => 'R/Call',        right_justify => 1,             },
       { name => 'Apdx',          right_justify => 1, width => 4, },
       { name => 'V/M',           right_justify => 1, width => 5, },
+      ( $o->get('explain') ? { name => 'EXPLAIN' } : () ),
       { name => 'Item',                                          },
    );
    $report->set_columns(@cols);
@@ -3927,6 +3952,7 @@ sub profile {
          $rc,
          $item->{apdex},
          $vmr,
+         ( $o->get('explain') ? $item->{sparkline} || "" : () ),
          $item->{sample},
       );
       $report->add_line(@vals);
@@ -4022,7 +4048,7 @@ sub prepared {
 
    return unless scalar @prepared;
 
-   my $report = $args{ReportFormatter} || new ReportFormatter(
+   my $report = $self->{formatter_for}->{prepared} || new ReportFormatter(
       line_width       => LINE_LENGTH,
       long_last_column => 1,
       extend_right     => 1,     

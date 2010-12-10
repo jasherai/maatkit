@@ -30,7 +30,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 3;
+   plan tests => 4;
 }
 
 my $sample = "mk-query-digest/t/samples/";
@@ -67,7 +67,21 @@ ok(
    'Analysis for slow007 with --explain',
 );
 
+# #############################################################################
+# Issue 1141: Add "spark charts" to mk-query-digest profile
+# #############################################################################
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args,
+         "$trunk/common/t/samples/slow007.txt", qw(--report-format profile)) },
+      "$sample/slow007_explain_4.txt",
+   ),
+   'EXPLAIN sparkline in profile'
+);
+
+# #############################################################################
 # Failed EXPLAIN.
+# #############################################################################
 $dbh->do('drop table trees');
 
 ok(
