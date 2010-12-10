@@ -1,4 +1,4 @@
-# This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2009-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -19,11 +19,11 @@
 # ###########################################################################
 package ReportFormatter;
 
-# This package produces formatted, columnized reports given variable-width
-# lines of data.  It does the hard work of resizing and truncating data
-# to fit the line width.  Unless all data fits the line (which doesn't happen
-# often), columns widths have to be adjusted to maximize line "real estate".
-# This involves the following magic.
+# Package: ReportFormatter
+# ReportFormatter makes columnized reports given variable-width data lines.
+# It does the hard work of automatically sizing columns and truncating data
+# to fit the line width (unless all data fits the line which doesn't happen
+# often).  This involves the following magic.
 #
 # Internally, all column widths are *first* treated as percentages of the
 # line width. Even if a column is specified with width=>N where N is some
