@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 7058
+# OptionParser package 7102
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -50,7 +50,8 @@ my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(description) ) {
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -68,16 +69,15 @@ sub new {
    );
 
    my $self = {
-      strict            => 1,
-      prompt            => '<options>',
-      head1             => 'OPTIONS',
-      skip_rules        => 0,
-      item              => '--(.*)',
-      attributes        => \%attributes,
-      parse_attributes  => \&_parse_attribs,
+      head1             => 'OPTIONS',        # These args are used internally
+      skip_rules        => 0,                # to instantiate another Option-
+      item              => '--(.*)',         # Parser obj that parses the
+      attributes        => \%attributes,     # DSN OPTIONS section.  Tools
+      parse_attributes  => \&_parse_attribs, # don't tinker with these args.
 
       %args,
 
+      strict            => 1,  # disabled by a special rule
       program_name      => $program_name,
       opts              => {},
       got_opts          => 0,
@@ -117,7 +117,7 @@ sub new {
 
 sub get_specs {
    my ( $self, $file ) = @_;
-   $file ||= __FILE__;
+   $file ||= $self->{file} || __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
 
@@ -182,7 +182,7 @@ sub get_defaults_files {
 
 sub _pod_to_specs {
    my ( $self, $file ) = @_;
-   $file ||= __FILE__;
+   $file ||= $self->{file} || __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my @specs = ();
@@ -364,6 +364,11 @@ sub _parse_specs {
                s/\s+//;
                $_ => 1;
             } @groups;
+         }
+         if( $opt =~ m/accepts additional command-line arguments/ ) {
+            $rule_ok = 1;
+            $self->{strict} = 0;
+            MKDEBUG && _d("Strict mode disabled by rule");
          }
 
          die "Unrecognized option rule: $opt" unless $rule_ok;
@@ -698,6 +703,7 @@ sub set {
 sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
+   return;
 }
 
 sub errors {
@@ -705,14 +711,16 @@ sub errors {
    return $self->{errors};
 }
 
-sub prompt {
+sub usage {
    my ( $self ) = @_;
-   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
+   warn "No usage string is set" unless $self->{usage}; # XXX
+   return "Usage: " . ($self->{usage} || '') . "\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+   warn "No description string is set" unless $self->{description}; # XXX
+   my $descr  = ($self->{description} || $self->{program_name} || '')
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
@@ -723,21 +731,33 @@ sub descr {
 }
 
 sub usage_or_errors {
-   my ( $self ) = @_;
+   my ( $self, $file, $return ) = @_;
+   $file ||= $self->{file} || __FILE__;
+
+   if ( !$self->{description} || !$self->{usage} ) {
+      MKDEBUG && _d("Getting description and usage from SYNOPSIS in", $file);
+      my %synop = $self->_parse_synopsis($file);
+      $self->{description} ||= $synop{description};
+      $self->{usage}       ||= $synop{usage};
+      MKDEBUG && _d("Description:", $self->{description},
+         "\nUsage:", $self->{usage});
+   }
+
    if ( $self->{opts}->{help}->{got} ) {
       print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
-      exit 0;
+      exit 0 unless $return;
    }
    elsif ( scalar @{$self->{errors}} ) {
       print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
-      exit 0;
+      exit 0 unless $return;
    }
+
    return;
 }
 
 sub print_errors {
    my ( $self ) = @_;
-   my $usage = $self->prompt() . "\n";
+   my $usage = $self->usage() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
       $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
               . "\n";
@@ -772,7 +792,7 @@ sub print_usage {
 
    $maxs = max($lcol - 3, $maxs);
 
-   my $usage = $self->descr() . "\n" . $self->prompt();
+   my $usage = $self->descr() . "\n" . $self->usage();
 
    my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
    push @groups, 'default';
@@ -978,6 +998,41 @@ sub _parse_attribs {
       . ($attribs->{'cumulative'} ? '+'                              : '' )
       . ($attribs->{'type'}       ? '=' . $types->{$attribs->{type}} : '' );
 }
+
+sub _parse_synopsis {
+   my ( $self, $file ) = @_;
+   $file ||= $self->{file} || __FILE__;
+   MKDEBUG && _d("Parsing SYNOPSIS in", $file);
+
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $para;
+   1 while defined($para = <$fh>) && $para !~ m/^=head1 SYNOPSIS/;
+   die "$file does not contain a SYNOPSIS section" unless $para;
+   my @synop;
+   for ( 1..2 ) {  # 1 for the usage, 2 for the description
+      my $para = <$fh>;
+      push @synop, $para;
+   }
+   close $fh;
+   MKDEBUG && _d("Raw SYNOPSIS text:", @synop);
+   my ($usage, $desc) = @synop;
+   die "The SYNOPSIS section in $file is not formatted properly"
+      unless $usage && $desc;
+
+   $usage =~ s/^\s*Usage:\s+(.+)/$1/;
+   chomp $usage;
+
+   $desc =~ s/\n/ /g;
+   $desc =~ s/\s{2,}/ /g;
+   $desc =~ s/\. ([A-Z][a-z])/.  $1/g;
+   $desc =~ s/\s+$//;
+
+   return (
+      description => $desc,
+      usage       => $usage,
+   );
+};
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -1776,10 +1831,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   $o = new OptionParser(
-      strict      => 0,
-   );
-
+   $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2339,6 +2391,9 @@ both wait-for locks and get more information.  If the two waited-for locks are
 not on the same table, more than two transactions were involved in the deadlock.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

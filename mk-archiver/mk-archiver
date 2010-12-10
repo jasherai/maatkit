@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 7098
+# OptionParser package 7102
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/OptionParser.pm
@@ -69,7 +69,6 @@ sub new {
    );
 
    my $self = {
-      strict            => 1,
       head1             => 'OPTIONS',        # These args are used internally
       skip_rules        => 0,                # to instantiate another Option-
       item              => '--(.*)',         # Parser obj that parses the
@@ -78,6 +77,7 @@ sub new {
 
       %args,
 
+      strict            => 1,  # disabled by a special rule
       program_name      => $program_name,
       opts              => {},
       got_opts          => 0,
@@ -364,6 +364,11 @@ sub _parse_specs {
                s/\s+//;
                $_ => 1;
             } @groups;
+         }
+         if( $opt =~ m/accepts additional command-line arguments/ ) {
+            $rule_ok = 1;
+            $self->{strict} = 0;
+            MKDEBUG && _d("Strict mode disabled by rule");
          }
 
          die "Unrecognized option rule: $opt" unless $rule_ok;
