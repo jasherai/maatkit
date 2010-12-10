@@ -1,4 +1,4 @@
-# This program is copyright 2009-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2009-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
