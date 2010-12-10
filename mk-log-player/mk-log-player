@@ -2577,8 +2577,6 @@ sub main {
    # #########################################################################
    $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => q{splits and plays slow log files.},
       dp          => $dp,
    );
    $o->get_specs();
@@ -2990,6 +2988,10 @@ if ( !caller ) { exit main(@ARGV); }
 mk-log-player - Replay MySQL query logs.
 
 =head1 SYNOPSIS
+
+Usage: mk-log-player [OPTION...] [DSN]
+
+mk-log-player splits and plays slow log files.
 
 Split slow.log on Thread_id into 16 session files, save in ./sessions:
 

@@ -1778,9 +1778,6 @@ sub main {
    # ########################################################################
    $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] SOURCE_DSN',
-      description => q{extracts and saves information about the most }
-                   . q{recent deadlock in a MySQL server.},
    );
 
    $o->get_specs();
@@ -2162,6 +2159,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-deadlock-logger - Extract and log MySQL deadlock information.
 
 =head1 SYNOPSIS
+
+Usage: mk-deadlock-logger [OPTION...] SOURCE_DSN
+
+mk-deadlock-logger extracts and saves information about the most recent deadlock
+in a MySQL server.
 
 Print deadlocks on SOURCE_DSN:
 

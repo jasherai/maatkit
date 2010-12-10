@@ -3706,8 +3706,6 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => q{dumps MySQL tables in parallel.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -4796,6 +4794,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-parallel-dump - Dump MySQL tables in parallel.
 
 =head1 SYNOPSIS
+
+Usage: mk-parallel-dump [OPTION...] [DSN]
+
+mk-parallel-dump dumps MySQL tables in parallel to make some data loading
+operations more convenient.  IT IS NOT A BACKUP TOOL!
 
 Dump all databases and tables to the current directory:
 

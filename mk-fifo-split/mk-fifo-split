@@ -1201,9 +1201,6 @@ sub main {
    # ########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[options] [FILE ...]',
-      description => q{splits FILE and pipes lines to a fifo.  With no FILE, }
-                   . q{or when FILE is -, read standard input.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -1305,6 +1302,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-fifo-split - Split files and pipe lines to a fifo without really splitting.
 
 =head1 SYNOPSIS
+
+Usage: mk-fifo-split [options] [FILE ...]
+
+mk-fifo-split splits FILE and pipes lines to a fifo.  With no FILE, or when FILE
+is -, read standard input.
 
 Read hugefile.txt in chunks of a million lines without physically splitting it:
 

@@ -4561,9 +4561,6 @@ sub main {
    # ##########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [FILE...]',
-      description => q{reads queries from logs and analyzes how they use }
-                   . q{indexes.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -5187,6 +5184,10 @@ sub _d {
 mk-index-usage - Read queries from a log and analyze how they use indexes.
 
 =head1 SYNOPSIS
+
+Usage: mk-index-usage [OPTION...] [FILE...]
+
+mk-index-usage reads queries from logs and analyzes how they use indexes.
 
 Analyze queries in slow.log and print reports:
 

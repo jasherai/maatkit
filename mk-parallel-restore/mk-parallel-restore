@@ -2354,8 +2354,6 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DSN] PATH [PATH...]',
-      description => 'loads files into MySQL in parallel.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -3300,6 +3298,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-parallel-restore - Load files into MySQL in parallel.
 
 =head1 SYNOPSIS
+
+Usage: mk-parallel-restore [OPTION...] [DSN] PATH [PATH...]
+
+mk-parallel-restore description loads files into MySQL in parallel to make some
+type of data loads faster.  IT IS NOT A BACKUP TOOL!
 
   mk-parallel-restore /path/to/files
   mk-parallel-restore --tab /path/to/files

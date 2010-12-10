@@ -2347,8 +2347,6 @@ sub main {
    # most options (see my $final_o below).
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] DSN',
-      description => 'purges binary logs on a master based on purge rules.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -2749,6 +2747,10 @@ if ( !caller ) { exit main(@ARGV); }
 mk-purge-logs - Purge binary logs on a master based on purge rules.
 
 =head1 SYNOPSIS
+
+Usage: mk-purge-logs [OPTION...] DSN
+
+mk-purge-logs purges binary logs on a MySQL server, based on purge rules.
 
 Print and purge all unused binary logs on master:
 

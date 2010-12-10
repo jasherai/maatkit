@@ -1018,7 +1018,6 @@ sub main {
    # ########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      description => 'creates a MySQL binlog server with the given files.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -1099,7 +1098,10 @@ mk-log-server - Serve MySQL binary logs.
 
 =head1 SYNOPSIS
 
-   mk-log-server [BINLOG FILE ...]
+Usage: mk-log-server [FILE ...]
+
+mk-log-server creates a MySQL server instance and starts it with the given files
+as binary log files.
 
 =head1 RISKS
 

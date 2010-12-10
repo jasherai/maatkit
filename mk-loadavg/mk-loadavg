@@ -3550,9 +3550,6 @@ sub main {
    my $vp = new VersionParser();
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => 'watches the load on a MySQL server and takes action '
-                   . 'if it is too high.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -3825,6 +3822,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-loadavg - Watch MySQL load and take action when it gets too high.
 
 =head1 SYNOPSIS
+
+Usage: mk-loadavg [OPTION...] [DSN]
+
+mk-loadavg watches the load on a MySQL server and takes action if it is too
+high.
 
 Execute my_script.sh when Threads_running exceeds 10:
 

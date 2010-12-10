@@ -3504,10 +3504,6 @@ sub main {
    # #######################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DSN]',
-      description => q{examines MySQL tables for duplicate or redundant }
-                   . q{indexes and foreign keys.  Connection options }
-                   . q{are read from MySQL option files.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -3797,6 +3793,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-duplicate-key-checker - Find duplicate indexes and foreign keys on MySQL tables.
 
 =head1 SYNOPSIS
+
+Usage: mk-duplicate-key-checker [OPTION...] [DSN]
+
+mk-duplicate-key-checker examines MySQL tables for duplicate or redundant
+indexes and foreign keys.  Connection options are read from MySQL option files.
 
    mk-duplicate-key-checker --host host1
 

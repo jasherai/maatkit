@@ -3514,14 +3514,6 @@ sub main {
    # ########################################################################
    $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION]... [FILE...]',
-      description => q{kills, prints or executes another script for queries }
-                   . q{in MySQL that match certain criteria.  }
-                   . q{If FILE is not given, mk-kill executes SHOW PROCESSLIST }
-                   . q{on MySQL to get queries.  Else, mk-kill will get }
-                   . q{queries from FILE which should contain the output of }
-                   . q{SHOW PROCESSLIST.  If FILE is -, mk-kill reads from }
-                   . q{STDIN.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -3888,6 +3880,13 @@ if ( !caller ) { exit main(@ARGV); }
 mk-kill - Kill MySQL queries that match certain criteria.
 
 =head1 SYNOPSIS
+
+Usage: mk-kill [OPTION]... [FILE...]
+
+mk-kill kills MySQL connections.  If FILE is not given, mk-kill executes SHOW
+PROCESSLIST on MySQL to get queries.  Otherwise, mk-kill will read queries from
+FILE, which should contain the output of SHOW PROCESSLIST.  If FILE is -, mk-kill
+reads from STDIN.
 
 Kill queries running longer than 60s:
 

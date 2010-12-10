@@ -1867,9 +1867,6 @@ sub main {
    # ########################################################################
    my $o = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] SOURCE_DSN',
-      description => q{extracts and saves information about the most }
-                   . q{recent foreign key errors in a MySQL server.},
    );
 
    $o->get_specs();
@@ -2056,6 +2053,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-fk-error-logger - Extract and log MySQL foreign key errors.
 
 =head1 SYNOPSIS
+
+Usage: mk-fk-error-logger [OPTION...] SOURCE_DSN
+
+mk-fk-error-logger extracts and saves information about the most recent foreign
+key errors in a MySQL server.
 
 Print foreign key errors on host1:
 

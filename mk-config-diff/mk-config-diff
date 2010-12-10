@@ -2513,8 +2513,6 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
-      description => q{diffs MySQL configurations.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -2749,6 +2747,10 @@ if ( !caller ) { exit main(@ARGV); }
 mk-config-diff - Diff MySQL configurations.
 
 =head1 SYNOPSIS
+
+Usage: mk-config-diff [OPTION...] FILE|DSN [FILE|DSN...]
+
+mk-config-diff diffs MySQL configurations.
 
    # Diff SHOW VARIABLES output saved in each file, print differences.
    mk-config-diff config-1.txt config-2.txt

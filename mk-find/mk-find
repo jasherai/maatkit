@@ -2681,10 +2681,6 @@ sub main {
    my $q  = new Quoter();
       $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] [DATABASE...]',
-      description => 'searches for MySQL tables and executes actions, like '
-                   . 'GNU find.  The default action is to print the database '
-                   . 'and table name.',
    );
    $o->get_specs();
    $o->get_opts();
@@ -3054,6 +3050,11 @@ if ( !caller ) { exit main(@ARGV); }
 mk-find - Find MySQL tables and execute actions, like GNU find.
 
 =head1 SYNOPSIS
+
+Usage: mk-find [OPTION...] [DATABASE...]
+
+mk-find searches for MySQL tables and executes actions, like GNU find.  The
+default action is to print the database and table name.
 
 Find all tables created more than a day ago, which use the MyISAM engine, and
 print their names:

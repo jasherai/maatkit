@@ -1928,8 +1928,6 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] FILE [FILE...]',
-      description => q{parses and aggregates MySQL error log statements.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -2422,9 +2420,13 @@ mk-error-log - Find new and different MySQL error log entries.
 
 =head1 SYNOPSIS
 
+Usage: mk-error-log [OPTION...] FILE [FILE...]
+
+mk-error-log parses and aggregates MySQL error log statements.
+
 Analyze and report on an error log:
 
-  mk-error-log error.log
+  mk-error-log /var/log/mysql/mysqld.err
 
 =head1 RISKS
 
