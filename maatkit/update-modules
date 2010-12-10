@@ -6,9 +6,9 @@ if [ -z "$trunk" ]; then
    exit 1
 fi
 
-# The first argument is the package to update.  The optional second argument
-# is the package within that module (you can only specify one; if you omit it,
-# all are updated).
+# The first argument is the package (tool) to update.  The optional second
+# argument is the module within that package (you can only specify one; if you
+# omit it, all are updated).
 
 if [ -z $1 ]; then
    echo "Specify a package to update."
