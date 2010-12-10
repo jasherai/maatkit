@@ -89,6 +89,31 @@ sub new {
    return bless $self, $class;
 }
 
+# Sub: set_report_formatter
+#   Set a report formatter object for a report.  By default this package will
+#   instantiate ReportFormatter objects to format columnized reports (e.g.
+#   for profile and prepared reports).  Setting a caller-created formatter
+#   object (usually a <ReportFormatter> obj) is used for tested and also by
+#   <mk-query-digest> to extend the profile report line width to 82 for
+#   the --explain sparkline.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   report    - Report name, e.g. profile, prepared, etc.
+#   formatter - Formatter object, usually a <ReportFormatter> obj
+sub set_report_formatter {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(report formatter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless exists $args{$arg};
+   }
+   my ($report, $formatter) = @args{@required_args};
+   $self->{formatter_for}->{$report} = $formatter;
+   return;
+}
+
 # Arguments:
 #   * reports       arrayref: reports to print
 #   * ea            obj: EventAggregator
@@ -761,12 +786,8 @@ sub profile {
       push @profiles, \%profile;
    }
 
-   # Why line_width 82 and not our LINE_LENGTH?  Because:
-   # http://code.google.com/p/maatkit/issues/detail?id=1141
-   # We need 8 extra chars for "EXPLAIN ".  If EXPLAIN isn't
-   # added, then by coincidence the header is exactly 74 anyways.
-   my $report = $args{ReportFormatter} || new ReportFormatter(
-      line_width       => 82,
+   my $report = $self->{formatter_for}->{profile} || new ReportFormatter(
+      line_width       => LINE_LENGTH,
       long_last_column => 1,
       extend_right     => 1,
    );
@@ -910,7 +931,7 @@ sub prepared {
    # Return unless there are prepared statements to report.
    return unless scalar @prepared;
 
-   my $report = $args{ReportFormatter} || new ReportFormatter(
+   my $report = $self->{formatter_for}->{prepared} || new ReportFormatter(
       line_width       => LINE_LENGTH,
       long_last_column => 1,
       extend_right     => 1,     

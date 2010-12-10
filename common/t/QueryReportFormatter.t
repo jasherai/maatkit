@@ -949,7 +949,7 @@ $o->get_opts();
 # profile subreport.  And the line width is 82 because that's the new
 # default to accommodate the EXPLAIN sparkline (issue 1141).
 my $report = new ReportFormatter(line_width=>82);
-
+$qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub { $qrf->print_reports(
@@ -959,7 +959,6 @@ ok(
          other   => [],
          orderby => 'Query_time',
          groupby => 'fingerprint',
-         ReportFormatter => $report,
       ); },
       "common/t/samples/QueryReportFormatter/report001.txt",
    ),
@@ -967,7 +966,7 @@ ok(
 );
 
 $report = new ReportFormatter(line_width=>82);
-
+$qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub { $qrf->print_reports(
@@ -976,7 +975,6 @@ ok(
          worst   => [['select col from tbl where id=?','top',1]],
          orderby => 'Query_time',
          groupby => 'fingerprint',
-         ReportFormatter => $report,
       ); },
       "common/t/samples/QueryReportFormatter/report003.txt",
    ),
@@ -1021,6 +1019,7 @@ $report = new ReportFormatter(
    line_width   => 82,
    extend_right => 1,
 );
+$qrf->set_report_formatter(report=>'prepared', formatter=>$report);
 ok(
    no_diff(
       sub {
@@ -1033,14 +1032,12 @@ ok(
             ],
             orderby => 'Query_time',
             groupby => 'fingerprint',
-            ReportFormatter => $report,
          );
       },
       "common/t/samples/QueryReportFormatter/report002.txt",
    ),
    "print_reports(query_report, prepared)"
 );
-
 
 push @$events,
    {
@@ -1064,6 +1061,7 @@ $report = new ReportFormatter(
    line_width   => 82,
    extend_right => 1,
 );
+$qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub {
@@ -1079,7 +1077,6 @@ ok(
             ],
             orderby => 'Query_time',
             groupby => 'fingerprint',
-            ReportFormatter => $report,
          );
       },
       "common/t/samples/QueryReportFormatter/report004.txt",
@@ -1144,6 +1141,7 @@ SKIP: {
       line_width   => 82,
       extend_right => 1,
    );
+   $qrf->set_report_formatter(report=>'profile', formatter=>$report);
    ok(
       no_diff(
          sub {
@@ -1153,7 +1151,6 @@ SKIP: {
                worst   => [ [$fingerprint, 'top',1], ],
                orderby => 'Query_time',
                groupby => 'fingerprint',
-               ReportFormatter => $report,
             );
          },
          "common/t/samples/QueryReportFormatter/report027.txt",
@@ -1219,6 +1216,7 @@ $qrf    = new QueryReportFormatter(
    Quoter          => $q, 
    ExplainAnalyzer => $ex,
 );
+$qrf->set_report_formatter(report=>'profile', formatter=>$report);
 my $output = output(
    sub { $qrf->print_reports(
       reports => [qw(rusage date files header query_report profile)],
@@ -1228,7 +1226,6 @@ my $output = output(
       groupby => 'fingerprint',
       files   => [qw(foo bar)],
       group   => {map {$_=>1} qw(rusage date files header)},
-      ReportFormatter => $report,
    ); }
 );
 like(
@@ -1287,6 +1284,7 @@ $report = new ReportFormatter(
    line_width   => 82,
    extend_right => 1,
 );
+$qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub {
@@ -1298,7 +1296,6 @@ ok(
             ],
             orderby => 'Query_time',
             groupby => 'fingerprint',
-            ReportFormatter => $report,
          );
       },
       "common/t/samples/QueryReportFormatter/report005.txt",
