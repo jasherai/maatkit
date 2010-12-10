@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 150;
+use Test::More tests => 151;
 
 use OptionParser;
 use DSNParser;
@@ -1576,15 +1576,16 @@ is_deeply(
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
    usage        => 'OptionParser.t <options>',
-   strict       => 0,
 );
+is($o->{strict}, 1, "Strict mode enabled by default");
 $o->_parse_specs(
+   "This tool accepts additional command-line arguments.  Refer to the synopsis and usage information for details.",
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
       . 'files (must be the first option on the command line).',  },
    { spec  => 'foo=s',     desc  => 'foo option',  },
    { spec  => 'verbose+',  desc  => 'increase verbosity',  },
 );
-is($o->{strict}, 0, 'setting strict to 0 worked');
+is($o->{strict}, 0, "Special rule disables strict mode");
 
 @ARGV = ('--config', "$trunk/common/t/samples/config_file_1.conf");
 $o->get_opts();

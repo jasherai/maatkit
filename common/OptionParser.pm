@@ -78,8 +78,6 @@ my $POD_link_re = '[LC]<"?([^">]+)"?>';
 #   file             - Filename to parse POD stuff from.  Several subs take
 #                      a $file param mostly for testing purposes.  This arg
 #                      provides a "global" default for even easier testing.
-#   strict           - All cmd line args must be opts (no leftovers in @ARGV)
-#                      (default yes)
 #   description      - Tool's description (overrides description from SYNOPSIS).
 #   usage            - Tool's usage line (overrides Usage from SYNOPSIS).
 #   head1            - head1 heading under which options are listed
@@ -112,7 +110,6 @@ sub new {
    );
 
    my $self = {
-      strict            => 1,
       head1             => 'OPTIONS',        # These args are used internally
       skip_rules        => 0,                # to instantiate another Option-
       item              => '--(.*)',         # Parser obj that parses the
@@ -123,6 +120,7 @@ sub new {
       %args,
 
       # private, not configurable args
+      strict            => 1,  # disabled by a special rule
       program_name      => $program_name,
       opts              => {},
       got_opts          => 0,
@@ -488,6 +486,14 @@ sub _parse_specs {
                s/\s+//;
                $_ => 1;
             } @groups;
+         }
+         if( $opt =~ m/accepts additional command-line arguments/ ) {
+            # The full rule text should be: "This tool accepts additional
+            # command-line arguments.  Refer to the synopsis and usage
+            # information for details."
+            $rule_ok = 1;
+            $self->{strict} = 0;
+            MKDEBUG && _d("Strict mode disabled by rule");
          }
 
          die "Unrecognized option rule: $opt" unless $rule_ok;
