@@ -968,13 +968,14 @@ sub usage_or_errors {
 
    if ( $self->{opts}->{help}->{got} ) {
       print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0 unless $return;
    }
    elsif ( scalar @{$self->{errors}} ) {
       print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0 unless $return;
    }
 
-   exit 0 unless $return;  # tools should exit but
-   return;                 # tests need us to return
+   return;
 }
 
 # Explains what errors were found while processing command-line arguments and
