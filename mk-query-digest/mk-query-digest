@@ -2091,7 +2091,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 7073
+# Processlist package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -4429,7 +4429,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6900
+# SlowLogParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -5978,7 +5978,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7094
+# QueryReportFormatter package 7108
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -5991,6 +5991,7 @@ package QueryReportFormatter;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use POSIX qw(floor);
 
 Transformers->import(qw(
    shorten micro_t parse_timestamp unix_timestamp make_checksum percentage_of
@@ -6394,18 +6395,29 @@ sub event_report {
    }
 
    if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
-      my $sparkline = $store->{sparkline};
+      my $sparkline = $store->{explain_sparkline};
       if ( !$sparkline ) {
          eval {
             $sparkline = $self->explain_sparkline(
                $results->{samples}->{$item}->{arg});
-            $store->{sparkline} = $sparkline;
+            $store->{explain_sparkline} = $sparkline;
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
          }
       }
       push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
+   }
+
+   if ( my $attrib = $o->get('report-histogram') ) {
+      my $sparkline = $self->distro_sparkline(
+         %args,
+         attrib => $attrib,
+         item   => $item,
+      );
+      if ( $sparkline ) {
+         push @result, "# $attrib sparkline: |$sparkline|";
+      }
    }
 
    if ( my $ts = $store->{ts} ) {
@@ -6544,6 +6556,73 @@ sub chart_distro {
    return join("\n", @results) . "\n";
 }
 
+
+sub distro_sparkline {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea item attrib) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ea     = $args{ea};
+   my $item   = $args{item};
+   my $attrib = $args{attrib};
+
+   my $results = $ea->results();
+   my $store   = $results->{classes}->{$item}->{$attrib};
+   my $vals    = $store->{all};
+
+   my $all_zeros_sparkline = " " x 8;
+
+   return $all_zeros_sparkline unless defined $vals && scalar %$vals;
+
+   my @buck_tens      = $ea->buckets_of(10);
+   my @distro         = map { 0 } (0 .. 7);
+   my @buckets        = map { 0 } (0..999);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
+
+   my $vals_per_mark;
+   my $max_val        = 0;
+   my $max_disp_width = 64;
+   foreach my $n_vals ( @distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   my ($min, $max);
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals  = $distro[$i];
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
+      $n_marks    = 1 if $n_marks < 1 && $n_vals > 0;
+
+      $min = $n_marks if $n_marks && (!$min || $n_marks < $min);
+      $max = $n_marks if !$max || $n_marks > $max;
+   }
+   return $all_zeros_sparkline unless $min && $max;
+
+
+   $min = 0 if $min == $max;
+   my @range_min;
+   my $d = floor(($max-$min) / 4);
+   for my $x ( 1..4 ) {
+      push @range_min, $min + ($d * $x);
+   }
+
+   my $sparkline = ""; 
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals  = $distro[$i];
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
+      $n_marks    = 1 if $n_marks < 1 && $n_vals > 0;
+      $sparkline .= $n_marks <= 0             ? ' '
+                  : $n_marks <= $range_min[0] ? '_'
+                  : $n_marks <= $range_min[1] ? '.'
+                  : $n_marks <= $range_min[2] ? '-'
+                  :                             '^';
+   }
+
+   return $sparkline;
+}
+
 sub profile {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst groupby) ) {
@@ -6581,17 +6660,17 @@ sub profile {
       ); 
 
       if ( $o->get('explain') && $samp_query ) {
-         my $sparkline = $stats->{sparkline};
+         my $sparkline = $stats->{explain_sparkline};
          if ( !$sparkline ) {
             eval {
                $sparkline = $self->explain_sparkline($samp_query);
-               $stats->{sparkline} = $sparkline;
+               $stats->{explain_sparkline} = $sparkline;
             };
             if ( $EVAL_ERROR ) {
                MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
             }
          }
-         $profile{sparkline} = $sparkline || "";
+         $profile{explain_sparkline} = $sparkline || "";
       }
 
       push @profiles, \%profile;
@@ -6629,7 +6708,7 @@ sub profile {
          $rc,
          $item->{apdex},
          $vmr,
-         ( $o->get('explain') ? $item->{sparkline} || "" : () ),
+         ( $o->get('explain') ? $item->{explain_sparkline} || "" : () ),
          $item->{sample},
       );
       $report->add_line(@vals);
@@ -9054,7 +9133,7 @@ sub timestamp_diff {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedEvent package 5266
+# MemcachedEvent package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MemcachedEvent.pm
@@ -9401,7 +9480,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 6054
+# GeneralLogParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/GeneralLogParser.pm
@@ -9558,7 +9637,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ProtocolParser package 5811
+# ProtocolParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ProtocolParser.pm
@@ -10983,7 +11062,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Progress package 7059
+# Progress package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Progress.pm
@@ -11129,7 +11208,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# FileIterator package 6326
+# FileIterator package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/FileIterator.pm
@@ -11213,7 +11292,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExplainAnalyzer package 7089
+# ExplainAnalyzer package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ExplainAnalyzer.pm
