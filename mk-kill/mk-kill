@@ -4137,7 +4137,7 @@ type: time
 How long to run before exiting.  By default mk-kill runs forever, or until
 its process is killed or stopped by the creation of a L<"--sentinel"> file.
 If this option is specified, mk-kill runs for the specified amount of time
-and sleeps L<"--interval> seconds between each check of the PROCESSLIST.
+and sleeps L<"--interval"> seconds between each check of the PROCESSLIST.
 
 =item --sentinel
 

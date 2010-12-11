@@ -3049,7 +3049,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-variable-advisor - Analyze MySQL variables and advise on possible problems.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-variable-advisor [OPTION...] [DSN]
 
 mk-variable-advisor analyzes variables and advises on possible problems.

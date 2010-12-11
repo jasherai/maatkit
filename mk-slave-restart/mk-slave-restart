@@ -2989,7 +2989,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-slave-restart [OPTION...] [DSN]
 
 mk-slave-restart watches one or more MySQL replication slaves for

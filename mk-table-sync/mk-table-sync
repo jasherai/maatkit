@@ -8745,7 +8745,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-table-sync [OPTION...] DSN [DSN...]
 
 mk-table-sync synchronizes data efficiently between MySQL tables.

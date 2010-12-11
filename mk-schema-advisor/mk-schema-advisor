@@ -3910,7 +3910,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-schema-advisor - Analyze schema and find inefficiencies.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-schema-advisor [OPTION...] FILE|DSN [FILE|DSN...]
 
 mk-schema-advisor examines MySQL schema for inefficiencies.  Specify

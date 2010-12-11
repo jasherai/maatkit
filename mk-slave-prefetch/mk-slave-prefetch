@@ -4758,7 +4758,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-slave-prefech [OPTION...] [FILE]
 
 mk-slave-prefetch pipelines relay logs to pre-warm the slave's caches.
@@ -4766,9 +4766,9 @@ mk-slave-prefetch pipelines relay logs to pre-warm the slave's caches.
 Example:
 
   mk-slave-prefetch
- 
+
   mk-slave-prefetch --statistics > /path/to/saved/statistics
- 
+
   mk-slave-prefetch /path/to/saved/statistics
 
 =head1 RISKS

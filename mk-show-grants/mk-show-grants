@@ -1866,7 +1866,7 @@ mk-show-grants - Canonicalize and print MySQL grants so you can effectively
 replicate, compare and version-control them.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-show-grants [OPTION...] [DSN]
 
 mk-show-grants shows grants (user privileges) from a MySQL server.

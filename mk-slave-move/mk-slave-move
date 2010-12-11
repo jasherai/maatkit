@@ -2593,7 +2593,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-move - Move a MySQL slave around in the replication hierarchy.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-slave-move [OPTION...] SLAVE_DSN [DSN...]
 
 mk-slave-move moves replication slave(s) around in the hierarchy.

@@ -2372,9 +2372,9 @@ FILE, or when FILE is -, read standard input.
 Examples:
 
   mk-visual-explain <file_containing_explain_output>
-  
+
   mk-visual-explain -c <file_containing_query>
-  
+
   mysql -e "explain select * from mysql.user" | mk-visual-explain
 
 =head1 RISKS

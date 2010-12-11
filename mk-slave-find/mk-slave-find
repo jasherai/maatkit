@@ -2996,7 +2996,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-slave-find - Find and print replication hierarchy tree of MySQL slaves.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-slave-find [OPTION...] MASTER-HOST
 
 mk-slave-find finds and prints a hierarchy tree of MySQL slaves.

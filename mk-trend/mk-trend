@@ -1927,7 +1927,7 @@ sub _d {
 mk-trend - Compute statistics over a set of time-series data points.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-trend [OPTION...] [FILE ...]
 
 mk-trend reads a slow query log and outputs statistics on it.

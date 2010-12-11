@@ -10971,7 +10971,7 @@ if ( !caller ) { exit main(@ARGV); }
 mk-upgrade - Execute queries on multiple servers and check for differences.
 
 =head1 SYNOPSIS
-      
+
 Usage: mk-upgrade [OPTION...] DSN [DSN...] [FILE]
 
 mk-upgrade compares query execution on two hosts by executing queries in the
