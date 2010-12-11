@@ -3,6 +3,7 @@
 # This item is included in the report because it matches --limit.
 # Scores: Apdex = 1.00 [1.0]*, V/M = 0.00
 # EXPLAIN sparkline: s
+# Query_time sparkline: | ^      |
 # Time range: all events occurred at 2007-12-18 11:48:27
 # Attribute    pct   total     min     max     avg     95%  stddev  median
 # ============ === ======= ======= ======= ======= ======= ======= =======
