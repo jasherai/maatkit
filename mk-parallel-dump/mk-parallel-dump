@@ -3157,7 +3157,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MaatkitCommon package 5531
+# MaatkitCommon package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MaatkitCommon.pm
@@ -3414,7 +3414,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 7025
+# SchemaIterator package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm

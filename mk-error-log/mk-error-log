@@ -1046,7 +1046,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 6190
+# ReportFormatter package 7093
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -1542,7 +1542,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogPatternMatcher package 6096
+# ErrorLogPatternMatcher package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ErrorLogPatternMatcher.pm

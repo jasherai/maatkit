@@ -1677,7 +1677,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# InnoDBStatusParser package 5266
+# InnoDBStatusParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/InnoDBStatusParser.pm

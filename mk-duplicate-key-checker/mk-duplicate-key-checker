@@ -2266,7 +2266,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# KeySize package 6439
+# KeySize package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/KeySize.pm
@@ -3215,7 +3215,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 7025
+# SchemaIterator package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm

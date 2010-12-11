@@ -1046,7 +1046,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6900
+# SlowLogParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -1438,7 +1438,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 6054
+# GeneralLogParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/GeneralLogParser.pm
@@ -2339,7 +2339,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MaatkitCommon package 5531
+# MaatkitCommon package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MaatkitCommon.pm

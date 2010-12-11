@@ -1481,7 +1481,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 6900
+# SlowLogParser package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlowLogParser.pm
@@ -1674,7 +1674,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 6054
+# GeneralLogParser package 7096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/GeneralLogParser.pm
+#   trunk/common/t/GeneralLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package GeneralLogParser;
 

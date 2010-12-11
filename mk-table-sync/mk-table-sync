@@ -6574,7 +6574,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 7025
+# SchemaIterator package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SchemaIterator.pm
@@ -7121,7 +7121,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Retry package 6810
+# Retry package 7096
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Retry.pm
