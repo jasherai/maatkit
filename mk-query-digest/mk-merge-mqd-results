@@ -4877,12 +4877,7 @@ sub main {
    # ##########################################################################
    # Get configuration information.
    # ##########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] [FILE]',
-      description => q{parses and analyzes MySQL log files.  With no }
-                   . q{FILE, or when FILE is -, read standard input.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -5113,8 +5108,17 @@ mk-merge-mqd-results - Merge multiple mk-query-digest reports into one.
 
 =head1 SYNOPSIS
 
+Usage: mk-merge-mqd-results [OPTION...] [FILE]
+
+mk-merge-mqd-results parses and analyzes MySQL log files.  With no
+FILE, or when FILE is -, read standard input.
+
+Examples:
+
   mk-query-digest slow.log-1 --save-results res1.txt
+
   mk-query-digest slow.log-2 --save-results res2.txt
+
   mk-merge-mqd-results res1.txt res2.txt
 
 =head1 RISKS
@@ -5140,6 +5144,9 @@ This is a light-weight script for merging and reporting on results saved
 by mk-query-digest --save-results.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

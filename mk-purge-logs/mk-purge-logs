@@ -2400,9 +2400,7 @@ sub main {
    # ########################################################################
    # Because of --arg-table, $final_o is the OptionParser obj used to get
    # most options (see my $final_o below).
-   my $o = new OptionParser(
-      strict      => 0,
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2851,6 +2849,9 @@ by executing C<PURGE BINARY LOGS TO>.
 =head1 OPTIONS
 
 Specify at least one of L<"--purge"> or L<"--print">.
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

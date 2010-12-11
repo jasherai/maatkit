@@ -1072,13 +1072,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict => 0,
-      prompt => '<options>... [FILE]...',
-      description => q{aligns query profiler results side by side for easy }
-                   . q{comparison.  With no FILE, or when FILE is -, read }
-                   . q{from standard input.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
    $o->usage_or_errors();
@@ -1198,6 +1192,11 @@ mk-profile-compact - Compact the output from mk-query-profiler.
 
 =head1 SYNOPSIS
 
+Usage: mk-profile-compact [OPTION...] [FILE...]
+
+mk-profile-compact aligns query profiler results side by side for easy
+comparison.  With no FILE, or when FILE is -, read from standard input.
+
 To view queries 2, 4 and 6 side by side:
 
    mk-profile-compact --queries 2,4,6 profile-results.txt
@@ -1245,6 +1244,9 @@ specify which kind of profile result you want to process.  See
 L<mk-query-profiler> for the full list of types.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

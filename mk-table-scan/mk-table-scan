@@ -2370,9 +2370,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      description => q{scans rows in MySQL tables and indexes.},
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -2512,7 +2510,9 @@ mk-table-scan - Select rows from tables and indexes.
 
 =head1 SYNOPSIS
 
-   mk-table-scan
+Usage: mk-table-scan [OPTION...]
+
+mk-table-scan scans rows in MySQL tables and indexes.
 
 =head1 RISKS
 

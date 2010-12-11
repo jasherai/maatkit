@@ -1071,9 +1071,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -1182,6 +1180,9 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 mk-log-server serves binary logs.
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 
