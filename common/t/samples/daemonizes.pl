@@ -19,12 +19,8 @@ use Daemon;
 use OptionParser;
 use MaatkitTest;
 
-my $o = new OptionParser(
-   strict      => 0,
-   description => 'daemonizes, prints to STDOUT and STDERR, sleeps and exits.',
-   prompt      => 'SLEEP_TIME [ARGS]',
-);
-$o->get_specs("$trunk/common/t/samples/daemonizes.pl");
+my $o = new OptionParser(file => "$trunk/common/t/samples/daemonizes.pl");
+$o->get_specs();
 $o->get_opts();
 
 if ( scalar @ARGV < 1 ) {
@@ -52,7 +48,16 @@ exit;
 
 =pod
 
+=head1 SYNOPSIS
+
+Usage: daemonizes.pl SLEEP_TIME [ARGS]
+
+daemonizes.pl daemonizes, prints to STDOUT and STDERR, sleeps and exits.
+
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 

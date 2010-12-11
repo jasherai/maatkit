@@ -15,9 +15,7 @@ use Daemon;
 use OptionParser;
 use MaatkitTest;
 
-my $o = new OptionParser(
-   description => 'foo',
-);
+my $o = new OptionParser(file => "$trunk/common/t/samples/daemonizes.pl");
 my $d = new Daemon(o=>$o);
 
 my $pid_file = '/tmp/daemonizes.pl.pid';

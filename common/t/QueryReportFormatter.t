@@ -1153,7 +1153,9 @@ SKIP: {
                groupby => 'fingerprint',
             );
          },
-         "common/t/samples/QueryReportFormatter/report027.txt",
+         ($sandbox_version ge '5.1' ?
+              "common/t/samples/QueryReportFormatter/report027.txt"
+            : "common/t/samples/QueryReportFormatter/report029.txt"),
       ),
       "EXPLAIN sparkline (issue 1141)"
    );
