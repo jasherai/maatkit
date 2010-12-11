@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2010-12-11: version 1.0.26
+
    * Added -q short form for --quiet option.
 
 2010-11-08: version 1.0.25

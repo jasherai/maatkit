@@ -1,5 +1,7 @@
 Changelog for mk-loadavg:
 
+2010-12-11: version 0.9.7
+
    * Added short form -w for option --wait.
 
 2010-06-08: version 0.9.6

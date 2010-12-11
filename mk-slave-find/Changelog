@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+2010-12-11: version 1.0.15
+
    * --database option did not work.
 
 2010-09-11: version 1.0.14

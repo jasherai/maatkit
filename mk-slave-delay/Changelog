@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+2010-12-11: version 1.0.23
+
    * The tool ran even if the SQL thread was not running (issue 1169).
 
 2010-08-01: version 1.0.22

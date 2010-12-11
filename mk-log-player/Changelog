@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+2010-12-11: version 1.0.9
+
    * --charset (-A) did not work (issue 1177).
    * Added -q short form for --quiet option.
 

@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+2010-12-11: version 0.9.8
+
    * Removed --iterations option.
    * Changed --run-time behavior to match other tools.
    * Added options --sentinel and --stop.
