@@ -6026,8 +6026,8 @@ tools) and those created by bugs.
 mk-query-advisor simply reads queries and examines them, and is thus
 very low risk.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release there is a bug that may cause an infinite (or
+very long) loop when parsing very large queries.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
