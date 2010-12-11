@@ -13260,7 +13260,6 @@ C<mk-query-digest slow-log.log --no-report --print --filter '$event->{fingerprin
 
 Notice that you must remove the 0x prefix from the checksum in order for this to work.
 
-
 Finally, in case you want to find a sample of the query in the log file, there's
 the byte offset where you can look.  (This is not always accurate, due to some
 silly anomalies in the slow-log format, but it's usually right.)  The position
@@ -13344,6 +13343,12 @@ above, and something like the following:
   tail -c +<offset> /path/to/file | head
 
 See also L<"--report-format">.
+
+=head2 SPARKLINES
+
+The output also contains sparklines.  Sparklines are "data-intense,
+design-simple, word-sized graphics" (L<http://en.wikipedia.org/wiki/Sparkline>).There is a sparkline for L<"--report-histogram"> and for L<"--explain">.
+See each of those options for details about interpreting their sparklines.
 
 =head1 QUERY REVIEWS
 
@@ -13742,6 +13747,41 @@ safety, queries that appear to have a subquery that EXPLAIN will execute won't
 be EXPLAINed.  Those are typically "derived table" queries of the form
 
   select ... from ( select .... ) der;
+
+The EXPLAIN results are printed in three places: a sparkline in the event
+header, a full vertical format in the event report, and a sparkline in the
+profile.
+
+The full format appears at the end of each event report in vertical style
+(C<\G>) just like MySQL prints it.
+
+The sparklines (see L<"SPARKLINES">) are compact representations of the
+access type for each table and whether or not "Using temporary" or "Using
+filesort" appear in EXPLAIN.  The sparklines look like:
+
+  nr>TF
+
+That sparkline means that there are two tables, the first uses a range (n)
+access, the second uses a ref access, and both "Using temporary" (T) and
+"Using filesort" (F) appear.  The greater-than character just separates table
+access codes from T and/or F.
+
+The abbreviated table access codes are:
+
+  a  ALL
+  c  const
+  e  eq_ref
+  f  fulltext
+  i  index
+  m  index_merge
+  n  range
+  o  ref_or_null
+  r  ref
+  s  system
+  u  unique_subquery
+
+A capitalized access code means that "Using index" appears in EXPLAIN for
+that table.
 
 =item --filter
 
@@ -14169,7 +14209,38 @@ type: string; default: Query_time
 Chart the distribution of this attribute's values.
 
 The distribution chart is limited to time-based attributes, so charting
-C<Rows_examined>, for example, will produce a useless chart.
+C<Rows_examined>, for example, will produce a useless chart.  Charts look
+like:
+
+  # Query_time distribution
+  #   1us
+  #  10us
+  # 100us
+  #   1ms
+  #  10ms  ################################
+  # 100ms  ################################################################
+  #    1s  ########
+  #  10s+
+
+A sparkline (see L<"SPARKLINES">) of the full chart is also printed in the
+header for each query event.  The sparkline of that full chart is:
+
+  # Query_time sparkline: |    .^_ |
+
+The sparkline itself is the 8 characters between the pipes (C<|>), one character
+for each of the 8 buckets (1us, 10us, etc.)  Four character codes are used
+to represent the approximate relation between each bucket's value:
+
+  _ . - ^
+
+The caret C<^> represents peaks (buckets with the most values), and
+the underscore C<_> represents lows (buckets with the least or at least
+one value).  The period C<.> and the hyphen C<-> represent buckets with values
+between these two extremes.  If a bucket has no values, a space is printed.
+So in the example above, the period represents the 10ms bucket, the caret
+the 100ms bucket, and the underscore the 1s bucket.
+
+See L<"OUTPUT"> for more information.
 
 =item --review
 

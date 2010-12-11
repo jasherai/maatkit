@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Added sparkline of --report-histogram (issue 1141).
    * Added EXPLAIN sparkline (issue 1141).
 
 2010-11-08: version 0.9.23
