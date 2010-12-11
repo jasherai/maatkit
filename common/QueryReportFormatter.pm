@@ -32,6 +32,7 @@ package QueryReportFormatter;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use POSIX qw(floor);
 
 Transformers->import(qw(
    shorten micro_t parse_timestamp unix_timestamp make_checksum percentage_of
@@ -562,6 +563,15 @@ sub event_report {
       push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
    }
 
+   if ( my $attrib = $o->get('report-histogram') ) {
+      my $sparkchart = $self->sparkchart_distro(
+         %args,
+         attrib => $attrib,
+         item   => $item,
+      );
+      push @result, "# $attrib sparkchart: " . ($sparkchart || '');
+   }
+
    # Last line before column headers: time range
    if ( my $ts = $store->{ts} ) {
       my $time_range = $self->format_time_range($ts) || "unknown";
@@ -718,6 +728,98 @@ sub chart_distro {
    }
 
    return join("\n", @results) . "\n";
+}
+
+
+# Sub: sparkchart_distro
+#   Make a sparkchart of a time-based attribute's values.  The following
+#   character codes are used: _.-^  If a bucket doesn't have a value, a
+#   space is used.  So _ buckets are the lowest lines on the full graph
+#   (<chart_distro()>), and ^ are the peaks on the full graph.  See
+#   QueryReportFormatter.t for several examples.
+#
+#   This sub isn't the most optimized.  The first half is the same code
+#   as <chart_distro()>.  Then the latter code, unique to this sub,
+#   essentially compresses the full chart further into 8 characters using
+#   the 4 char codes above.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   ea     - <EventAggregator> object
+#   item   - Item in results to chart
+#   attrib - Attribute of item to chart
+#
+# Returns:
+#   Sparkchart string
+sub sparkchart_distro {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea item attrib) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ea     = $args{ea};
+   my $item   = $args{item};
+   my $attrib = $args{attrib};
+
+   my $results = $ea->results();
+   my $store   = $results->{classes}->{$item}->{$attrib};
+   my $vals    = $store->{all};
+   return "" unless defined $vals && scalar %$vals;
+
+   my @buck_tens      = $ea->buckets_of(10);
+   my @distro         = map { 0 } (0 .. 7);
+   my @buckets        = map { 0 } (0..999);
+   map { $buckets[$_] = $vals->{$_} } keys %$vals;
+   $vals = \@buckets;
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
+
+   my $vals_per_mark;
+   my $max_val        = 0;
+   my $max_disp_width = 64;
+   foreach my $n_vals ( @distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   my ($min, $max);
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals  = $distro[$i];
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
+      $n_marks    = 1 if $n_marks < 1 && $n_vals > 0;
+
+      $min = $n_marks if $n_marks && (!$min || $n_marks < $min);
+      $max = $n_marks if !$max || $n_marks > $max;
+   }
+   return "" unless $min && $max;
+
+   # That ^ code is mostly the same as chart_distro().  Now here's
+   # our own unique code.
+
+   # Divide the range by 4 because there are 4 char codes: _.-^
+   $min = 0 if $min == $max;
+   my @range_min;
+   my $d = floor(($max-$min) / 4);
+   for my $x ( 1..4 ) {
+      push @range_min, $min + ($d * $x);
+   }
+
+   my $sparkline = ""; 
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals  = $distro[$i];
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
+      $n_marks    = 1 if $n_marks < 1 && $n_vals > 0;
+      $sparkline .= $n_marks <= 0             ? ' '
+                  : $n_marks <= $range_min[0] ? '_'
+                  : $n_marks <= $range_min[1] ? '.'
+                  : $n_marks <= $range_min[2] ? '-'
+                  :                             '^';
+   }
+
+   # I find the | | bookends help make the sparkchart graph more clear.
+   # Else with just   .^-   it's difficult to tell where the chart beings
+   # or ends.
+   return "|$sparkline|";
 }
 
 # Profile subreport (issue 381).

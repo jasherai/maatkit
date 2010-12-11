@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 42;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1301,6 +1301,181 @@ ok(
       "common/t/samples/QueryReportFormatter/report005.txt",
    ),
    "Variance-to-mean ration (issue 1124)"
+);
+
+# #############################################################################
+# Issue 1141: Add "spark charts" to mk-query-digest profile
+# #############################################################################
+sub proc_events {
+   my ( %args ) = @_;
+   my ($arg, $attrib, $vals) = @args{qw(arg attrib vals)};
+
+   my $bytes       = length $arg;
+   my $fingerprint = $qr->fingerprint($arg);
+
+   $events = [];
+   foreach my $val ( @$vals ) {
+      push @$events, {
+         bytes       => $bytes,
+         arg         => $arg,
+         fingerprint => $fingerprint,
+         $attrib     => $val,
+      }
+   }
+
+   $ea = new EventAggregator(
+      groupby => 'fingerprint',
+      worst   => 'Query_time',
+   );
+   foreach my $event (@$events) {
+      $ea->aggregate($event);
+   }
+   $ea->calculate_statistical_metrics(apdex_t=>1);
+
+   # Seeing the full chart helps determine what the
+   # sparkchart should look like.
+   if ( $args{chart} ) {
+      $result = $qrf->chart_distro(
+         ea     => $ea,
+         item   => 'select c from t',
+         attrib => 'Query_time',
+      );
+      print $result;
+   }
+
+   return;
+};
+
+# Test sparkchart lines in isolation.
+proc_events(
+   arg    => 'select c from t',
+   attrib => 'Query_time',
+   vals   => [qw(0 0 0)],
+);
+$result = $qrf->sparkchart_distro(
+   ea     => $ea,
+   item   => 'select c from t',
+   attrib => 'Query_time',
+);
+is(
+   $result,
+   "",
+   "Sparkchart line - all zeros"
+);
+
+#   1us
+#  10us
+# 100us  ################################################
+#   1ms  ################################
+#  10ms  ################################
+# 100ms  ################################################################
+#    1s  ################
+#  10s+
+proc_events(
+   arg    => 'select c from t',
+   attrib => 'Query_time',
+   vals   => [qw(0.100000 0.500000 0.000600 0.008000 0.990000 1.000000 0.400000 0.003000 0.000200 0.000100 0.010000 0.020000)],
+);
+$result = $qrf->sparkchart_distro(
+   ea     => $ea,
+   item   => 'select c from t',
+   attrib => 'Query_time',
+);
+is(
+   $result,
+   "|  -..^_ |",
+   "Sparkchart line 1"
+);
+
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms  ################################
+# 100ms  ################################################################
+#    1s  ########
+#  10s+
+proc_events(
+   arg    => 'select c from t',
+   attrib => 'Query_time',
+   vals   => [qw(0.01 0.03 0.08 0.09 0.3 0.5 0.5 0.6 0.7 0.5 0.5 0.9 1.0)],
+);
+$result = $qrf->sparkchart_distro(
+   ea     => $ea,
+   item   => 'select c from t',
+   attrib => 'Query_time',
+);
+is(
+   $result,
+   "|    .^_ |",
+   "Sparkchart line 2"
+);
+
+#   1us  ################################################################
+#  10us  ################################################################
+# 100us  ################################################################
+#   1ms  ################################################################
+#  10ms  ################################################################
+# 100ms  ################################################################
+#    1s  ################################################################
+#  10s+
+proc_events(
+   arg    => 'select c from t',
+   attrib => 'Query_time',
+   vals   => [qw(0.000003 0.000030 0.000300 0.003000 0.030000 0.300000 3)],
+);
+$result = $qrf->sparkchart_distro(
+   ea     => $ea,
+   item   => 'select c from t',
+   attrib => 'Query_time',
+);
+is(
+   $result,
+   "|^^^^^^^ |",
+   "Sparkchart line - vals in all ranges except 10s+"
+);
+
+
+#   1us  ################################################################
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s  ################################################################
+#  10s+  ################################################################
+proc_events(
+   arg    => 'select c from t',
+   attrib => 'Query_time',
+   vals   => [qw(0.000003 0.000030 0.000003 0.000030 3 3 30 30)],
+);
+$result = $qrf->sparkchart_distro(
+   ea     => $ea,
+   item   => 'select c from t',
+   attrib => 'Query_time',
+);
+is(
+   $result,
+   "|^^    ^^|",
+   "Sparkchart line - twin peaks"
+);
+
+# Test that that ^ sparkchart appears in the event header properly.
+$result = $qrf->event_report(
+   ea      => $ea,
+   select  => [ qw(Query_time) ],
+   item    => 'select c from t',
+   rank    => 1,
+   orderby => 'Query_time',
+   reason  => 'top',
+);
+ok(
+   no_diff(
+      $result,
+      "common/t/samples/QueryReportFormatter/report028.txt",
+      cmd_output => 1,
+   ),
+   'Sparkchart in event header'
 );
 
 # #############################################################################
