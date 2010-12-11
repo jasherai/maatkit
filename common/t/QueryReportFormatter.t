@@ -1333,7 +1333,7 @@ sub proc_events {
    $ea->calculate_statistical_metrics(apdex_t=>1);
 
    # Seeing the full chart helps determine what the
-   # sparkchart should look like.
+   # sparkline should look like.
    if ( $args{chart} ) {
       $result = $qrf->chart_distro(
          ea     => $ea,
@@ -1346,20 +1346,20 @@ sub proc_events {
    return;
 };
 
-# Test sparkchart lines in isolation.
+# Test sparklines in isolation.
 proc_events(
    arg    => 'select c from t',
    attrib => 'Query_time',
    vals   => [qw(0 0 0)],
 );
-$result = $qrf->sparkchart_distro(
+$result = $qrf->distro_sparkline(
    ea     => $ea,
    item   => 'select c from t',
    attrib => 'Query_time',
 );
 is(
    $result,
-   "",
+   "        ",
    "Sparkchart line - all zeros"
 );
 
@@ -1376,14 +1376,14 @@ proc_events(
    attrib => 'Query_time',
    vals   => [qw(0.100000 0.500000 0.000600 0.008000 0.990000 1.000000 0.400000 0.003000 0.000200 0.000100 0.010000 0.020000)],
 );
-$result = $qrf->sparkchart_distro(
+$result = $qrf->distro_sparkline(
    ea     => $ea,
    item   => 'select c from t',
    attrib => 'Query_time',
 );
 is(
    $result,
-   "|  -..^_ |",
+   "  -..^_ ",
    "Sparkchart line 1"
 );
 
@@ -1400,14 +1400,14 @@ proc_events(
    attrib => 'Query_time',
    vals   => [qw(0.01 0.03 0.08 0.09 0.3 0.5 0.5 0.6 0.7 0.5 0.5 0.9 1.0)],
 );
-$result = $qrf->sparkchart_distro(
+$result = $qrf->distro_sparkline(
    ea     => $ea,
    item   => 'select c from t',
    attrib => 'Query_time',
 );
 is(
    $result,
-   "|    .^_ |",
+   "    .^_ ",
    "Sparkchart line 2"
 );
 
@@ -1424,14 +1424,14 @@ proc_events(
    attrib => 'Query_time',
    vals   => [qw(0.000003 0.000030 0.000300 0.003000 0.030000 0.300000 3)],
 );
-$result = $qrf->sparkchart_distro(
+$result = $qrf->distro_sparkline(
    ea     => $ea,
    item   => 'select c from t',
    attrib => 'Query_time',
 );
 is(
    $result,
-   "|^^^^^^^ |",
+   "^^^^^^^ ",
    "Sparkchart line - vals in all ranges except 10s+"
 );
 
@@ -1449,14 +1449,14 @@ proc_events(
    attrib => 'Query_time',
    vals   => [qw(0.000003 0.000030 0.000003 0.000030 3 3 30 30)],
 );
-$result = $qrf->sparkchart_distro(
+$result = $qrf->distro_sparkline(
    ea     => $ea,
    item   => 'select c from t',
    attrib => 'Query_time',
 );
 is(
    $result,
-   "|^^    ^^|",
+   "^^    ^^",
    "Sparkchart line - twin peaks"
 );
 

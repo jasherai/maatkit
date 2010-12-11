@@ -549,12 +549,12 @@ sub event_report {
    if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
       # Sparkline might have already been created by profile is it was
       # printed before query report.
-      my $sparkline = $store->{sparkline};
+      my $sparkline = $store->{explain_sparkline};
       if ( !$sparkline ) {
          eval {
             $sparkline = $self->explain_sparkline(
                $results->{samples}->{$item}->{arg});
-            $store->{sparkline} = $sparkline;
+            $store->{explain_sparkline} = $sparkline;
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
@@ -564,12 +564,17 @@ sub event_report {
    }
 
    if ( my $attrib = $o->get('report-histogram') ) {
-      my $sparkchart = $self->sparkchart_distro(
+      my $sparkline = $self->distro_sparkline(
          %args,
          attrib => $attrib,
          item   => $item,
       );
-      push @result, "# $attrib sparkchart: " . ($sparkchart || '');
+      if ( $sparkline ) {
+         # I find the | | bookends help make the sparkchart graph more clear.
+         # Else with just   .^-   it's difficult to tell where the chart beings
+         # or ends.
+         push @result, "# $attrib sparkline: |$sparkline|";
+      }
    }
 
    # Last line before column headers: time range
@@ -731,8 +736,8 @@ sub chart_distro {
 }
 
 
-# Sub: sparkchart_distro
-#   Make a sparkchart of a time-based attribute's values.  The following
+# Sub: distro_sparkline
+#   Make a sparkline of the <chart_distro()> graph.  The following
 #   character codes are used: _.-^  If a bucket doesn't have a value, a
 #   space is used.  So _ buckets are the lowest lines on the full graph
 #   (<chart_distro()>), and ^ are the peaks on the full graph.  See
@@ -753,7 +758,7 @@ sub chart_distro {
 #
 # Returns:
 #   Sparkchart string
-sub sparkchart_distro {
+sub distro_sparkline {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea item attrib) ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -765,7 +770,10 @@ sub sparkchart_distro {
    my $results = $ea->results();
    my $store   = $results->{classes}->{$item}->{$attrib};
    my $vals    = $store->{all};
-   return "" unless defined $vals && scalar %$vals;
+
+   my $all_zeros_sparkline = " " x 8;
+
+   return $all_zeros_sparkline unless defined $vals && scalar %$vals;
 
    my @buck_tens      = $ea->buckets_of(10);
    my @distro         = map { 0 } (0 .. 7);
@@ -791,7 +799,7 @@ sub sparkchart_distro {
       $min = $n_marks if $n_marks && (!$min || $n_marks < $min);
       $max = $n_marks if !$max || $n_marks > $max;
    }
-   return "" unless $min && $max;
+   return $all_zeros_sparkline unless $min && $max;
 
    # That ^ code is mostly the same as chart_distro().  Now here's
    # our own unique code.
@@ -816,10 +824,7 @@ sub sparkchart_distro {
                   :                             '^';
    }
 
-   # I find the | | bookends help make the sparkchart graph more clear.
-   # Else with just   .^-   it's difficult to tell where the chart beings
-   # or ends.
-   return "|$sparkline|";
+   return $sparkline;
 }
 
 # Profile subreport (issue 381).
@@ -872,17 +877,17 @@ sub profile {
       if ( $o->get('explain') && $samp_query ) {
          # Sparkline might have already been created by query report is it was
          # printed before profile.
-         my $sparkline = $stats->{sparkline};
+         my $sparkline = $stats->{explain_sparkline};
          if ( !$sparkline ) {
             eval {
                $sparkline = $self->explain_sparkline($samp_query);
-               $stats->{sparkline} = $sparkline;
+               $stats->{explain_sparkline} = $sparkline;
             };
             if ( $EVAL_ERROR ) {
                MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
             }
          }
-         $profile{sparkline} = $sparkline || "";
+         $profile{explain_sparkline} = $sparkline || "";
       }
 
       push @profiles, \%profile;
@@ -920,7 +925,7 @@ sub profile {
          $rc,
          $item->{apdex},
          $vmr,
-         ( $o->get('explain') ? $item->{sparkline} || "" : () ),
+         ( $o->get('explain') ? $item->{explain_sparkline} || "" : () ),
          $item->{sample},
       );
       $report->add_line(@vals);
