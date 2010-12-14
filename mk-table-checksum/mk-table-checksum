@@ -8093,12 +8093,14 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 
 type: int
 
-Check results in L<"--replicate"> table, to the specified depth.
+Check results in L<"--replicate"> table, to the specified depth.  You must use
+this after you run the tool normally; it skips the checksum step and only checks
+results.
 
-Recursively finds differences recorded in the table given by L<"--replicate">.
-Recurses to the depth you specify: 0 is no recursion (check only the server
-you specify), 1 is check the server and its slaves, 2 is check the slaves of
-its slaves, and so on.
+It recursively finds differences recorded in the table given by
+L<"--replicate">.  It recurses to the depth you specify: 0 is no recursion
+(check only the server you specify), 1 is check the server and its slaves, 2 is
+check the slaves of its slaves, and so on.
 
 It finds differences by running the query shown in L<"CONSISTENT CHECKSUMS">,
 and prints results, then exits after printing.  This is just a convenient way of
