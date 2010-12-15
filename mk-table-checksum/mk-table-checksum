@@ -2569,7 +2569,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6770
+# TableChunker package 7125
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2799,7 +2799,9 @@ sub calculate_chunks {
       my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
       pop @chunks;
       if ( @chunks ) {
-         push @chunks, "$col >= " . $q->quote_val($beg);
+         push @chunks, "$col >= " . $q->quote_val($beg)
+            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
+                                   : "");
       }
       else {
          push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
@@ -5472,13 +5474,14 @@ sub save_tbl_to_checksum {
             );
             if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
                @chunks = $ch->calculate_chunks(
-                  dbh        => $dbh,
-                  db         => $db,
-                  tbl        => $tbl,
-                  tbl_struct => $struct,
-                  chunk_col  => $chunk_col,
-                  chunk_size => $rows_per_chunk,
-                  zero_chunk => $final_o->get('zero-chunk'),
+                  dbh          => $dbh,
+                  db           => $db,
+                  tbl          => $tbl,
+                  tbl_struct   => $struct,
+                  chunk_col    => $chunk_col,
+                  chunk_size   => $rows_per_chunk,
+                  zero_chunk   => $final_o->get('zero-chunk'),
+                  closed_range => $final_o->get('closed-range'),
                   %params,
                );
                $maxval = $params{max};
@@ -7649,6 +7652,31 @@ they are oversize, you might want to specify a value larger than 2.
 You can disable oversize chunk checking by specifying L<"--chunk-size-limit"> 0.
 
 See also L<"--unchunkable-tables">.
+
+=item --closed-range
+
+Use a closed range of chunks to prevent checksumming newly inserted rows.
+
+By default mk-table-checksum uses an open range of chunks like:
+
+  `id` <  '10'
+  `id` >= '10' AND < '20'
+  `id` >= '20'
+
+That range is open because the last chunk selects any row with id greater than
+(or equal to) 20.  An open range can be a problem if a lot of new rows are
+inserted with IDs greater than 20 while mk-table-checksumming is running
+because the final open-ended chunk will select all the newly inserted rows.
+Specifying this option will cause the final chunk to closed like:
+
+  `id` >= '20' AND `id` <= N
+
+N is the C<MAX(`id`)> that mk-table-checksum used when it first chunked
+the rows.  Therefore, it will only chunk the range of rows that existed when
+the tool started and not any newly inserted rows (unless those rows happen
+to be inserted with IDs less than N).
+
+See also L<"--chunk-size-limit">.
 
 =item --columns
 

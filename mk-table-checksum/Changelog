@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --closed-range option (issue 1182).
+
 2010-12-11: version 1.2.19
 
    * Added --progress option (1151).
