@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 76;
+   plan tests => 77;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -1051,6 +1051,40 @@ chunk_it(
    chunks     => [qw(1=1)],
    msg        => 'Single zero row'
 );
+
+# #############################################################################
+# Issue 1182: mk-table-checksum not respecting chunk size
+# #############################################################################
+SKIP: {
+   skip 'Sandbox master does not have the sakila database', 1
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+
+   my @chunks;
+   $t = $p->parse( load_file('common/t/samples/sakila.film.sql') );
+
+   @chunks = $c->calculate_chunks(
+      tbl_struct    => $t,
+      chunk_col     => 'film_id',
+      min           => 0,
+      max           => 99,
+      rows_in_range => 100,
+      chunk_size    => 30,
+      dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'film',
+      closed_range  => 1,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         "`film_id` < '30'",
+         "`film_id` >= '30' AND `film_id` < '60'",
+         "`film_id` >= '60' AND `film_id` < '90'",
+         "`film_id` >= '90' AND `film_id` <= '99'",
+      ],
+      'closed_range adds AND chunk_col <= max (issue 1182)'
+   );
+};
 
 # #############################################################################
 # Done.
