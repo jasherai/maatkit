@@ -1148,7 +1148,8 @@ SKIP: {
             $qrf->print_reports(
                reports => ['query_report','profile'],
                ea      => $ea,
-               worst   => [ [$fingerprint, 'top',1], ],
+               worst   => [ [$fingerprint, 'top',  1], ],
+               other   => [ [$fingerprint, 'misc', 2], ],
                orderby => 'Query_time',
                groupby => 'fingerprint',
             );

@@ -53,3 +53,4 @@ select t1.i from t as t1 join t as t2 where t1.i < t2.i and t1.v is not null ord
 # Rank Query ID           Response time     Calls R/Call   Apdx V/M   EXPLAIN Item
 # ==== ================== ================= ===== ======== ==== ===== ======= ====
 #    1 0x46F81B022F1AD76B     0.0003 100.0%     1   0.0003   NS  0.00 TF>aI   SELECT t
+# MISC 0xMISC                 0.0003 100.0%     1   0.0003   NS   0.0 MISC    <1 ITEMS>

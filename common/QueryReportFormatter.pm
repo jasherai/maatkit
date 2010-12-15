@@ -955,6 +955,7 @@ sub profile {
          $rc,
          'NS',   # Apdex is not meaningful here
          '0.0',  # variance-to-mean ratio is not meaningful here
+         ( $o->get('explain') ? "MISC" : () ),
          "<".scalar @$other." ITEMS>",
       );
    }
