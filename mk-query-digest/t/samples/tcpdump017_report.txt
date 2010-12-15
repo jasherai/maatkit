@@ -36,6 +36,6 @@
 select @@version_comment limit 1\G
 
 # Profile
-# Rank Query ID           Response time     Calls R/Call   Apdx V/M   Item
-# ==== ================== ================= ===== ======== ==== ===== ====
-#    1 0xE3A3649C5FAC418D     0.6696 100.0%     4   0.1674 1.00  0.19 SELECT
+# Rank Query ID           Response time Calls R/Call Apdx V/M   Item
+# ==== ================== ============= ===== ====== ==== ===== ======
+#    1 0xE3A3649C5FAC418D 0.6696 100.0%     4 0.1674 1.00  0.19 SELECT

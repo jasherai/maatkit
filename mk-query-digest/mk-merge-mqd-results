@@ -3012,7 +3012,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 7093
+# ReportFormatter package 7128
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -3048,6 +3048,7 @@ sub new {
       truncate_line_mark   => '...',
       column_errors        => 'warn',
       truncate_header_side => 'left',
+      strip_whitespace     => 1,
       %args,              # args above can be overriden, args below cannot
       n_cols              => 0,
    };
@@ -3145,6 +3146,11 @@ sub add_line {
    for my $i ( 0..($n_vals-1) ) {
       my $col   = $self->{cols}->[$i];
       my $val   = defined $vals[$i] ? $vals[$i] : $col->{undef_value};
+      if ( $self->{strip_whitespace} ) {
+         $val =~ s/^\s+//g;
+         $val =~ s/\s+$//;
+         $vals[$i] = $val;
+      }
       my $width = length $val;
       $col->{min_val} = min($width, ($col->{min_val} || $width));
       $col->{max_val} = max($width, ($col->{max_val} || $width));
@@ -3356,7 +3362,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7108
+# QueryReportFormatter package 7127
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -4114,6 +4120,7 @@ sub profile {
          $rc,
          'NS',   # Apdex is not meaningful here
          '0.0',  # variance-to-mean ratio is not meaningful here
+         ( $o->get('explain') ? "MISC" : () ),
          "<".scalar @$other." ITEMS>",
       );
    }

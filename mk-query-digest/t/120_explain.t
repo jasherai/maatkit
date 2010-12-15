@@ -87,6 +87,7 @@ $dbh->do('drop table trees');
 ok(
    no_diff(
       sub { mk_query_digest::main(@args,
+         '--report-format', 'query_report,profile',
          "$trunk/common/t/samples/slow007.txt") },
       "mk-query-digest/t/samples/slow007_explain_3.txt",
       trf => "sed 's/at [a-zA-Z\/\-]\\+ line [0-9]\\+/at line ?/'",
