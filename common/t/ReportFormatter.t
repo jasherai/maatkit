@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 use Transformers;
 use ReportFormatter;
@@ -421,10 +421,52 @@ is(
    "Short columsn, blank and short data"
 );
 
+
+# #############################################################################
+# Issue 1196: mk-query-digest --explain is broken
+# #############################################################################
+$rf = new ReportFormatter(
+   line_width       => 82,
+   long_last_column => 1,
+   extend_right     => 1,
+);
+my @cols = (
+   { name => 'Rank',          right_justify => 1,             },
+   { name => 'Query ID',                                      },
+   { name => 'Response time', right_justify => 1,             },
+   { name => 'Calls',         right_justify => 1,             },
+   { name => 'R/Call',        right_justify => 1,             },
+   { name => 'Apdx',          right_justify => 1, width => 4, },
+   { name => 'V/M',           right_justify => 1, width => 5, },
+   { name => 'EXPLAIN'                                        },
+   { name => 'Item',                                          },
+);
+$rf->set_columns(@cols);
+$rf->add_line(
+   '1',
+   '0x0F52986F18B3A4D0',
+   '    0.0000 100.0%',  # leading whitespace
+   '1',
+   '0.0000',
+   '1.00',
+   '0.00',
+   "",  # EXPLAIN column
+   'SELECT trees',
+);
+my $output = $rf->get_report();
+ok(
+   no_diff(
+      $output,  
+      "common/t/samples/ReportFormatter/report001.txt",
+      cmd_output => 1,
+   ),
+   'Whitespace stripped (issue 1196)',
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
-my $output = '';
+$output = '';
 {
    local *STDERR;
    open STDERR, '>', \$output;

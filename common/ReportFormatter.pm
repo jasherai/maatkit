@@ -76,6 +76,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #                               line width (default: no)
 #  * column_errors        scalar: die or warn on column errors (default warn)
 #  * truncate_header_side scalar: left or right (default left)
+#  * strip_whitespace     bool: strip leading and trailing whitespace
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw();
@@ -91,6 +92,7 @@ sub new {
       truncate_line_mark   => '...',
       column_errors        => 'warn',
       truncate_header_side => 'left',
+      strip_whitespace     => 1,
       %args,              # args above can be overriden, args below cannot
       n_cols              => 0,
    };
@@ -213,6 +215,11 @@ sub add_line {
    for my $i ( 0..($n_vals-1) ) {
       my $col   = $self->{cols}->[$i];
       my $val   = defined $vals[$i] ? $vals[$i] : $col->{undef_value};
+      if ( $self->{strip_whitespace} ) {
+         $val =~ s/^\s+//g;
+         $val =~ s/\s+$//;
+         $vals[$i] = $val;
+      }
       my $width = length $val;
       $col->{min_val} = min($width, ($col->{min_val} || $width));
       $col->{max_val} = max($width, ($col->{max_val} || $width));
