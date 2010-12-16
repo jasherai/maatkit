@@ -39,7 +39,7 @@ make_sandbox() {
    # Start the sandbox and check that it has InnoDB.
    /tmp/$port/start
    if [ $? -eq 0 ]; then
-      /tmp/$port/use -e 'show innodb status' | grep 'INNODB MONITOR OUTPUT' >/dev/null 2>&1
+      /tmp/$port/use -e 'show /*!50500 engine*/ innodb status' | grep 'INNODB MONITOR OUTPUT' >/dev/null 2>&1
       # grep exits 0 if lines are found
       if [ $? -ne 0 ]; then
          echo "****** WARNING sandbox doesn't have a working InnoDB! ******"
