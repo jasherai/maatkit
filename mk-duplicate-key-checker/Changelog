@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Made performance_schema an always ignored database (issue 1193).
+
 2010-06-08: version 1.2.13
 
    * Connections did not preserve server SQL modes (issue 801).

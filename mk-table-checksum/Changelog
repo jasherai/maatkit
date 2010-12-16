@@ -1,6 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
    * Added --closed-range option (issue 1182).
+   * Made performance_schema an always ignored database (issue 1193).
 
 2010-12-11: version 1.2.19
 

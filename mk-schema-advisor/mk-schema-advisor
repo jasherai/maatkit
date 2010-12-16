@@ -3209,7 +3209,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 5473
+# SchemaIterator package 7141
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SchemaIterator.pm
+#   trunk/common/t/SchemaIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SchemaIterator;
 
@@ -3368,8 +3373,8 @@ sub make_filter {
             = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
       }
 
-      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
-           || @permit_engs || @reject_engs ) {
+      if ( @permit_tbls || @permit_qtbls || @reject_tbls || @tbls_regex
+           || @reject_tbls_regex || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
                (@permit_tbls       ? @permit_tbls        : ()),
@@ -3419,15 +3424,23 @@ sub get_db_itr {
       MKDEBUG && _d($sql);
       @dbs =  grep {
          my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
-         $ok = 0 if $_ =~ m/information_schema|lost\+found/;
+         $ok = 0 if $_ =~ m/information_schema|performance_schema|lost\+found/;
          $ok;
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
+
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-   return sub {
+   my $iterator = sub {
       return shift @dbs;
    };
+
+   if (wantarray) {
+      return ($iterator, scalar @dbs);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub get_tbl_itr {
@@ -3464,9 +3477,17 @@ sub get_tbl_itr {
    else {
       MKDEBUG && _d('No db given so no tables');
    }
-   return sub {
+
+   my $iterator = sub {
       return shift @tbls;
    };
+
+   if ( wantarray ) {
+      return ($iterator, scalar @tbls);
+   }
+   else {
+      return $iterator;
+   }
 }
 
 sub _make_filter {

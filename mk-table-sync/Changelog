@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Made performance_schema an always ignored database (issue 1193).
+
 2010-08-01: version 1.0.30
 
    * The tool did not retry MASTER_POS_WAIT for --wait (issue 748).
