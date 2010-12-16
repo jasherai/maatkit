@@ -119,7 +119,7 @@ sub innodb {
    my $var     = $args{var};
 
    # Get and parse SHOW INNODB STATUS text.
-   my @status_text = $dbh->selectrow_array("SHOW ENGINE INNODB STATUS");
+   my @status_text = $dbh->selectrow_array("SHOW /*!40100 ENGINE*/ INNODB STATUS");
    if ( !$status_text[0] || !$status_text[2] ) {
       MKDEBUG && _d('SHOW ENGINE INNODB STATUS failed');
       return 0;

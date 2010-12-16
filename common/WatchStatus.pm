@@ -163,7 +163,7 @@ sub _get_val_from_status {
 sub _show_innodb_status {
    my ( $dbh, %args ) = @_;
    # TODO: http://code.google.com/p/maatkit/issues/detail?id=789
-   my @text = $dbh->selectrow_array("SHOW ENGINE INNODB STATUS");
+   my @text = $dbh->selectrow_array("SHOW /*!40100 ENGINE*/ INNODB STATUS");
    return $text[2] || $text[0];
 }
 
