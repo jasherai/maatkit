@@ -1937,7 +1937,7 @@ sub main {
       && $oktorun                     # or instructed to quit
       )
    {
-      my $text        = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+      my $text        = $dbh->selectrow_hashref("SHOW /*!40100 ENGINE*/ INNODB STATUS")->{Status};
       my %txns        = %{parse_deadlocks($text)};
       my $fingerprint = fingerprint(\%txns);
 

@@ -2010,7 +2010,7 @@ sub main {
       && $oktorun                     # or instructed to quit
       )
    {
-      my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+      my $text = $dbh->selectrow_hashref("SHOW /*!40100 ENGINE*/ INNODB STATUS")->{Status};
       my ($ts, $fk_error) = get_fk_error($text);
 
       # Save and/or print the foreign key error.
