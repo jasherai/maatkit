@@ -276,7 +276,7 @@ sub get_db_itr {
       MKDEBUG && _d($sql);
       @dbs =  grep {
          my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
-         $ok = 0 if $_ =~ m/information_schema|lost\+found/;
+         $ok = 0 if $_ =~ m/information_schema|performance_schema|lost\+found/;
          $ok;
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');

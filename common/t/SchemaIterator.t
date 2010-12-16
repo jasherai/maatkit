@@ -36,7 +36,7 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 37;
+   plan tests => 38;
 }
 
 
@@ -80,7 +80,7 @@ sub get_all_db_tbls {
 # ###########################################################################
 
 $sb->load_file('master', 'common/t/samples/SchemaIterator.sql');
-my @dbs = sort grep { $_ !~ m/information_schema|lost\+found/; } map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
+my @dbs = sort grep { $_ !~ m/information_schema|performance_schema|lost\+found/; } map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
 
 my ($next_db, $size) = $si->get_db_itr(dbh=>$dbh);
 is(
@@ -451,6 +451,30 @@ is_deeply(
    [qw(d1.t1)],
    '-t d1.t1 (issue 1161)'
 );
+
+
+# #############################################################################
+# Issue 1193: Make SchemaIterator skip PERFORMANCE_SCHEMA
+# #############################################################################
+SKIP: {
+   skip "Test for MySQL v5.5", 1 unless $sandbox_version ge '5.5';
+
+   my $o = new OptionParser(
+      description => 'SchemaIterator'
+   );
+   $o->get_specs("$trunk/mk-parallel-dump/mk-parallel-dump");
+   $o->get_opts();
+
+   my $filter = $si->make_filter($o);
+   $si->set_filter($filter);
+
+   my $so     = get_all_db_tbls($dbh, $si);
+   my $has_ps = grep { m/^performance_schema/ } @$so;
+   ok(
+      !$has_ps,
+      "performance_schema automatically ignored"
+   );
+}
 
 # #############################################################################
 # Done.
