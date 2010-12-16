@@ -3362,7 +3362,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7127
+# QueryReportFormatter package 7138
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3651,6 +3651,7 @@ sub query_report {
          rank    => $rank,
          reason  => $reason,
          attribs => $attribs,
+         db      => $default_db,
       );
 
       if ( $o->get('report-histogram') ) {
@@ -3779,18 +3780,14 @@ sub event_report {
    }
 
    if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
-      my $sparkline = $store->{explain_sparkline};
-      if ( !$sparkline ) {
-         eval {
-            $sparkline = $self->explain_sparkline(
-               $results->{samples}->{$item}->{arg});
-            $store->{explain_sparkline} = $sparkline;
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
-         }
+      eval {
+         my $sparkline = $self->explain_sparkline(
+            $results->{samples}->{$item}->{arg}, $args{db});
+         push @result, "# EXPLAIN sparkline: $sparkline\n";
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Failed to get EXPLAIN sparkline:", $EVAL_ERROR);
       }
-      push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
    }
 
    if ( my $attrib = $o->get('report-histogram') ) {
@@ -4044,17 +4041,16 @@ sub profile {
       ); 
 
       if ( $o->get('explain') && $samp_query ) {
-         my $sparkline = $stats->{explain_sparkline};
-         if ( !$sparkline ) {
-            eval {
-               $sparkline = $self->explain_sparkline($samp_query);
-               $stats->{explain_sparkline} = $sparkline;
-            };
-            if ( $EVAL_ERROR ) {
-               MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
-            }
+         my ($default_db) = $sample->{db}       ? $sample->{db}
+                          : $stats->{db}->{unq} ? keys %{$stats->{db}->{unq}}
+                          :                       undef;
+         eval {
+            $profile{explain_sparkline} = $self->explain_sparkline(
+               $samp_query, $default_db);
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d("Failed to get EXPLAIN sparkline:", $EVAL_ERROR);
          }
-         $profile{explain_sparkline} = $sparkline || "";
       }
 
       push @profiles, \%profile;
@@ -4448,6 +4444,7 @@ sub explain_report {
    eval {
       if ( !$qp->has_derived_table($query) ) {
          if ( $db ) {
+            MKDEBUG && _d($dbh, "USE", $db);
             $dbh->do("USE " . $q->quote($db));
          }
          my $sth = $dbh->prepare("EXPLAIN /*!50100 PARTITIONS */ $query");
@@ -4489,13 +4486,18 @@ sub format_time_range {
 }
 
 sub explain_sparkline {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $db ) = @_;
    return unless $query;
 
+   my $q   = $self->{Quoter};
    my $dbh = $self->{dbh};
    my $ex  = $self->{ExplainAnalyzer};
    return unless $dbh && $ex;
 
+   if ( $db ) {
+      MKDEBUG && _d($dbh, "USE", $db);
+      $dbh->do("USE " . $q->quote($db));
+   }
    my $res = $ex->normalize(
       $ex->explain_query(
          dbh   => $dbh,

@@ -1,6 +1,6 @@
 Changelog for mk-query-digest:
 
-   * --explain with MISC items in profile caused an error (issue 1196).
+   * EXPLAIN sparklines sometimes didn't work or caused errors (issue 1196).
    * Item column in profile was incorrectly truncated to "It" (issue 1196).
 
 2010-12-11: version 0.9.24

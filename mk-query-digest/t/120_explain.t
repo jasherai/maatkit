@@ -30,7 +30,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 4;
+   plan tests => 5;
 }
 
 my $sample = "mk-query-digest/t/samples/";
@@ -93,6 +93,23 @@ ok(
       trf => "sed 's/at [a-zA-Z\/\-]\\+ line [0-9]\\+/at line ?/'",
    ),
    'Analysis for slow007 with --explain, failed',
+);
+
+
+# #############################################################################
+# Issue 1196: mk-query-digest --explain is broken
+# #############################################################################
+$sb->load_file('master', "mk-query-digest/t/samples/issue_1196.sql");
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args,
+         '--report-format', 'profile,query_report',
+         "$trunk/mk-query-digest/t/samples/issue_1196.log",)
+      },
+      "mk-query-digest/t/samples/issue_1196-output.txt",
+   ),
+   "--explain sparkline uses event db and doesn't crash ea (issue 1196"
 );
 
 # #############################################################################
