@@ -547,20 +547,14 @@ sub event_report {
 
    # Fourth line: EXPLAIN sparkline if --explain.
    if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
-      # Sparkline might have already been created by profile is it was
-      # printed before query report.
-      my $sparkline = $store->{explain_sparkline};
-      if ( !$sparkline ) {
-         eval {
-            $sparkline = $self->explain_sparkline(
-               $results->{samples}->{$item}->{arg});
-            $store->{explain_sparkline} = $sparkline;
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
-         }
+      eval {
+         my $sparkline = $self->explain_sparkline(
+            $results->{samples}->{$item}->{arg});
+         push @result, "# EXPLAIN sparkline: $sparkline\n";
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Failed to get EXPLAIN sparkline:", $EVAL_ERROR);
       }
-      push @result, "# EXPLAIN sparkline: $sparkline\n" if $sparkline;
    }
 
    if ( my $attrib = $o->get('report-histogram') ) {
@@ -873,21 +867,14 @@ sub profile {
          apdex  => defined $query_time->{apdex} ? $query_time->{apdex} : "NS",
       ); 
 
-      # Get EXPLAIN sparkline, maybe.
+      # Get EXPLAIN sparkline if --explain.
       if ( $o->get('explain') && $samp_query ) {
-         # Sparkline might have already been created by query report is it was
-         # printed before profile.
-         my $sparkline = $stats->{explain_sparkline};
-         if ( !$sparkline ) {
-            eval {
-               $sparkline = $self->explain_sparkline($samp_query);
-               $stats->{explain_sparkline} = $sparkline;
-            };
-            if ( $EVAL_ERROR ) {
-               MKDEBUG && _d("Failed to print EXPLAIN sparkline:", $EVAL_ERROR);
-            }
+         eval {
+            $profile{explain_sparkline} = $self->explain_sparkline($samp_query);
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d("Failed to get EXPLAIN sparkline:", $EVAL_ERROR);
          }
-         $profile{explain_sparkline} = $sparkline || "";
       }
 
       push @profiles, \%profile;
