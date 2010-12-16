@@ -8,7 +8,7 @@ CREATE DATABASE d3;
 
 CREATE TABLE d1.t1 (
    i int
-) CHARSET=utf8;
+) ENGINE=MyISAM CHARSET=utf8;
 INSERT INTO d1.t1 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9);
 CREATE TABLE d1.t2 (
    c varchar(255)
