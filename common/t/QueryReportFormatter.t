@@ -1156,11 +1156,12 @@ SKIP: {
       extend_right => 1,
    );
    $qrf->set_report_formatter(report=>'profile', formatter=>$report);
+   $dbh->do("USE mysql");  # same reason as above ^; force use db from event
    ok(
       no_diff(
          sub {
             $qrf->print_reports(
-               reports => ['query_report','profile'],
+               reports => ['profile', 'query_report'],
                ea      => $ea,
                worst   => [ [$fingerprint, 'top',  1], ],
                other   => [ [$fingerprint, 'misc', 2], ],

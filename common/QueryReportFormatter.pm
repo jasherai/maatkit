@@ -870,8 +870,12 @@ sub profile {
 
       # Get EXPLAIN sparkline if --explain.
       if ( $o->get('explain') && $samp_query ) {
+         my ($default_db) = $sample->{db}       ? $sample->{db}
+                          : $stats->{db}->{unq} ? keys %{$stats->{db}->{unq}}
+                          :                       undef;
          eval {
-            $profile{explain_sparkline} = $self->explain_sparkline($samp_query);
+            $profile{explain_sparkline} = $self->explain_sparkline(
+               $samp_query, $default_db);
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d("Failed to get EXPLAIN sparkline:", $EVAL_ERROR);
