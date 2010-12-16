@@ -152,6 +152,7 @@ sub wipe_clean {
    foreach my $db ( @{$dbh->selectcol_arrayref('SHOW DATABASES')} ) {
       next if $db eq 'mysql';
       next if $db eq 'information_schema';
+      next if $db eq 'performance_schema';
       next if $db eq 'sakila';
       $dbh->do("DROP DATABASE IF EXISTS `$db`");
    }
