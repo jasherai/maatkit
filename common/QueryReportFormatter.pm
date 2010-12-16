@@ -393,6 +393,7 @@ sub query_report {
          rank    => $rank,
          reason  => $reason,
          attribs => $attribs,
+         db      => $default_db,
       );
 
       if ( $o->get('report-histogram') ) {
@@ -549,7 +550,7 @@ sub event_report {
    if ( $o->get('explain') && $results->{samples}->{$item}->{arg} ) {
       eval {
          my $sparkline = $self->explain_sparkline(
-            $results->{samples}->{$item}->{arg});
+            $results->{samples}->{$item}->{arg}, $args{db});
          push @result, "# EXPLAIN sparkline: $sparkline\n";
       };
       if ( $EVAL_ERROR ) {
@@ -1315,6 +1316,7 @@ sub explain_report {
    eval {
       if ( !$qp->has_derived_table($query) ) {
          if ( $db ) {
+            MKDEBUG && _d($dbh, "USE", $db);
             $dbh->do("USE " . $q->quote($db));
          }
          my $sth = $dbh->prepare("EXPLAIN /*!50100 PARTITIONS */ $query");
@@ -1357,13 +1359,18 @@ sub format_time_range {
 }
 
 sub explain_sparkline {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $db ) = @_;
    return unless $query;
 
+   my $q   = $self->{Quoter};
    my $dbh = $self->{dbh};
    my $ex  = $self->{ExplainAnalyzer};
    return unless $dbh && $ex;
 
+   if ( $db ) {
+      MKDEBUG && _d($dbh, "USE", $db);
+      $dbh->do("USE " . $q->quote($db));
+   }
    my $res = $ex->normalize(
       $ex->explain_query(
          dbh   => $dbh,

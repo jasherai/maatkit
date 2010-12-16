@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 42;
+use Test::More tests => 43;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1088,7 +1088,7 @@ ok(
 # EXPLAIN report
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   skip 'Cannot connect to sandbox master', 3 unless $dbh;
    $sb->load_file('master', "common/t/samples/QueryReportFormatter/table.sql");
 
    @ARGV = qw(--explain F=/tmp/12345/my.sandbox.cnf);
@@ -1137,6 +1137,20 @@ SKIP: {
       $ea->aggregate($event);
    }
    $ea->calculate_statistical_metrics();
+
+   # Make sure that explain_sparkline() does USE db like explain_report()
+   # does because by mqd defaults expalin_sparline() is called by profile()
+   # so if it doesn't USE db then the EXPLAIN will fail.  Here we reset
+   # the db to something else because we already called explain_report()
+   # above which did USE qrf.
+   $dbh->do("USE mysql");
+   my $explain_sparkline = $qrf->explain_sparkline($arg, 'qrf');
+   is(
+      $explain_sparkline,
+      "TF>aI",
+      "explain_sparkling() uses db"
+   );
+
    $report = new ReportFormatter(
       line_width   => 82,
       extend_right => 1,
