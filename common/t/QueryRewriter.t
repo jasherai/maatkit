@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 262;
+use Test::More tests => 263;
 
 use QueryRewriter;
 use QueryParser;
@@ -643,6 +643,12 @@ is(
    $qr->convert_to_select("delete ignore from tbl WHERE id=1"),
    "select * from  tbl WHERE id=1",
    "delete with IGNORE"
+);
+
+is(
+   $qr->convert_to_select("delete from file where id='ima-long-uuid-string'"),
+   "select * from  file where id='ima-long-uuid-string'",
+   "Peter's DELTE"
 );
 
 # do not convert subqueries ###################################################
