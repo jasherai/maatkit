@@ -4637,7 +4637,7 @@ sub get_secondary_index_queries {
    # struct and this would probably be correct.
    my $default_db = $args{default_db};
 
-   if ( $query !~ m/select 1 from/ ) {
+   if ( $query !~ m/select [1\*] from/ ) {
       MKDEBUG && _d("Query doesn't 'select 1 from'; is it a rewritten query?");
       return;
    }

@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * --secondary-indexes did not work for some converted DELETE statements.
+
 2010-08-01: version 1.0.20
 
    * mysqlbinlog was not killed before closing relay log file.

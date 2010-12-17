@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 5;
+   plan tests => 6;
 }
 
 my $q  = new Quoter();
@@ -82,6 +82,21 @@ is_deeply(
       "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1",
    ],
    'Secondary index queries for single-row prefetch query'
+);
+
+
+@queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh   => $dbh,
+   query => "select * from  test2.t where a='4'",
+   %common_modules,
+);
+is_deeply(
+   \@queries,
+   [
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='0' LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='0' AND `c`='0' LIMIT 1",
+   ],
+   "Secondary index queries for Peter's DELETE"
 );
 
 @queries = mk_slave_prefetch::get_secondary_index_queries(
