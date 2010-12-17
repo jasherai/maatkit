@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 use DuplicateKeyFinder;
 use Quoter;
@@ -698,6 +698,36 @@ is_deeply(
    $dupes,
    [],
    'Issue 1004'
+);
+
+# #############################################################################
+# Issue 1192: DROP/ADD leaves structure unchanged
+# #############################################################################
+$ddl   = load_file("$sample/issue-1192.sql");
+$dupes = [];
+($keys, $ck) = $tp->get_keys($ddl, $opt);
+$dk->get_duplicate_keys(
+   $keys,
+   clustered_key => $ck,
+   clustered     => 1,
+   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
+   callback      => $callback
+);
+
+is_deeply(
+   $dupes,
+   [{
+      key               => 'a',
+      cols              => ['a'],
+      ddl               => 'KEY `a` (`a`),',
+      short_key         => '`a`',
+      reason            => 'Key a ends with a prefix of the clustered index',
+      dupe_type         => 'clustered',
+      duplicate_of      => 'PRIMARY',
+      duplicate_of_cols => ['a'],
+      duplicate_of_ddl  => 'PRIMARY KEY (`a`),',
+   }],
+   'Issue 1192'
 );
 
 # #############################################################################
