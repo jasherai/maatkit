@@ -259,10 +259,10 @@ sub remove_prefix_duplicates {
    if ( $right_keys != $left_keys ) {
       # Right and left keys are different lists.
 
-      @$left_keys = sort { $a->{colnames} cmp $b->{colnames} }
+      @$left_keys = sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                     grep { defined $_; }
                     @$left_keys;
-      @$right_keys = sort { $a->{colnames} cmp $b->{colnames} }
+      @$right_keys = sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                      grep { defined $_; }
                     @$right_keys;
 
@@ -275,7 +275,7 @@ sub remove_prefix_duplicates {
    else {
       # Right and left keys are the same list.
 
-      @$left_keys = reverse sort { $a->{colnames} cmp $b->{colnames} }
+      @$left_keys = reverse sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                     grep { defined $_; }
                     @$left_keys;
       
