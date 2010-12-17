@@ -17,7 +17,7 @@ use MaatkitTest;
 
 my $o  = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>',
+   usage        => "$PROGRAM_NAME <options>",
 );
 
 isa_ok($o, 'OptionParser');
@@ -104,7 +104,7 @@ ok(
 # More exhaustive test of how the standard interface works internally.
 $o  = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 ok(!$o->has('time'), 'There is no --time yet');
 @opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_01.txt");
@@ -452,7 +452,7 @@ like(
 # #############################################################################
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t [OPTIONS]',
+   usage       => "$PROGRAM_NAME [OPTIONS]",
 );
 # These are dog opt specs. They're used by other tests below.
 $o->_parse_specs(
@@ -717,7 +717,7 @@ ok(
 
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    { spec => 'database|D=s',    desc => 'Specify the database for all tables' },
@@ -734,7 +734,7 @@ ok(
 # #############################################################################
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    { spec => 'foo',      desc => 'opt' },
@@ -759,7 +759,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    { spec => 'cat|C=s', desc => 'How to catch the cat; required' }
@@ -797,7 +797,7 @@ is(
 # #############################################################################
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    { spec => 'ignore|i',  desc => 'Use IGNORE for INSERT statements'         },
@@ -836,7 +836,7 @@ my @ird_specs = (
 
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    @ird_specs,
@@ -852,7 +852,7 @@ is_deeply(
 
 $o = new OptionParser(
    description => 'OptionParser.t parses command line options.',
-   usage       => 'OptionParser.t <options>',
+   usage       => "$PROGRAM_NAME <options>",
 );
 eval {
    $o->_parse_specs(
@@ -868,7 +868,7 @@ like(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>',
+   usage        => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    @ird_specs,
@@ -884,7 +884,7 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    @ird_specs,
@@ -900,7 +900,7 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    @ird_specs,
@@ -916,7 +916,7 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    @ird_specs,
@@ -932,7 +932,7 @@ use Data::Dumper;
 $Data::Dumper::Indent=1;
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 'foo=i', desc => 'Foo disables --bar'   },
@@ -968,7 +968,7 @@ is_deeply(
 # Option can't disable a nonexistent option.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 eval {
    $o->_parse_specs(
@@ -985,7 +985,7 @@ like(
 # Option can't 'allowed with' a nonexistent option.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 eval {
    $o->_parse_specs(
@@ -1005,7 +1005,7 @@ like(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1096,7 +1096,7 @@ is(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 'size=z', desc => 'size' }
@@ -1147,7 +1147,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 't=m', desc => 'Time'            },
@@ -1196,7 +1196,7 @@ is_deeply(
 # Use shorter, simpler specs to test usage for time blurb.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>',
+   usage        => "$PROGRAM_NAME <options>",
 );
 $o->_parse_specs(
    { spec => 'foo=m', desc => 'Time' },
@@ -1221,7 +1221,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1274,7 +1274,7 @@ ok(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1306,7 +1306,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 'columns|C=H',   desc => 'cols required'       },
@@ -1370,7 +1370,7 @@ ok(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->get_specs("$trunk/common/t/samples/pod/pod_sample_05.txt");
 
@@ -1420,7 +1420,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'user=s', desc  => 'User',                         },
@@ -1495,7 +1495,7 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
@@ -1513,7 +1513,7 @@ ok(!$o->got('config'), 'Did not got --config');
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
@@ -1530,7 +1530,7 @@ ok(
 @ARGV=qw(--config /path/to/config --cat);
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 
 $o->_parse_specs(
@@ -1552,7 +1552,7 @@ ok(
 
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
@@ -1575,7 +1575,7 @@ is_deeply(
 # And now we can actually get it to read a config file into the options!
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>',
+   usage        => "$PROGRAM_NAME <options>",
 );
 is($o->{strict}, 1, "Strict mode enabled by default");
 $o->_parse_specs(
@@ -1617,7 +1617,7 @@ is($o->get('verbose'), 2, 'Got --verbose value twice');
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 'foo=a', desc => 'foo' },
@@ -1638,7 +1638,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 eval { $o->get_specs("$trunk/common/t/samples/pod/pod_sample_06.txt"); };
 like(
@@ -1655,7 +1655,7 @@ like(
 # The problem is actually in how OptionParser handles copying DSN vals.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1694,7 +1694,7 @@ is_deeply(
 # case ii.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1765,7 +1765,7 @@ is_deeply(
 diag(`echo "iterations=4" > ~/.OptionParser.t.conf`);
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--iterations 9));
@@ -1784,7 +1784,7 @@ diag(`rm -rf ~/.OptionParser.t.conf`);
 # time type opts need to allow leading +/-
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--run-time +9));
@@ -1820,7 +1820,7 @@ is(
 # has spaces like val, val, val.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'foo=a',   desc => 'foo (default arg, cmd, ip, port)' },
@@ -1839,7 +1839,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 # Hack DSNParser into OptionParser.  This is just for testing.
 $o->{DSNParser} = $dp;
@@ -1881,7 +1881,7 @@ is_deeply(
 # Should die on circular dependency, avoid infinite loop.
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
@@ -1914,7 +1914,7 @@ throws_ok(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->_parse_specs(
    { spec  => 'foo=z',   desc => 'foo' },
@@ -1932,7 +1932,7 @@ is(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->get_specs("$trunk/common/t/samples/pod/pod_sample_dsn.txt");
 
@@ -1954,7 +1954,7 @@ like(
 # #############################################################################
 $o = new OptionParser(
    description  => 'OptionParser.t parses command line options.',
-   usage        => 'OptionParser.t <options>'
+   usage        => "$PROGRAM_NAME <options>"
 );
 $o->get_specs("$trunk/mk-table-checksum/mk-table-checksum");
 @ARGV = ();
