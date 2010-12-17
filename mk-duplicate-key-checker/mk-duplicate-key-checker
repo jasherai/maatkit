@@ -2401,7 +2401,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 5798
+# DuplicateKeyFinder package 7147
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DuplicateKeyFinder.pm
@@ -2563,10 +2563,10 @@ sub remove_prefix_duplicates {
 
    if ( $right_keys != $left_keys ) {
 
-      @$left_keys = sort { $a->{colnames} cmp $b->{colnames} }
+      @$left_keys = sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                     grep { defined $_; }
                     @$left_keys;
-      @$right_keys = sort { $a->{colnames} cmp $b->{colnames} }
+      @$right_keys = sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                      grep { defined $_; }
                     @$right_keys;
 
@@ -2576,7 +2576,7 @@ sub remove_prefix_duplicates {
    }
    else {
 
-      @$left_keys = reverse sort { $a->{colnames} cmp $b->{colnames} }
+      @$left_keys = reverse sort { lc($a->{colnames}) cmp lc($b->{colnames}) }
                     grep { defined $_; }
                     @$left_keys;
       
