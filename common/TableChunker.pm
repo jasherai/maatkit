@@ -46,21 +46,14 @@ package TableChunker;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-use POSIX qw(ceil);
+use POSIX qw(floor ceil);
 use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-my $EPOCH      = '1970-01-01';
-my %int_types  = map { $_ => 1 }
-   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
-my %real_types = map { $_ => 1 }
-   qw(decimal double float);
 
 # Sub: new
 #
@@ -76,7 +69,17 @@ sub new {
    foreach my $arg ( qw(Quoter MySQLDump) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $self = { %args };
+
+   my %int_types  = map { $_ => 1 } qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
+   my %real_types = map { $_ => 1 } qw(decimal double float);
+
+   my $self = {
+      %args,
+      int_types  => \%int_types,
+      real_types => \%real_types,
+      EPOCH      => '1970-01-01',
+   };
+
    return bless $self, $class;
 }
 
@@ -117,7 +120,7 @@ sub find_chunk_columns {
       next unless $index->{type} eq 'BTREE';
 
       # Reject indexes with prefixed columns.
-      defined $_ && next for @{ $index->{col_prefixes} };
+      next if grep { defined } @{$index->{col_prefixes}};
 
       # If exact, accept only unique, single-column indexes.
       if ( $args{exact} ) {
@@ -135,9 +138,11 @@ sub find_chunk_columns {
    foreach my $index ( @possible_indexes ) { 
       my $col = $index->{cols}->[0];
 
-      # Accept only integer or real number type columns.
-      next unless ( $int_types{$tbl_struct->{type_for}->{$col}}
-                    || $real_types{$tbl_struct->{type_for}->{$col}} );
+      # Accept only integer or real number type columns or character columns.
+      my $col_type = $tbl_struct->{type_for}->{$col};
+      next unless $self->{int_types}->{$col_type}
+               || $self->{real_types}->{$col_type}
+               || $col_type =~ m/char/;
 
       # Save the candidate column and its index.
       push @candidate_cols, { column => $col, index => $index->{name} };
@@ -194,7 +199,6 @@ sub find_chunk_columns {
 #   rows_in_range - number of rows to chunk, from
 #                   <TableChunker::get_range_statistics()>
 #   chunk_size    - requested size of each chunk
-#   zero_chunk    - add an extra chunk for zero values? (0, 00:00, etc.)
 #
 # Optional Arguments:
 #   exact        - Use exact chunk_size? Use approximates is not.
@@ -233,26 +237,162 @@ sub calculate_chunks {
       return '1=1';
    }
 
-   my ($dbh, $db, $tbl) = @args{@required_args};
-   my $q        = $self->{Quoter};
-   my $db_tbl   = $q->quote($db, $tbl);
-   my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
+   my $q          = $self->{Quoter};
+   my $dbh        = $args{dbh};
+   my $chunk_col  = $args{chunk_col};
+   my $tbl_struct = $args{tbl_struct};
+   my $col_type   = $tbl_struct->{type_for}->{$chunk_col};
    MKDEBUG && _d('chunk col type:', $col_type);
+
+   # Get chunker info for the column type.  Numeric cols are chunked
+   # differently than char cols.
+   my %chunker;
+   if ( $tbl_struct->{is_numeric}->{$chunk_col} || $col_type =~ /date|time/ ) {
+      %chunker = $self->_chunk_numeric(%args);
+   }
+   elsif ( $col_type =~ m/char/ ) {
+      %chunker = $self->_chunk_char(%args);
+   }
+   else {
+      die "Cannot chunk $col_type columns";
+   }
+   MKDEBUG && _d("Chunker:", Dumper(\%chunker));
+   my ($col, $start_point, $end_point, $interval, $range_func)
+      = @chunker{qw(col start_point end_point interval range_func)};
+
+   # Generate a list of chunk boundaries.  The first and last chunks are
+   # inclusive, and will catch any rows before or after the end of the
+   # supposed range.  So 1-100 divided into chunks of 30 should actually end
+   # up with chunks like this:
+   #           < 30
+   # >= 30 AND < 60
+   # >= 60 AND < 90
+   # >= 90
+   # If zero_chunk was specified and zero chunking was possible, the first
+   # chunk will be = 0 to catch any zero or zero-equivalent (e.g. 00:00:00)
+   # rows.
+   my @chunks;
+   if ( $start_point < $end_point ) {
+
+      # The zero chunk, if there is one.  It doesn't have to be the first
+      # chunk.  The 0 cannot be quoted because if d='0000-00-00' then
+      # d=0 will work but d='0' will cause warning 1292: Incorrect date
+      # value: '0' for column 'd'.  This might have to column-specific in
+      # future when we chunk on more exotic column types.
+      push @chunks, "$col = 0" if $chunker{have_zero_chunk};
+
+      my ($beg, $end);
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ($beg, $end) = $self->$range_func($dbh, $i, $interval, $end_point);
+
+         # The first chunk.
+         if ( $iter++ == 0 ) {
+            push @chunks,
+               ($chunker{have_zero_chunk} ? "$col > 0 AND " : "")
+               ."$col < " . $q->quote_val($end);
+         }
+         else {
+            # The normal case is a chunk in the middle of the range somewhere.
+            push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
+         }
+      }
+
+      # Remove the last chunk and replace it with one that matches everything
+      # from the beginning of the last chunk to infinity, or to the max col
+      # value if closed_range is true.  If the chunk column is nullable, do
+      # NULL separately.
+      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $q->quote_val($beg)
+            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
+                                   : "");
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+   }
+   else {
+      # There are no chunks; just do the whole table in one chunk.
+      MKDEBUG && _d('No chunks; using single chunk 1=1');
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+# Sub: _chunk_numeric
+#   Determine how to chunk a numeric column.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh           - dbh
+#   db            - database name
+#   tbl           - table name
+#   tbl_struct    - retval of <TableParser::parse()>
+#   chunk_col     - column name to chunk on
+#   min           - min col value, from <TableChunker::get_range_statistics()>
+#   max           - max col value, from <TableChunker::get_range_statistics()>
+#   rows_in_range - number of rows to chunk, from
+#                   <TableChunker::get_range_statistics()>
+#   chunk_size    - requested size of each chunk
+#
+# Optional Arguments:
+#   exact      - Use exact chunk_size? Use approximates is not.
+#   tries      - Fetch up to this many rows to find a non-zero value
+#   zero_chunk - Add an extra chunk for zero values? (0, 00:00, etc.)
+#
+# Returns:
+#   Array of chunker info that <calculate_chunks()> uses to create
+#   chunks, like:
+#   (start code)
+#   col             => quoted chunk column name
+#   start_point     => start value (a Perl number)
+#   end_point       => end value (a Perl number)
+#   interval        => interval to walk from start_ to end_point (a Perl number)
+#   range_func      => coderef to return a value while walking that ^ range
+#   have_zero_chunk => whether to include a zero chunk (col=0)
+#   (end code)
+sub _chunk_numeric {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $q        = $self->{Quoter};
+   my $db_tbl   = $q->quote($args{db}, $args{tbl});
+   my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
 
    # Convert the given MySQL values to (Perl) numbers using some MySQL function.
    # E.g.: SELECT TIME_TO_SEC('12:34') == 45240.  
-   my $range_func = $self->range_func_for($col_type);
+   my $range_func;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      $range_func  = "range_$col_type";
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $range_func  = 'range_datetime';
+   }
+
    my ($start_point, $end_point);
    eval {
       $start_point = $self->value_to_number(
          value       => $args{min},
          column_type => $col_type,
-         dbh         => $dbh,
+         dbh         => $args{dbh},
       );
       $end_point  = $self->value_to_number(
          value       => $args{max},
          column_type => $col_type,
-         dbh         => $dbh,
+         dbh         => $args{dbh},
       );
    };
    if ( $EVAL_ERROR ) {
@@ -315,7 +455,7 @@ sub calculate_chunks {
          $start_point = $self->value_to_number(
             value       => $nonzero_val,
             column_type => $col_type,
-            dbh         => $dbh,
+            dbh         => $args{dbh},
          );
          $have_zero_chunk = 1;
       }
@@ -332,7 +472,7 @@ sub calculate_chunks {
    my $interval = $args{chunk_size}
                 * ($end_point - $start_point)
                 / $args{rows_in_range};
-   if ( $int_types{$col_type} ) {
+   if ( $self->{int_types}->{$col_type} ) {
       $interval = ceil($interval);
    }
    $interval ||= $args{chunk_size};
@@ -341,84 +481,203 @@ sub calculate_chunks {
    }
    MKDEBUG && _d('Chunk interval:', $interval, 'units');
 
-   # Generate a list of chunk boundaries.  The first and last chunks are
-   # inclusive, and will catch any rows before or after the end of the
-   # supposed range.  So 1-100 divided into chunks of 30 should actually end
-   # up with chunks like this:
-   #           < 30
-   # >= 30 AND < 60
-   # >= 60 AND < 90
-   # >= 90
-   # If zero_chunk was specified and zero chunking was possible, the first
-   # chunk will be = 0 to catch any zero or zero-equivalent (e.g. 00:00:00)
-   # rows.
-   my @chunks;
-   my $col = $q->quote($args{chunk_col});
-   if ( $start_point < $end_point ) {
-
-      # The zero chunk, if there is one.  It doesn't have to be the first
-      # chunk.  The 0 cannot be quoted because if d='0000-00-00' then
-      # d=0 will work but d='0' will cause warning 1292: Incorrect date
-      # value: '0' for column 'd'.  This might have to column-specific in
-      # future when we chunk on more exotic column types.
-      push @chunks, "$col = 0" if $have_zero_chunk;
-
-      my ( $beg, $end );
-      my $iter = 0;
-      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
-         ( $beg, $end ) = $self->$range_func($dbh, $i, $interval, $end_point);
-
-         # The first chunk.
-         if ( $iter++ == 0 ) {
-            push @chunks,
-               ($have_zero_chunk ? "$col > 0 AND " : "")
-               ."$col < " . $q->quote_val($end);
-         }
-         else {
-            # The normal case is a chunk in the middle of the range somewhere.
-            push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
-         }
-      }
-
-      # Remove the last chunk and replace it with one that matches everything
-      # from the beginning of the last chunk to infinity, or to the max col
-      # value if closed_range is true.  If the chunk column is nullable, do
-      # NULL separately.
-      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
-      pop @chunks;
-      if ( @chunks ) {
-         push @chunks, "$col >= " . $q->quote_val($beg)
-            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
-                                   : "");
-      }
-      else {
-         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
-      }
-      if ( $nullable ) {
-         push @chunks, "$col IS NULL";
-      }
-   }
-   else {
-      # There are no chunks; just do the whole table in one chunk.
-      MKDEBUG && _d('No chunks; using single chunk 1=1');
-      push @chunks, '1=1';
-   }
-
-   return @chunks;
+   return (
+      col             => $q->quote($args{chunk_col}),
+      start_point     => $start_point,
+      end_point       => $end_point,
+      interval        => $interval,
+      range_func      => $range_func,
+      have_zero_chunk => $have_zero_chunk,
+   );
 }
 
-# Arguments:
-#   * tbl_struct  hashref: return val from TableParser::parse()
+# Sub: _chunk_numeric
+#   Determine how to chunk a character column.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh           - dbh
+#   db            - database name
+#   tbl           - table name
+#   tbl_struct    - retval of <TableParser::parse()>
+#   chunk_col     - column name to chunk on
+#   min           - min col value, from <TableChunker::get_range_statistics()>
+#   max           - max col value, from <TableChunker::get_range_statistics()>
+#   rows_in_range - number of rows to chunk, from
+#                   <TableChunker::get_range_statistics()>
+#   chunk_size    - requested size of each chunk
+#
+# Returns:
+#   Array of chunker info that <calculate_chunks()> uses to create
+#   chunks, like:
+#   (start code)
+#   col             => quoted chunk column name
+#   start_point     => start value (a Perl number)
+#   end_point       => end value (a Perl number)
+#   interval        => interval to walk from start_ to end_point (a Perl number)
+#   range_func      => coderef to return a value while walking that ^ range
+#   (end code)
+sub _chunk_char {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $q         = $self->{Quoter};
+   my $db_tbl    = $q->quote($args{db}, $args{tbl});
+   my $dbh       = $args{dbh};
+   my $chunk_col = $args{chunk_col};
+   my $row;
+   my $sql;
+
+   # Get what MySQL says are the min and max column values.
+   # For example, is 'a' or 'A' the min according to MySQL?
+   $sql = "SELECT MIN($chunk_col), MAX($chunk_col) FROM $db_tbl "
+        . "ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   $row = $dbh->selectrow_arrayref($sql);
+   my ($min_col, $max_col) = ($row->[0], $row->[1]);
+
+   # Get the min and max string lengths in the column.  The max is used later.
+   $sql = "SELECT MIN(LENGTH($chunk_col)), MAX(LENGTH($chunk_col)) "
+        . "FROM $db_tbl ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   $row = $dbh->selectrow_arrayref($sql);
+   my ($min_col_len, $max_col_len) = ($row->[0], $row->[1]);
+
+   # Get the character codes between the min and max column values.
+   $sql = "SELECT ORD(?) AS min_col_ord, ORD(?) AS max_col_ord";
+   MKDEBUG && _d($dbh, $sql);
+   my $ord_sth = $dbh->prepare($sql);  # avoid quoting issues
+   $ord_sth->execute($min_col, $max_col);
+   $row = $ord_sth->fetchrow_arrayref();
+   my ($min_col_ord, $max_col_ord) = ($row->[0], $row->[1]);
+
+   MKDEBUG && _d("Min column, length, ord:",$min_col,$min_col_len,$min_col_ord);
+   MKDEBUG && _d("Max column, length, ord:",$max_col,$max_col_len,$max_col_ord);
+
+   # Populate a temp table with all the characters between the min and max
+   # max character codes.  This is our char-to-number map.
+   my $tmp_tbl    = '__maatkit_char_chunking_map';
+   my $tmp_db_tbl = $q->quote($args{db}, $tmp_tbl);
+   $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
+   MKDEBUG && _d($dbh, $sql);
+   $dbh->do($sql);
+   
+   my $col_def = $args{tbl_struct}->{defs}->{$chunk_col};
+   $sql        = "CREATE TEMPORARY TABLE $tmp_db_tbl ($col_def) ENGINE=MEMORY";
+   MKDEBUG && _d($dbh, $sql);
+   $dbh->do($sql);
+
+   $sql = "INSERT INTO $tmp_db_tbl VALUE (CHAR(?))";
+   MKDEBUG && _d($dbh, $sql);
+   my $ins_char_sth = $dbh->prepare($sql);  # avoid quoting issues
+   for my $char_code ( $min_col_ord..$max_col_ord ) {
+      $ins_char_sth->execute($char_code);
+   }
+
+   # Select from the char-to-number map all characters between the
+   # min and max col values, letting MySQL order them.  The first
+   # character returned becomes "zero" in a new base system of counting,
+   # the second character becomes "one", etc.  So if 42 chars are
+   # returned like [a, B, c, d, é, ..., ü] then we have a base 42
+   # system where 0=a, 1=B, 2=c, 3=d, 4=é, ... 41=ü.  count_base()
+   # helps us count in arbitrary systems.
+   $sql = "SELECT `$chunk_col` FROM $tmp_db_tbl "
+        . "WHERE `$chunk_col` BETWEEN ? AND ? "
+        . "ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   my $sel_char_sth = $dbh->prepare($sql);
+   $sel_char_sth->execute($min_col, $max_col);
+   my @chars = map { $_->[0] } @{ $sel_char_sth->fetchall_arrayref() };
+   my $base  = scalar @chars;
+   MKDEBUG && _d("Base", $base, "chars:", @chars);
+
+   $sql = "DROP TABLE $tmp_db_tbl";
+   MKDEBUG && _d($dbh, $sql);
+   $dbh->do($sql);
+
+   # Now we begin calculating how to chunk the char column.  This is
+   # completely from _chunk_numeric because we're not dealing with the
+   # values to chunk directly (the characters) but rather a map.
+
+   # In our base system, how many values can 1, 2, etc. characters express?
+   # E.g. in a base 26 system (a-z), 1 char expresses 26^1=26 chars (a-z),
+   # 2 chars expresses 26^2=676 chars.  If the requested chunk size is 100,
+   # then 1 char might not express enough values, but 2 surely can.  This
+   # is imperefect because we don't know if we have data like: [apple, boy,
+   # car] (i.e. values evenly distributed across the range of chars), or
+   # [ant, apple, azur, boy].  We assume data is more evenly distributed
+   # than not so we use the minimum number of characters to express a chunk
+   # size.
+   my $n_values;
+   for my $n_chars ( 1..$max_col_len ) {
+      $n_values = $base**$n_chars;
+      if ( $n_values >= $args{chunk_size} ) {
+         MKDEBUG && _d($n_chars, "chars in base", $base, "expresses",
+            $n_values, "values");
+         last;
+      }
+   }
+
+   # Our interval is not like a _chunk_numeric() interval, either, because
+   # we don't increment in the actual values (i.e. the characters) but rather
+   # in the char-to-number map.  If the above calculation found that 1 char
+   # expressed enough values for 1 chunk, then each char in the map will
+   # yield roughly one chunk of values, so the interval is 1.  Or, if we need
+   # 2 chars to express enough vals for 1 chunk, then we'll increment through
+   # the map 2 chars at a time, like [a,b], [c, d], etc.
+   my $n_chunks = $args{rows_in_range} / $args{chunk_size};
+   my $interval = floor($n_values / $n_chunks) || 1;
+
+   my $range_func = sub {
+      my ( $self, $dbh, $start, $interval, $max ) = @_;
+      my $start_char = $self->base_count(
+         count_to => $start,
+         base     => $base,
+         symbols  => \@chars,
+      );
+      my $end_char = $self->base_count(
+         count_to => min($max, $start + $interval),
+         base     => $base,
+         symbols  => \@chars,
+      );
+      return $start_char, $end_char;
+   };
+
+   return (
+      col         => $q->quote($chunk_col),
+      start_point => 0,
+      end_point   => $n_values,
+      interval    => $interval,
+      range_func  => $range_func,
+   );
+}
+
+# Sub: get_first_chunkable_column
+#   Get the first chunkable column in a table.
+#   Only a "sane" column/index is returned.  That means that
+#   the first auto-detected chunk col/index are used if any combination of
+#   preferred chunk col or index would be really bad, like chunk col=x
+#   and chunk index=some index over (y, z).  That's bad because the index
+#   doesn't include the column; it would also be bad if the column wasn't
+#   a left-most prefix of the index.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   tbl_struct - Hashref returned by <TableParser::parse()>
+#
 # Optional arguments:
-#   * chunk_column  scalar: preferred chunkable column name
-#   * chunk_index   scalar: preferred chunkable column index name
-#   * exact         bool: passed to find_chunk_columns()
-# Returns the first sane chunkable column and index.  "Sane" means that
-# the first auto-detected chunk col/index are used if any combination of
-# preferred chunk col or index would be really bad, like chunk col=x
-# and chunk index=some index over (y, z).  That's bad because the index
-# doesn't include the column; it would also be bad if the column wasn't
-# a left-most prefix of the index.
+#   chunk_column - Preferred chunkable column name
+#   chunk_index  - Preferred chunkable column index name
+#   exact        - bool: passed to <find_chunk_columns()>
+#
+# Returns:
+#   List: chunkable column name, chunkable colum index
 sub get_first_chunkable_column {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
@@ -482,11 +741,23 @@ sub get_first_chunkable_column {
    return $col, $idx;
 }
 
-# Convert a size in rows or bytes to a number of rows in the table, using SHOW
-# TABLE STATUS.  If the size is a string with a suffix of M/G/k, interpret it as
-# mebibytes, gibibytes, or kibibytes respectively.  If it's just a number, treat
-# it as a number of rows and return right away.
-# Returns an array: number of rows, average row size.
+# Sub: size_to_rows
+#   Convert a size in rows or bytes to a number of rows in the table,
+#   using SHOW TABLE STATUS.  If the size is a string with a suffix of M/G/k,
+#   interpret it as mebibytes, gibibytes, or kibibytes respectively.
+#   If it's just a number, treat it as a number of rows and return right away.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh        - dbh
+#   db         - Database name
+#   tbl        - Table name
+#   chunk_size - Chunk size string like "1000" or "50M"
+#
+# Returns:
+#   Array: number of rows, average row size
 sub size_to_rows {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db tbl chunk_size);
@@ -524,21 +795,26 @@ sub size_to_rows {
    return $n_rows, $avg_row_length;
 }
 
-# Determine the range of values for the chunk_col column on this table.
-# Arguments:
-#   * dbh        dbh
-#   * db         scalar: database name
-#   * tbl        scalar: table name
-#   * chunk_col  scalar: column name to chunk on
-#   * tbl_struct hashref: retval of TableParser::parse()
+# Sub: get_range_statistics
+#   Determine the range of values for the chunk_col column on this table.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   dbh        - dbh
+#   db         - Database name
+#   tbl        - Table name
+#   chunk_col  - Chunk column name
+#   tbl_struct - Hashref returned by <TableParser::parse()>
+#
 # Optional arguments:
-#   * where      scalar: WHERE clause without "WHERE" to restrict range
-#   * index_hint scalar: "FORCE INDEX (...)" clause
-#   * tries      scalar: fetch up to this many rows to find a valid value
-# Returns an array:
-#   * min row value
-#   * max row values
-#   * rows in range (given optional where)
+#   where      - WHERE clause without "WHERE" to restrict range
+#   index_hint - "FORCE INDEX (...)" clause
+#   tries      - Fetch up to this many rows to find a valid value
+#
+# Returns:
+#   Array: min row value, max row value, rows in range 
 sub get_range_statistics {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db tbl chunk_col tbl_struct);
@@ -602,8 +878,26 @@ sub get_range_statistics {
    );
 }
 
-# Takes a query prototype and fills in placeholders.  The 'where' arg should be
-# an arrayref of WHERE clauses that will be joined with AND.
+# Sub: inject_chunks
+#   Create a SQL statement from a query prototype by filling in placeholders.
+# 
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   database  - Database name
+#   table     - Table name
+#   chunks    - Arrayref of chunks from <calculate_chunks()>
+#   chunk_num - Index into chunks to use
+#   query     - Query prototype returned by
+#               <TableChecksum::make_checksum_query()>
+#
+# Optional Arguments:
+#   index_hint - "FORCE INDEX (...)" clause
+#   where      - Arrayref of WHERE clauses joined with AND
+#
+# Returns:
+#   A SQL statement
 sub inject_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(database table chunks chunk_num query) ) {
@@ -696,22 +990,6 @@ sub value_to_number {
    return $num;
 }
 
-sub range_func_for {
-   my ( $self, $col_type ) = @_;
-   return unless $col_type;
-   my $range_func;
-   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-      $range_func  = 'range_num';
-   }
-   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
-      $range_func  = "range_$col_type";
-   }
-   elsif ( $col_type eq 'datetime' ) {
-      $range_func  = 'range_datetime';
-   }
-   return $range_func;
-}
-
 # ###########################################################################
 # Range functions.
 # ###########################################################################
@@ -754,8 +1032,8 @@ sub range_date {
 
 sub range_datetime {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
-       . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
+   my $sql = "SELECT DATE_ADD('$self->{EPOCH}', INTERVAL $start SECOND), "
+       . "DATE_ADD('$self->{EPOCH}', INTERVAL LEAST($max, $start + $interval) SECOND)";
    MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
@@ -767,7 +1045,7 @@ sub range_timestamp {
    return $dbh->selectrow_array($sql);
 }
 
-# Returns the number of seconds between $EPOCH and the value, according to
+# Returns the number of seconds between EPOCH and the value, according to
 # the MySQL server.  (The server can do no wrong).  I believe this code is right
 # after looking at the source of sql/time.cc but I am paranoid and add in an
 # extra check just to make sure.  Earlier versions overflow on large interval
@@ -777,10 +1055,10 @@ sub range_timestamp {
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
    my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
-      . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+      . "- TO_DAYS('$self->{EPOCH} 00:00:00') * 86400";
    MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
-   $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+   $sql = "SELECT DATE_ADD('$self->{EPOCH}', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
@@ -1037,6 +1315,56 @@ sub get_nonzero_value {
    }
 
    return $val;
+}
+
+# Sub: base_count
+#   Count to any number in any base with the given symbols.  E.g. if counting
+#   to 10 in base 16 with symbols 0,1,2,3,4,5,6,7,8,9,a,b,c,d,e,f the result
+#   is "a".  This is trival for stuff like base 16 (hex), but far less trivial
+#   for arbitrary bases with arbitrary symbols like base 25 with symbols
+#   B,C,D,...X,Y,Z.  For that, counting to 10 results in "L".  The base and its
+#   symbols are determined by the character column.  Symbols can be non-ASCII.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   count_to - Number to count to
+#   base     - Base of special system
+#   symbols  - Arrayref of symbols for "numbers" in special system
+#
+# Returns:
+#   The "number" (symbol) in the special target base system
+sub base_count {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(count_to base symbols);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($n, $base, $symbols) = @args{@required_args};
+
+   # Can't take log of zero and the zeroth symbol in any base is the
+   # zeroth symbol in any other base.
+   return $symbols->[0] if $n == 0;
+
+   my $highest_power = floor(log($n)/log($base));
+   if ( $highest_power == 0 ){
+      return $symbols->[$n];
+   }
+
+   my @base_powers;
+   for my $power ( 0..$highest_power ) {
+      push @base_powers, ($base**$power) || 1;  
+   }
+
+   my @base_multiples;
+   foreach my $base_power ( reverse @base_powers ) {
+      my $multiples = floor($n / $base_power);
+      push @base_multiples, $multiples;
+      $n -= $multiples * $base_power;
+   }
+
+   return join('', map { $symbols->[$_] } @base_multiples);
 }
 
 sub _d {

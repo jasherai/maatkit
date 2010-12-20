@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 77;
+   plan tests => 86;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -43,6 +43,7 @@ is_deeply(
    [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
      { column => 'film_id', index => 'PRIMARY' },
+     { column => 'title', index => 'idx_title' },
      { column => 'language_id', index => 'idx_fk_language_id' },
      { column => 'original_language_id',
        index => 'idx_fk_original_language_id' },
@@ -78,6 +79,7 @@ is_deeply(
    [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
      { column => 'film_id', index => 'PRIMARY' },
+     { column => 'title', index => 'idx_title' },
      { column => 'language_id', index => 'idx_fk_language_id' },
      { column => 'original_language_id',
         index => 'idx_fk_original_language_id' },
@@ -976,6 +978,51 @@ is_deeply(
    "get_first_chunkable_column(), no chunkable columns"
 );
 
+# char chunking ###############################################################
+$sb->load_file('master', "common/t/samples/char-chunking/ascii.sql", 'test');
+$t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'ascii') );
+
+is_deeply(
+   [ $c->find_chunk_columns(tbl_struct=>$t) ],
+   [ 0,
+     { column => 'i', index => 'PRIMARY' },
+     { column => 'c', index => 'c'       },
+   ],
+   "Finds character column as a chunkable column"
+);
+
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t) ],
+   ['i', 'PRIMARY'],
+   "get_first_chunkable_column(), prefers PK over char col"
+);
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t, chunk_column=>'c') ],
+   ['c', 'c'],
+   "get_first_chunkable_column(), char col as preferred chunk col"
+);
+is_deeply(
+   [ $c->get_first_chunkable_column(tbl_struct=>$t, chunk_index=>'c') ],
+   ['c', 'c'],
+   "get_first_chunkable_column(), char col as preferred chunk index"
+);
+
+%params = $c->get_range_statistics(
+   dbh        => $dbh,
+   db         => 'test',
+   tbl        => 'ascii',
+   chunk_col  => 'c',
+   tbl_struct => $t,
+);
+is_deeply(
+   \%params,
+   {
+      min           => '',
+      max           => 'ZESUS!!!',
+      rows_in_range => '142',
+   },
+   "Range stats on character column"
+);
 
 # #############################################################################
 # Issue 1082: mk-table-checksum dies on single-row zero-pk table
@@ -1050,6 +1097,105 @@ chunk_it(
    zero_chunk => 1,
    chunks     => [qw(1=1)],
    msg        => 'Single zero row'
+);
+
+# #############################################################################
+# Issue 568: char chunking
+# #############################################################################
+$sb->load_file('master', "common/t/samples/char-chunking/world-city.sql", 'test');
+
+sub count_rows {
+   my ( $db_tbl, $col, @chunks ) = @_;
+   my $total_rows = 0;
+   foreach my $chunk ( @chunks ) {
+      my $sql    = "SELECT $col FROM $db_tbl WHERE ($chunk) ORDER BY $col";
+      my $rows   = $dbh->selectall_arrayref($sql);
+      my $n_rows = scalar @$rows;
+      $total_rows += $n_rows;
+   }
+   return $total_rows;
+}
+
+SKIP: {
+   skip 'Sandbox master does not have the sakila database', 1
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+
+   my @chunks;
+
+   $t = $p->parse( $du->get_create_table($dbh, $q, 'sakila', 'city') );
+   @chunks = $c->calculate_chunks(
+      tbl_struct    => $t,
+      chunk_col     => 'city',
+      min           => 'A Corua (La Corua)',
+      max           => 'Ziguinchor',
+      rows_in_range => 428,
+      chunk_size    => 20,
+      dbh           => $dbh,
+      db            => 'sakila',
+      tbl           => 'city',
+   );
+   is_deeply(
+      \@chunks,
+      [
+         "`city` < 'C'",
+         "`city` >= 'C' AND `city` < 'D'",
+         "`city` >= 'D' AND `city` < 'E'",
+         "`city` >= 'E' AND `city` < 'F'",
+         "`city` >= 'F' AND `city` < 'G'",
+         "`city` >= 'G' AND `city` < 'H'",
+         "`city` >= 'H' AND `city` < 'I'",
+         "`city` >= 'I' AND `city` < 'J'",
+         "`city` >= 'J' AND `city` < 'K'",
+         "`city` >= 'K' AND `city` < 'L'",
+         "`city` >= 'L' AND `city` < 'M'",
+         "`city` >= 'M' AND `city` < 'N'",
+         "`city` >= 'N' AND `city` < 'O'",
+         "`city` >= 'O' AND `city` < 'P'",
+         "`city` >= 'P' AND `city` < 'Q'",
+         "`city` >= 'Q' AND `city` < 'R'",
+         "`city` >= 'R' AND `city` < 'S'",
+         "`city` >= 'S' AND `city` < 'T'",
+         "`city` >= 'T' AND `city` < 'U'",
+         "`city` >= 'U' AND `city` < 'V'",
+         "`city` >= 'V' AND `city` < 'W'",
+         "`city` >= 'W' AND `city` < 'X'",
+         "`city` >= 'X' AND `city` < 'Y'",
+         "`city` >= 'Y' AND `city` < 'Z'",
+         "`city` >= 'Z'",
+      ],
+      "Char chunk sakila.city.city"
+   );
+
+   my $n_rows = count_rows("sakila.city", "city", @chunks);
+   is(
+      $n_rows,
+      600,
+      "sakila.city.city chunks select exactly 600 rows"
+   );
+}
+
+$t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'world_city') );
+@chunks = $c->calculate_chunks(
+   tbl_struct    => $t,
+   chunk_col     => 'name',
+   min           => 'A Coruña (La Coruña)',
+   max           => '´s-Hertogenbosch',
+   rows_in_range => 4079,
+   chunk_size    => 500,
+   dbh           => $dbh,
+   db            => 'test',
+   tbl           => 'world_city',
+);
+ok(
+   @chunks >= 9,
+   "At least 9 char chunks on test.world_city.name"
+);
+
+my $n_rows = count_rows("test.world_city", "name", @chunks);
+is(
+   $n_rows,
+   4079,
+   "test.world_city.name chunks select exactly 4,079 rows"
 );
 
 # #############################################################################
