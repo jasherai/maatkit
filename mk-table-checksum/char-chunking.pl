@@ -1595,10 +1595,18 @@ my $dp  = $o->DSNParser();
 my $dsn = $dp->parse(shift @ARGV);
 my $dbh = get_cxn($dp, $o, $dsn);
 
+
+# #############################################################################
+# Load the plugin.
+# #############################################################################
+my $plugin_name = $o->get('plugin');
+eval "require $plugin_name";
+die $EVAL_ERROR if $EVAL_ERROR;
+my $plugin = $plugin_name->new();
+
 # #############################################################################
 # Get char col info to pass to the plugin.
 # #############################################################################
-
 my ($db, $tbl, $col) = split /\./, $o->get('chunk-column');
 print "Char chunking $db.$tbl on $col\n";
 
@@ -1634,44 +1642,69 @@ my ($min_col_ord, $max_col_ord) = ($row[0]->[0], $row[0]->[1]);
 print "min col ord: $min_col_ord\n";
 print "max col ord: $max_col_ord\n";
 
-# You can comment this block out if you didn't reload the table (above)
-eval {
-   $dbh->do("truncate table $db.unique_characters");
-};
-if ( $EVAL_ERROR && $EVAL_ERROR =~ m/exist/ ) {
-   print "Creating table $db.unique_characters\n";
-   $dbh->do("create table $db.unique_characters (`c` char(1) NOT NULL, UNIQUE KEY `c` (`c`))");
-}
-my $ins = $dbh->prepare("insert into $db.unique_characters value (CHAR(?))");
-for my $ord ( $min_col_ord..$max_col_ord ) {
+
+# #############################################################################
+# Determine the character maps (chars) and base (number of chars).
+# #############################################################################
+my @chars;
+my $base;
+
+eval { $plugin->char_map() };
+if ( $EVAL_ERROR ) {
+   print "Using built-in char_map() method... ($EVAL_ERROR)\n";
+
+   # You can comment this block out if you didn't reload the table (above)
    eval {
-      $ins->execute($ord);
+      $dbh->do("truncate table $db.unique_characters");
    };
-   # DBI dies when MySQL warns about a duplicate key, like A=a
-   # warn $EVAL_ERROR if $EVAL_ERROR;
+   if ( $EVAL_ERROR && $EVAL_ERROR =~ m/exist/ ) {
+      print "Creating table $db.unique_characters\n";
+      $dbh->do("create table $db.unique_characters (`c` char(1) NOT NULL, UNIQUE KEY `c` (`c`))");
+   }
+   my $ins = $dbh->prepare("insert into $db.unique_characters value (CHAR(?))");
+   for my $ord ( $min_col_ord..$max_col_ord ) {
+      eval {
+         $ins->execute($ord);
+      };
+      # DBI dies when MySQL warns about a duplicate key, like A=a
+      # warn $EVAL_ERROR if $EVAL_ERROR;
+   }
+
+   # Use prepared statement so we don't have to quote/escape the values.
+   my $sql = "SELECT c FROM $db.unique_characters WHERE c BETWEEN ? AND ? ORDER BY c";
+   my $sth = $dbh->prepare($sql);
+   $sth->execute($min_col, $max_col);
+   
+   @chars = map { $_->[0] } @{ $sth->fetchall_arrayref() };
+   $base  = scalar @chars;
+}
+else {
+   print "Calling plugin's char_map() method...\n";
+   ($base, @chars) = $plugin->char_map(
+      dbh            => $dbh,
+      db             => $db,
+      tbl            => $tbl,
+      col            => $col,
+      chunk_size     => $chunk_size,
+      rows_in_range  => $rows_in_range,
+      n_chunks       => $n_chunks,
+      min_col        => $min_col,
+      max_col        => $max_col,
+      min_col_len    => $min_col_len,
+      max_col_len    => $max_col_len,
+      min_col_ord    => $min_col_ord,
+      max_col_ord    => $max_col_ord,
+   );
 }
 
-# Use prepared statement so we don't have to quote/escape the values.
-my $sql = "SELECT c FROM $db.unique_characters WHERE c BETWEEN ? AND ? ORDER BY c";
-my $sth = $dbh->prepare($sql);
-$sth->execute($min_col, $max_col);
-my @chars = map { $_->[0] } @{ $sth->fetchall_arrayref() };
 my $char_no = 0;
 print "chars: " . join(" ", map {$char_no++ . ":$_"} @chars) . "\n";
 die "No unique characters" unless @chars;
-
-my $base = scalar @chars;
 print "base: $base\n";
 
 # #############################################################################
 # Test plugin's algo.
 # #############################################################################
-
-my $plugin_name = $o->get('plugin');
-eval "require $plugin_name";
-die $EVAL_ERROR if $EVAL_ERROR;
-my $plugin = $plugin_name->new();
-
 my @chunks = $plugin->chunk(
    dbh            => $dbh,
    db             => $db,
@@ -1697,13 +1730,19 @@ my $total_rows = 0;
 my $biggest_chunk = 0;
 my %values;
 foreach my $chunk ( @chunks ) {
-   my $sql    = "SELECT $col FROM $tbl WHERE ($chunk) AND ($where) ORDER BY `$col`";
-   my $rows   = $dbh->selectall_arrayref($sql);
-   my $n_rows = scalar @$rows;
-   print "$n_rows\t$chunk\n";
-   $total_rows += $n_rows;
-   map { $values{$_->[0]}++ } @$rows;
-   $biggest_chunk = max($n_rows, $biggest_chunk);
+   my $sql = "SELECT $col FROM $tbl WHERE ($chunk) AND ($where) ORDER BY `$col`";
+   eval {
+      my $rows   = $dbh->selectall_arrayref($sql);
+      my $n_rows = scalar @$rows;
+      print "$n_rows\t$chunk\n";
+      $total_rows += $n_rows;
+      map { $values{$_->[0]}++ } @$rows;
+      $biggest_chunk = max($n_rows, $biggest_chunk);
+   };
+   if ( $EVAL_ERROR ) {
+      print "Plugin caused an error: $EVAL_ERROR";
+      last;
+   }
 }
 print "$total_rows total rows\n";
 print "avg chunk size: ", int($total_rows/scalar @chunks), "\n";
