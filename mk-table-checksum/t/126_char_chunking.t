@@ -24,30 +24,41 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my @args = ('-F', $cnf, 'h=127.1', qw(-t osc.t));
+my @args = ('-F', $cnf, 'h=127.1', qw(-t test.ascii --chunk-column c));
 
-diag(`/tmp/12345/use < $trunk/mk-table-checksum/t/samples/oversize-chunks.sql`);
-$dbh->do('alter table osc.t drop index `i`');
+$sb->create_dbs($dbh, ['test']);
+$sb->load_file('master', "common/t/samples/char-chunking/ascii.sql", 'test');
 
 ok(
    no_diff(
-      sub { mk_table_checksum::main(@args, qw(--chunk-size 10)) },
-      "mk-table-checksum/t/samples/unchunkable-table.txt",
+      sub { mk_table_checksum::main(@args,
+         qw(--chunk-size 20 --explain)) },
+      "mk-table-checksum/t/samples/char-chunk-ascii-explain.txt",
    ),
-   "Skip unchunkable table"
+   "Char chunk ascii, explain"
 );
 
 ok(
    no_diff(
-      sub { mk_table_checksum::main(@args, qw(--chunk-size 1000)) },
-      "mk-table-checksum/t/samples/unchunkable-table-small.txt",
+      sub { mk_table_checksum::main(@args,
+         qw(--chunk-size 20)) },
+      "mk-table-checksum/t/samples/char-chunk-ascii.txt",
    ),
-   "Chunk unchunable table if smaller than chunk size"
+   "Char chunk ascii, chunk size 20"
+);
+
+ok(
+   no_diff(
+      sub { mk_table_checksum::main(@args,
+         qw(--chunk-size 20 --chunk-size-limit 3)) },
+      "mk-table-checksum/t/samples/char-chunk-ascii-oversize.txt",
+   ),
+   "Char chunk ascii, chunk size 20, with oversize"
 );
 
 # #############################################################################

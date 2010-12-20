@@ -5952,7 +5952,8 @@ sub checksum_chunks {
 
       if (    $final_o->get('chunk-size-limit')
            && $final_o->get('chunk-size')
-           && $tbl->{chunk_size} )
+           && $tbl->{chunk_size}
+           && !$final_o->get('explain') )
       {
          my $is_oversize_chunk = is_oversize_chunk(
             %args,
@@ -5960,13 +5961,14 @@ sub checksum_chunks {
             tbl        => $tbl->{table},
             chunk      => $tbl->{chunks}->[$chunk_num],
             chunk_size => $tbl->{chunk_size},
+            index_hint => $tbl->{index},
             where      => [$final_o->get('where'), $tbl->{since}],
             limit      => $final_o->get('chunk-size-limit'),
             Quoter     => $q,
          );
          if ( $is_oversize_chunk ) {
             $exit_status |= 1;
-            if ( !$final_o->get('quiet') && !$final_o->get('explain') ) {
+            if ( !$final_o->get('quiet') ) {
                if ( $final_o->get('checksum') ) {
                   printf($md5sum_fmt, 'NULL', '',
                      @{$tbl}{qw(database table)}, $chunk_num)

@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Character-based columns were not chunkable (issue 568).
    * Added --closed-range option (issue 1182).
    * Made performance_schema an always ignored database (issue 1193).
 

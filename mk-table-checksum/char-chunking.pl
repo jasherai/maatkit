@@ -1,73 +1,311 @@
 #!/usr/bin/env perl
-
-# This script runs a query against a server using serveral DBI methods
-# to see if any crash/fail.
+# This program is copyright 2010 Percona, Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # ###########################################################################
-# DSNParser package 4103
+# Quoter package 6850
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
+package Quoter;
+
 use strict;
 use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   return bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, $val ) = @_;
+
+   return 'NULL' unless defined $val;          # undef = NULL
+   return "''" if $val eq '';                  # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]+$/;  # hex data
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
+}
+
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# PodParser package 6813
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/PodParser.pm
+#   trunk/common/t/PodParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package PodParser;
+
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my %parse_items_from = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 1,
+   'RULES'       => 1,
+);
+
+my %item_pattern_for = (
+   'OPTIONS'     => qr/--(.*)/,
+   'DSN OPTIONS' => qr/\* (.)/,
+   'RULES'       => qr/(.*)/,
+);
+
+my %section_has_rules = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 0,
+   'RULES'       => 0,
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      current_section => '',
+      current_item    => '',
+      in_list         => 0,
+      items           => {},
+   };
+   return bless $self, $class;
+}
+ 
+sub get_items {
+   my ( $self, $section ) = @_;
+   return $section ? $self->{items}->{$section} : $self->{items};
+}
+
+sub parse_from_file {
+   my ( $self, $file ) = @_;
+   return unless $file;
+
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
+   my $para;
+
+   1 while defined($para = <$fh>) && $para !~ m/^=pod/;
+   die "$file does not contain =pod" unless $para;
+
+   while ( defined($para = <$fh>) && $para !~ m/^=cut/ ) {
+      if ( $para =~ m/^=(head|item|over|back)/ ) {
+         my ($cmd, $name) = $para =~ m/^=(\w+)(?:\s+(.+))?/;
+         $name ||= '';
+         MKDEBUG && _d('cmd:', $cmd, 'name:', $name);
+         $self->command($cmd, $name);
+      }
+      else {
+         $self->textblock($para);
+      }
+   }
+
+   close $fh;
+}
+
+sub command {
+   my ( $self, $cmd, $name ) = @_;
+   
+   $name =~ s/\s+\Z//m;  # Remove \n and blank line after name.
+   
+   if  ( $cmd eq 'head1' && $parse_items_from{$name} ) {
+      MKDEBUG && _d('In section', $name);
+      $self->{current_section} = $name;
+      $self->{items}->{$name}  = {};
+   }
+   elsif ( $cmd eq 'over' ) {
+      MKDEBUG && _d('Start items in', $self->{current_section});
+      $self->{in_list} = 1;
+   }
+   elsif ( $cmd eq 'item' ) {
+      my $pat = $item_pattern_for{ $self->{current_section} };
+      my ($item) = $name =~ m/$pat/;
+      if ( $item ) {
+         MKDEBUG && _d($self->{current_section}, 'item:', $item);
+         $self->{items}->{ $self->{current_section} }->{$item} = {
+            desc => '',  # every item should have a desc
+         };
+         $self->{current_item} = $item;
+      }
+      else {
+         warn "Item $name does not match $pat";
+      }
+   }
+   elsif ( $cmd eq '=back' ) {
+      MKDEBUG && _d('End items');
+      $self->{in_list} = 0;
+   }
+   else {
+      $self->{current_section} = '';
+      $self->{in_list}         = 0;
+   }
+   
+   return;
+}
+
+sub textblock {
+   my ( $self, $para ) = @_;
+
+   return unless $self->{current_section} && $self->{current_item};
+
+   my $section = $self->{current_section};
+   my $item    = $self->{items}->{$section}->{ $self->{current_item} };
+
+   $para =~ s/\s+\Z//;
+
+   if ( $para =~ m/^\w+[:;] / ) {
+      MKDEBUG && _d('Item attributes:', $para);
+      map {
+         my ($attrib, $val) = split(/: /, $_);
+         $item->{$attrib} = defined $val ? $val : 1;
+      } split(/; /, $para);
+   }
+   else {
+      MKDEBUG && _d('Item desc:', substr($para, 0, 40),
+         length($para) > 40 ? '...' : '');
+      $para =~ s/\n+/ /g;
+      $item->{desc} .= $para;
+   }
+
+   return;
+}
+
+sub verbatim {
+   my ( $self, $para ) = @_;
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End PodParser package
+# ###########################################################################
+
+# ###########################################################################
+# DSNParser package 6785
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
 
 package DSNParser;
 
-use DBI;
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+eval {
+   require DBI;
+};
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
+
 
 sub new {
-   my ( $class, @opts ) = @_;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(opts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $self = {
-      opts => {
-         A => {
-            desc => 'Default character set',
-            dsn  => 'charset',
-            copy => 1,
-         },
-         D => {
-            desc => 'Database to use',
-            dsn  => 'database',
-            copy => 1,
-         },
-         F => {
-            desc => 'Only read default options from the given file',
-            dsn  => 'mysql_read_default_file',
-            copy => 1,
-         },
-         h => {
-            desc => 'Connect to host',
-            dsn  => 'host',
-            copy => 1,
-         },
-         p => {
-            desc => 'Password to use when connecting',
-            dsn  => 'password',
-            copy => 1,
-         },
-         P => {
-            desc => 'Port number to use for connection',
-            dsn  => 'port',
-            copy => 1,
-         },
-         S => {
-            desc => 'Socket file to use for connection',
-            dsn  => 'mysql_socket',
-            copy => 1,
-         },
-         u => {
-            desc => 'User for login if not current user',
-            dsn  => 'user',
-            copy => 1,
-         },
-      },
+      opts => {}  # h, P, u, etc.  Should come from DSN OPTIONS section in POD.
    };
-   foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property', $opt->{key});
-      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   foreach my $opt ( @{$args{opts}} ) {
+      if ( !$opt->{key} || !$opt->{desc} ) {
+         die "Invalid DSN option: ", Dumper($opt);
+      }
+      MKDEBUG && _d('DSN option:',
+         join(', ',
+            map { "$_=" . (defined $opt->{$_} ? ($opt->{$_} || '') : 'undef') }
+               keys %$opt
+         )
+      );
+      $self->{opts}->{$opt->{key}} = {
+         dsn  => $opt->{dsn},
+         desc => $opt->{desc},
+         copy => $opt->{copy} || 0,
+      };
    }
    return bless $self, $class;
 }
@@ -92,7 +330,7 @@ sub parse {
    $defaults ||= {};
    my %given_props;
    my %final_props;
-   my %opts = %{$self->{opts}};
+   my $opts = $self->{opts};
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
@@ -104,11 +342,11 @@ sub parse {
       }
    }
 
-   foreach my $key ( keys %opts ) {
+   foreach my $key ( keys %$opts ) {
       MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
-           && defined $prev->{$key} && $opts{$key}->{copy} )
+           && defined $prev->{$key} && $opts->{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
          MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
@@ -120,12 +358,17 @@ sub parse {
    }
 
    foreach my $key ( keys %given_props ) {
-      die "Unrecognized DSN part '$key' in '$dsn'\n"
-         unless exists $opts{$key};
+      die "Unknown DSN option '$key' in '$dsn'.  For more details, "
+            . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+            . "for complete documentation."
+         unless exists $opts->{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+         die "Missing required DSN option '$key' in '$dsn'.  For more details, "
+               . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+               . "for complete documentation."
+            unless $final_props{$key};
       }
    }
 
@@ -146,11 +389,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -217,6 +462,20 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
+   if ( !$have_dbi ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.  If DBI is not installed, try:\n"
+         . "  Debian/Ubuntu  apt-get install libdbi-perl\n"
+         . "  RHEL/CentOS    yum install perl-DBI\n"
+         . "  OpenSolaris    pgk install pkg:/SUNWpmdbi\n";
+
+   }
+
    my $dbh;
    my $tries = 2;
    while ( !$dbh && $tries-- ) {
@@ -229,9 +488,15 @@ sub get_dbh {
          if ( $cxn_string =~ m/mysql/i ) {
             my $sql;
 
-            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
-                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d($dbh, ':', $sql);
+            $sql = 'SELECT @@SQL_MODE';
+            MKDEBUG && _d($dbh, $sql);
+            my ($sql_mode) = $dbh->selectrow_array($sql);
+
+            $sql = 'SET @@SQL_QUOTE_SHOW_CREATE = 1'
+                 . '/*!40101, @@SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO'
+                 . ($sql_mode ? ",$sql_mode" : '')
+                 . '\'*/';
+            MKDEBUG && _d($dbh, $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
@@ -248,8 +513,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('setvars') ) {
-               $sql = "SET " . $self->prop('setvars');
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
@@ -260,6 +525,15 @@ sub get_dbh {
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
             MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
+         }
+         elsif ( $EVAL_ERROR =~ m/locate DBD\/mysql/i ) {
+            die "Cannot connect to MySQL because the Perl DBD::mysql module is "
+               . "not installed or not found.  Run 'perl -MDBD::mysql' to see "
+               . "the directories that Perl searches for DBD::mysql.  If "
+               . "DBD::mysql is not installed, try:\n"
+               . "  Debian/Ubuntu  apt-get install libdbd-mysql-perl\n"
+               . "  RHEL/CentOS    yum install perl-DBD-MySQL\n"
+               . "  OpenSolaris    pgk install pkg:/SUNWapu13dbd-mysql\n";
          }
          if ( !$tries ) {
             die $EVAL_ERROR;
@@ -341,73 +615,152 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4245
+# OptionParser package 6785
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
-
-my %attributes = (
-   'type'       => 1,
-   'short form' => 1,
-   'group'      => 1,
-   'default'    => 1,
-   'cumulative' => 1,
-   'negatable'  => 1,
-);
 
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(description) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
    my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
 
+   my %attributes = (
+      'type'       => 1,
+      'short form' => 1,
+      'group'      => 1,
+      'default'    => 1,
+      'cumulative' => 1,
+      'negatable'  => 1,
+   );
+
    my $self = {
-      description    => $args{description},
-      prompt         => $args{prompt} || '<options>',
-      strict         => (exists $args{strict} ? $args{strict} : 1),
-      dp             => $args{dp}     || undef,
-      program_name   => $program_name,
-      opts           => {},
-      got_opts       => 0,
-      short_opts     => {},
-      defaults       => {},
-      groups         => {},
-      allowed_groups => {},
-      errors         => [],
-      rules          => [],  # desc of rules for --help
-      mutex          => [],  # rule: opts are mutually exclusive
-      atleast1       => [],  # rule: at least one opt is required
-      disables       => {},  # rule: opt disables other opts 
-      defaults_to    => {},  # rule: opt defaults to value of other opt
-      default_files  => [
+      strict            => 1,
+      prompt            => '<options>',
+      head1             => 'OPTIONS',
+      skip_rules        => 0,
+      item              => '--(.*)',
+      attributes        => \%attributes,
+      parse_attributes  => \&_parse_attribs,
+
+      %args,
+
+      program_name      => $program_name,
+      opts              => {},
+      got_opts          => 0,
+      short_opts        => {},
+      defaults          => {},
+      groups            => {},
+      allowed_groups    => {},
+      errors            => [],
+      rules             => [],  # desc of rules for --help
+      mutex             => [],  # rule: opts are mutually exclusive
+      atleast1          => [],  # rule: at least one opt is required
+      disables          => {},  # rule: opt disables other opts 
+      defaults_to       => {},  # rule: opt defaults to value of other opt
+      DSNParser         => undef,
+      default_files     => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$home/.maatkit.conf",
          "$home/.$program_name.conf",
       ],
+      types             => {
+         string => 's', # standard Getopt type
+         int    => 'i', # standard Getopt type
+         float  => 'f', # standard Getopt type
+         Hash   => 'H', # hash, formed from a comma-separated list
+         hash   => 'h', # hash as above, but only if a value is given
+         Array  => 'A', # array, similar to Hash
+         array  => 'a', # array, similar to hash
+         DSN    => 'd', # DSN
+         size   => 'z', # size with kMG suffix (powers of 2^10)
+         time   => 'm', # time, with an optional suffix of s/h/m/d
+      },
    };
+
    return bless $self, $class;
 }
 
 sub get_specs {
    my ( $self, $file ) = @_;
+   $file ||= __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
+
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
+      MKDEBUG && _d('Parsing DSN OPTIONS');
+      my $dsn_attribs = {
+         dsn  => 1,
+         copy => 1,
+      };
+      my $parse_dsn_attribs = sub {
+         my ( $self, $option, $attribs ) = @_;
+         map {
+            my $val = $attribs->{$_};
+            if ( $val ) {
+               $val    = $val eq 'yes' ? 1
+                       : $val eq 'no'  ? 0
+                       :                 $val;
+               $attribs->{$_} = $val;
+            }
+         } keys %$attribs;
+         return {
+            key => $option,
+            %$attribs,
+         };
+      };
+      my $dsn_o = new OptionParser(
+         description       => 'DSN OPTIONS',
+         head1             => 'DSN OPTIONS',
+         dsn               => 0,         # XXX don't infinitely recurse!
+         item              => '\* (.)',  # key opts are a single character
+         skip_rules        => 1,         # no rules before opts
+         attributes        => $dsn_attribs,
+         parse_attributes  => $parse_dsn_attribs,
+      );
+      my @dsn_opts = map {
+         my $opts = {
+            key  => $_->{spec}->{key},
+            dsn  => $_->{spec}->{dsn},
+            copy => $_->{spec}->{copy},
+            desc => $_->{desc},
+         };
+         $opts;
+      } $dsn_o->_pod_to_specs($file);
+      $self->{DSNParser} = DSNParser->new(opts => \@dsn_opts);
+   }
+
    return;
 }
+
+sub DSNParser {
+   my ( $self ) = @_;
+   return $self->{DSNParser};
+};
 
 sub get_defaults_files {
    my ( $self ) = @_;
@@ -419,30 +772,19 @@ sub _pod_to_specs {
    $file ||= __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
-   my %types = (
-      string => 's', # standard Getopt type
-      'int'  => 'i', # standard Getopt type
-      float  => 'f', # standard Getopt type
-      Hash   => 'H', # hash, formed from a comma-separated list
-      hash   => 'h', # hash as above, but only if a value is given
-      Array  => 'A', # array, similar to Hash
-      array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
-      size   => 'z', # size with kMG suffix (powers of 2^10)
-      'time' => 'm', # time, with an optional suffix of s/h/m/d
-   );
    my @specs = ();
    my @rules = ();
    my $para;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
+      next unless $para =~ m/^=head1 $self->{head1}/;
       last;
    }
 
    while ( $para = <$fh> ) {
       last if $para =~ m/^=over/;
+      next if $self->{skip_rules};
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
@@ -450,10 +792,10 @@ sub _pod_to_specs {
       push @rules, $para;
    }
 
-   die 'POD has no OPTIONS section' unless $para;
+   die "POD has no $self->{head1} section" unless $para;
 
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item $self->{item}/ ) {
          chomp $para;
          MKDEBUG && _d($para);
          my %attribs;
@@ -465,7 +807,7 @@ sub _pod_to_specs {
             %attribs = map {
                   my ( $attrib, $val) = split(/: /, $_);
                   die "Unrecognized attribute for --$option: $attrib"
-                     unless $attributes{$attrib};
+                     unless $self->{attributes}->{$attrib};
                   ($attrib, $val);
                } split(/; /, $para);
             if ( $attribs{'short form'} ) {
@@ -492,11 +834,7 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec  => $option
-               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
-               . ($attribs{'negatable'}  ? '!'                          : '' )
-               . ($attribs{'cumulative'} ? '+'                          : '' )
-               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
                . ($attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
@@ -504,17 +842,15 @@ sub _pod_to_specs {
       }
       while ( $para = <$fh> ) {
          last unless $para;
-
-
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
          }
-         last if $para =~ m/^=item --/;
+         last if $para =~ m/^=item /;
       }
    } while ( $para );
 
-   die 'No valid specs in POD OPTIONS' unless @specs;
+   die "No valid specs in $self->{head1}" unless @specs;
 
    close $fh;
    return @specs, @rules;
@@ -567,19 +903,10 @@ sub _parse_specs {
          $opt->{type} = $type;
          MKDEBUG && _d($long, 'type:', $type);
 
-         if ( $type && $type eq 'd' && !$self->{dp} ) {
-            die "$opt->{long} is type DSN (d) but no dp argument "
-               . "was given when this OptionParser object was created";
-         }
 
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -657,16 +984,6 @@ sub opts {
    return %opts;
 }
 
-sub opt_values {
-   my ( $self ) = @_;
-   my %opts = map {
-      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
-              : $_;
-      $opt => $self->{opts}->{$_}->{value}
-   } keys %{$self->{opts}};
-   return %opts;
-}
-
 sub short_opts {
    my ( $self ) = @_;
    my %short_opts = %{$self->{short_opts}};
@@ -734,7 +1051,7 @@ sub get_opts {
       my @extra_args;
       foreach my $filename ( split(',', $self->get('config')) ) {
          eval {
-            push @ARGV, $self->_read_config_file($filename);
+            push @extra_args, $self->_read_config_file($filename);
          };
          if ( $EVAL_ERROR ) {
             if ( $self->got('config') ) {
@@ -787,71 +1104,98 @@ sub get_opts {
       }
    }
 
-   foreach my $long ( keys %{$self->{opts}} ) {
-      my $opt = $self->{opts}->{$long};
-      if ( $opt->{got} ) {
-         if ( exists $self->{disables}->{$long} ) {
-            my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
-            MKDEBUG && _d('Unset options', @disable_opts,
-               'because', $long,'disables them');
-         }
+   $self->_check_opts( keys %{$self->{opts}} );
+   $self->{got_opts} = 1;
+   return;
+}
 
-         if ( exists $self->{allowed_groups}->{$long} ) {
+sub _check_opts {
+   my ( $self, @long ) = @_;
+   my $long_last = scalar @long;
+   while ( @long ) {
+      foreach my $i ( 0..$#long ) {
+         my $long = $long[$i];
+         next unless $long;
+         my $opt  = $self->{opts}->{$long};
+         if ( $opt->{got} ) {
+            if ( exists $self->{disables}->{$long} ) {
+               my @disable_opts = @{$self->{disables}->{$long}};
+               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+               MKDEBUG && _d('Unset options', @disable_opts,
+                  'because', $long,'disables them');
+            }
 
-            my @restricted_groups = grep {
-               !exists $self->{allowed_groups}->{$long}->{$_}
-            } keys %{$self->{groups}};
+            if ( exists $self->{allowed_groups}->{$long} ) {
 
-            my @restricted_opts;
-            foreach my $restricted_group ( @restricted_groups ) {
-               RESTRICTED_OPT:
-               foreach my $restricted_opt (
-                  keys %{$self->{groups}->{$restricted_group}} )
-               {
-                  next RESTRICTED_OPT if $restricted_opt eq $long;
-                  push @restricted_opts, $restricted_opt
-                     if $self->{opts}->{$restricted_opt}->{got};
+               my @restricted_groups = grep {
+                  !exists $self->{allowed_groups}->{$long}->{$_}
+               } keys %{$self->{groups}};
+
+               my @restricted_opts;
+               foreach my $restricted_group ( @restricted_groups ) {
+                  RESTRICTED_OPT:
+                  foreach my $restricted_opt (
+                     keys %{$self->{groups}->{$restricted_group}} )
+                  {
+                     next RESTRICTED_OPT if $restricted_opt eq $long;
+                     push @restricted_opts, $restricted_opt
+                        if $self->{opts}->{$restricted_opt}->{got};
+                  }
+               }
+
+               if ( @restricted_opts ) {
+                  my $err;
+                  if ( @restricted_opts == 1 ) {
+                     $err = "--$restricted_opts[0]";
+                  }
+                  else {
+                     $err = join(', ',
+                               map { "--$self->{opts}->{$_}->{long}" }
+                               grep { $_ } 
+                               @restricted_opts[0..scalar(@restricted_opts) - 2]
+                            )
+                          . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+                  }
+                  $self->save_error("--$long is not allowed with $err");
                }
             }
 
-            if ( @restricted_opts ) {
-               my $err;
-               if ( @restricted_opts == 1 ) {
-                  $err = "--$restricted_opts[0]";
-               }
-               else {
-                  $err = join(', ',
-                            map { "--$self->{opts}->{$_}->{long}" }
-                            grep { $_ } 
-                            @restricted_opts[0..scalar(@restricted_opts) - 2]
-                         )
-                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
-               }
-               $self->save_error("--$long is not allowed with $err");
-            }
+         }
+         elsif ( $opt->{is_required} ) { 
+            $self->save_error("Required option --$long must be specified");
          }
 
-      }
-      elsif ( $opt->{is_required} ) { 
-         $self->save_error("Required option --$long must be specified");
+         $self->_validate_type($opt);
+         if ( $opt->{parsed} ) {
+            delete $long[$i];
+         }
+         else {
+            MKDEBUG && _d('Temporarily failed to parse', $long);
+         }
       }
 
-      $self->_validate_type($opt);
+      die "Failed to parse options, possibly due to circular dependencies"
+         if @long == $long_last;
+      $long_last = @long;
    }
 
-   $self->{got_opts} = 1;
    return;
 }
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt;
+
+   if ( !$opt->{type} ) {
+      $opt->{parsed} = 1;
+      return;
+   }
+
    my $val = $opt->{value};
 
-   if ( $val && $opt->{type} eq 'm' ) {
+   if ( $val && $opt->{type} eq 'm' ) {  # type time
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
-      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
       if ( !$suffix ) {
          my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
          $suffix = $s || 's';
@@ -863,51 +1207,47 @@ sub _validate_type {
               : $suffix eq 'm' ? $num * 60       # Minutes
               : $suffix eq 'h' ? $num * 3600     # Hours
               :                  $num * 86400;   # Days
-         $opt->{value} = $val;
+         $opt->{value} = ($prefix || '') . $val;
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
          $self->save_error("Invalid time suffix for --$opt->{long}");
       }
    }
-   elsif ( $val && $opt->{type} eq 'd' ) {
+   elsif ( $val && $opt->{type} eq 'd' ) {  # type DSN
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $prev = {};
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
-      my $default = {};
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $default = $self->{dp}->parse(
-            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
-      }
-      $opt->{value} = $self->{dp}->parse($val, $default);
-   }
-   elsif ( $val && $opt->{type} eq 'z' ) {
-      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
-      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-      if ( defined $num ) {
-         if ( $factor ) {
-            $num *= $factor_for{$factor};
-            MKDEBUG && _d('Setting option', $opt->{y},
-               'to num', $num, '* factor', $factor);
+         if ( $self->{opts}->{$from_key}->{parsed} ) {
+            $prev = $self->{opts}->{$from_key}->{value};
          }
-         $opt->{value} = ($pre || '') . $num;
+         else {
+            MKDEBUG && _d('Cannot parse', $opt->{long}, 'until',
+               $from_key, 'parsed');
+            return;
+         }
       }
-      else {
-         $self->save_error("Invalid size for --$opt->{long}");
-      }
+      my $defaults = $self->{DSNParser}->parse_options($self);
+      $opt->{value} = $self->{DSNParser}->parse($val, $prev, $defaults);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {  # type size
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
          $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
+   $opt->{parsed} = 1;
    return;
 }
 
@@ -963,7 +1303,8 @@ sub descr {
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }
@@ -1047,20 +1388,20 @@ sub print_usage {
       $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dp} ) {
-      $usage .= "\n" . $self->{dp}->usage();
+   if ( $self->{DSNParser} ) {
+      $usage .= "\n" . $self->{DSNParser}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
       my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
-      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
-                : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dp}->as_string($val)
-                : $type =~ m/H|h/           ? join(',', sort keys %$val)
-                : $type =~ m/A|a/           ? join(',', @$val)
-                :                             $val;
+      $val      = $bool              ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val      ? '(No value)'
+                : $type eq 'd'       ? $self->{DSNParser}->as_string($val)
+                : $type =~ m/H|h/    ? join(',', sort keys %$val)
+                : $type =~ m/A|a/    ? join(',', @$val)
+                :                    $val;
       $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
@@ -1177,6 +1518,41 @@ sub clone {
    return bless \%clone;     
 }
 
+sub _parse_size {
+   my ( $self, $opt, $val ) = @_;
+
+   if ( lc($val || '') eq 'null' ) {
+      MKDEBUG && _d('NULL size for', $opt->{long});
+      $opt->{value} = 'null';
+      return;
+   }
+
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+   if ( defined $num ) {
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+         MKDEBUG && _d('Setting option', $opt->{y},
+            'to num', $num, '* factor', $factor);
+      }
+      $opt->{value} = ($pre || '') . $num;
+   }
+   else {
+      $self->save_error("Invalid size for --$opt->{long}");
+   }
+   return;
+}
+
+sub _parse_attribs {
+   my ( $self, $option, $attribs ) = @_;
+   my $types = $self->{types};
+   return $option
+      . ($attribs->{'short form'} ? '|' . $attribs->{'short form'}   : '' )
+      . ($attribs->{'negatable'}  ? '!'                              : '' )
+      . ($attribs->{'cumulative'} ? '+'                              : '' )
+      . ($attribs->{'type'}       ? '=' . $types->{$attribs->{type}} : '' );
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1193,101 +1569,230 @@ sub _d {
 
 package main;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::HiRes qw(time);
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 use POSIX qw(ceil floor);
+use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-my $dp = new DSNParser();
+my $q  = new Quoter();
 my $o  = new OptionParser(
    strict      => 0,
-   prompt      => 'DSN',
-   description => q{tests char-chunking.sql},
+   prompt      => '[OPTION...] DSN --plugin PLUGIN --chunk-column DB.TBL.COL',
+   description => q{tests character chunking on the specified column.},
 );
 $o->get_specs();
 $o->get_opts();
-
 $o->usage_or_errors();
 
+my $dp  = $o->DSNParser();
 my $dsn = $dp->parse(shift @ARGV);
 my $dbh = get_cxn($dp, $o, $dsn);
 
-$dbh->do('use cc');
+# #############################################################################
+# Get char col info to pass to the plugin.
+# #############################################################################
 
-# You can comment this out if you don't want to keep reloading the table
-`/tmp/12345/use < t/samples/char-chunking.sql`;
-print "Loaded t/samples/char-chunking.sql\n";
+my ($db, $tbl, $col) = split /\./, $o->get('chunk-column');
+print "Char chunking $db.$tbl on $col\n";
 
-my @row = $dbh->selectrow_arrayref('SELECT MIN(c), MAX(c) FROM t;');
-my ($min_c_str, $max_c_str) = ($row[0]->[0], $row[0]->[1]);
-print "min c str: $min_c_str\n";
-print "max c str: $max_c_str\n";
+my $where = $o->get('where') || '1=1';
+print "WHERE $where\n";
 
-@row = $dbh->selectrow_arrayref('SELECT MIN(LENGTH(c)), MAX(LENGTH(c)) FROM t;');
-my ($min_c_len, $max_c_len) = ($row[0]->[0], $row[0]->[1]);
-print "min c len: $min_c_len\n";
-print "max c len: $max_c_len\n";
+$dbh->do("use $db");
+$dbh->do("set names 'utf8'");
 
-my $rows = $dbh->selectrow_hashref('explain select * from cc.t')->{rows};
-print "$rows rows in cc.t\n";
+my @row = $dbh->selectrow_arrayref("SELECT MIN($col), MAX($col) FROM $tbl WHERE $where");
+my ($min_col, $max_col) = ($row[0]->[0], $row[0]->[1]);
+print "min col: $min_col\n";
+print "max col: $max_col\n";
+
+@row = $dbh->selectrow_arrayref("SELECT MIN(LENGTH($col)), MAX(LENGTH($col)) FROM $tbl WHERE $where");
+my ($min_col_len, $max_col_len) = ($row[0]->[0], $row[0]->[1]);
+print "min col len: $min_col_len\n";
+print "max col len: $max_col_len\n";
+
+my $real_n_rows   = scalar @{$dbh->selectall_arrayref("SELECT * FROM $tbl WHERE $where")};
+print "real number of rows: $real_n_rows\n";
+my $rows_in_range = $dbh->selectrow_hashref("EXPLAIN SELECT * FROM $tbl WHERE $where")->{rows};
+print "rows in range: $rows_in_range\n";
 
 my $chunk_size = $o->get('chunk-size');
 print "chunk size: $chunk_size\n";
 
-my $n_chunks = ceil($rows / $chunk_size);
-print "target #chunks: $n_chunks\n";
+my $n_chunks = ceil($rows_in_range / $chunk_size);
+print "number of chunks: $n_chunks\n";
+
+@row = $dbh->selectrow_arrayref("SELECT ORD(MIN($col)), ORD(MAX($col)) FROM $tbl");
+my ($min_col_ord, $max_col_ord) = ($row[0]->[0], $row[0]->[1]);
+print "min col ord: $min_col_ord\n";
+print "max col ord: $max_col_ord\n";
 
 # You can comment this block out if you didn't reload the table (above)
-print "Building tmp_t table...\n";
-for ( 32..126 ) {  # basic, printable ascii chars
-   my $c = chr $_;
-   $c =~ s/(['\\])/\\$1/;
-   # DBI dies when MySQL warns about a duplicate key, like A=a
+eval {
+   $dbh->do("truncate table $db.unique_characters");
+};
+if ( $EVAL_ERROR && $EVAL_ERROR =~ m/exist/ ) {
+   print "Creating table $db.unique_characters\n";
+   $dbh->do("create table $db.unique_characters (`c` char(1) NOT NULL, UNIQUE KEY `c` (`c`))");
+}
+my $ins = $dbh->prepare("insert into $db.unique_characters value (CHAR(?))");
+for my $ord ( $min_col_ord..$max_col_ord ) {
    eval {
-      $dbh->do("insert into cc.tmp_t values ('$c')");
+      $ins->execute($ord);
    };
+   # DBI dies when MySQL warns about a duplicate key, like A=a
    # warn $EVAL_ERROR if $EVAL_ERROR;
 }
 
-# Extended ascii doesn't print on my term
-#for ( 128..255 ) {
-#   print "$_:",chr($_),"\n";
-#}
+# Use prepared statement so we don't have to quote/escape the values.
+my $sql = "SELECT c FROM $db.unique_characters WHERE c BETWEEN ? AND ? ORDER BY c";
+my $sth = $dbh->prepare($sql);
+$sth->execute($min_col, $max_col);
+my @chars = map { $_->[0] } @{ $sth->fetchall_arrayref() };
+my $char_no = 0;
+print "chars: " . join(" ", map {$char_no++ . ":$_"} @chars) . "\n";
+die "No unique characters" unless @chars;
 
-my $sql = "SELECT c FROM tmp_t WHERE c BETWEEN '$min_c_str' AND '$max_c_str' ORDER BY c";
-print "$sql\n";
+my $base = scalar @chars;
+print "base: $base\n";
 
-my @char = map { $_->[0] } @{ $dbh->selectall_arrayref($sql) };
-print "chars: @char\n";
+# #############################################################################
+# Test plugin's algo.
+# #############################################################################
 
-my $b = scalar @char;
-print "base $b\n";
+my $plugin_name = $o->get('plugin');
+eval "require $plugin_name";
+die $EVAL_ERROR if $EVAL_ERROR;
+my $plugin = $plugin_name->new();
 
-print "m=b^c\n";
-my $c;
-for ( $min_c_len..$max_c_len ) {
-   my $m = $b**$_;
-   print "$m = $b^$_\n";
-   $c = $_ if !defined $c && $m >= $n_chunks;
+my @chunks = $plugin->chunk(
+   dbh            => $dbh,
+   db             => $db,
+   tbl            => $tbl,
+   col            => $col,
+   chunk_size     => $chunk_size,
+   rows_in_range  => $rows_in_range,
+   n_chunks       => $n_chunks,
+   min_col        => $min_col,
+   max_col        => $max_col,
+   min_col_len    => $min_col_len,
+   max_col_len    => $max_col_len,
+   min_col_ord    => $min_col_ord,
+   max_col_ord    => $max_col_ord,
+   chars          => \@chars,
+   base           => $base,
+   base_count     => \&base_count,
+   where          => $where,
+);
+print scalar @chunks, " chunks\n";
+
+my $total_rows = 0;
+my $biggest_chunk = 0;
+my %values;
+foreach my $chunk ( @chunks ) {
+   my $sql    = "SELECT $col FROM $tbl WHERE ($chunk) AND ($where) ORDER BY `$col`";
+   my $rows   = $dbh->selectall_arrayref($sql);
+   my $n_rows = scalar @$rows;
+   print "$n_rows\t$chunk\n";
+   $total_rows += $n_rows;
+   map { $values{$_->[0]}++ } @$rows;
+   $biggest_chunk = max($n_rows, $biggest_chunk);
 }
-print "c = $c\n";
+print "$total_rows total rows\n";
+print "avg chunk size: ", int($total_rows/scalar @chunks), "\n";
+print "biggest chunk: $biggest_chunk\n";
 
-my $x = ($b**$c) / $n_chunks;
-print "boundary multiplier: $x\n";
+my @dupes = map { "$_ ($values{$_})" } grep { $values{$_} > 1 } keys %values;
+print "Dupes (no unique index on `$col`?): @dupes\n" if @dupes;
 
-for ( 0..($n_chunks-1) ) {
-   my $n = floor($_ * $x);
-   print "boundary $_ = $n = $char[$n]\n";
+if ( $total_rows > $real_n_rows ) {
+   print "*** Algo selected too many rows! ***\n";
+}
+elsif ( $total_rows < $real_n_rows ) {
+   print "*** Algo didn't select all the rows! ***\n";
+}
+else {
+   print "Algo seems OK\n"
 }
 
 $dbh->disconnect();
 exit 0;
 
+# #############################################################################
+# Subroutines
+# #############################################################################
+
+# Count to any number in any base with the given symbols.  E.g. if counting
+# to 10 in base 16 with symbols 0,1,2,3,4,5,6,7,8,9,a,b,c,d,e,f the result
+# is "a".  This is trival for stuff like base 16 (hex), but far less trivial
+# for arbitrary bases with arbitrary symbols like base 25 with symbols
+# B,C,D,...X,Y,Z.  For that, counting to 10 results in "L".  The base and its
+# symbols are determined by the character column.  Symbols can be non-ASCII.
+sub base_count {
+   my ( %args ) = @_;
+   my @required_args = qw(count_to base symbols);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($n, $base, $symbols) = @args{@required_args};
+   MKDEBUG && _d("Counting to", $n, "in base", $base);
+
+   # Can't take log of zero and the zeroth symbol in any base is the
+   # zeroth symbol in any other base.
+   return $symbols->[0] if $n == 0;
+
+   # log tells us the highest power the count-to number (n) falls into
+   # in the target base.  E.g. if n=272 and base=16 that falls into
+   # base 16's second base power because base 16's powers are:
+   # POWER  RANGE
+   #     0  [0, 15]
+   #     1  [16, 255]
+   #     2  [256, 4095]
+   # And so on.  Thus n has base 16 multiples in the range of base 16
+   # powers 0, 1 and 2 (every number will have multiples in at least
+   # the 0 power range of any target base).  Another way of seeing this
+   # is that 272 is (256 * 1) + (16 * 1) + 0 = 272.  The first
+   # numbers in each pair (256 and 16) are calculated next; the second
+   # numbers are calculated after that.
+   my $highest_power = floor(log($n)/log($base));
+   MKDEBUG && _d("Highest power:", $highest_power);
+
+   if ( $highest_power == 0 ){
+      return $symbols->[$n];
+   }
+
+   # Get the minimum values for each needed base power.  These are pushed
+   # into an array so that array can be walked backwards (reverse) next.
+   # The result (before reverse) is like [1, 16, 256].
+   my @base_powers;
+   for my $power ( 0..$highest_power ) {
+      push @base_powers, ($base**$power) || 1;  
+   }
+
+   # Starting with the highest base power, calculate how many multiples
+   # of each power exist in n.  Then remove that many units from n.  For
+   # example, there is 1 multiple of base power 256 in 272.  Removing
+   # (256 * 1) from 272 leaves 16 units.  The next base power is 16 and
+   # there is 1 multiple of that power in 16.  Removing (16 * 1) from 16
+   # leaves 0 units.
+   my @base_multiples;
+   foreach my $base_power ( reverse @base_powers ) {
+      my $multiples = floor($n / $base_power);
+      push @base_multiples, $multiples;
+      $n -= $multiples * $base_power;
+   }
+
+   # The multiples calculated above, [1, 1, 0], map onto the symbols.
+   # This example yields 110 hex which is, correctly, 272 decimal.
+   return join('', map { $symbols->[$_] } @base_multiples);
+}
 
 sub get_cxn {
    my ( $dp, $o, $dsn ) = @_;
@@ -1314,7 +1819,11 @@ sub _d {
 
 =head1 NAME
 
-char-chunking.pl
+char-chunking.pl - Test character chunking with different plugins.
+
+=head1 SYNOPSIS
+
+  char-chunking.sql h=localhost --plugin method2 --chunk-column db.tbl.char_col
 
 =head1 OPTIONS
 
@@ -1333,6 +1842,12 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
 runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
+
+=item --chunk-column
+
+type: string
+
+Chunk this db.table.column (required).
 
 =item --chunk-size
 
@@ -1356,6 +1871,40 @@ short form: -p; type: string
 
 Password to use when connecting.
 
+=item --plugin
+
+type: string
+
+Perl module to test (required).  The module should be a single package
+of the same name as the file (e.g. "my_algo.pm" and "package mk_algo").
+Give the file name without any extension, e.g. C<--plugin my_algo> if the file
+name is my_algo.pm.  The package's C<new()> method will be called, passed
+no args.  Then its C<chunk()> method will be called and passed the following
+arg:
+
+   dbh            DBH to DSN provided on command line
+   db             Database name, not quoted
+   tbl            Table name, not quoted
+   col            Character column name, not quoted
+   chunk_size     --chunk-size
+   rows_in_range  Rows in range (rows from EXPLAIN SELECT * FROM db.tbl)
+   n_chunks       Number of chunks (rows_in_range / chunk_size)
+   min_col        Minimum column value (SELECT MIN(col) FROM db.tbl)
+   max_col        Maximum column value (SELECT MAX(col) FROM db.tbl)
+   min_col_len    Minimum column length (SELECT MIN(LENGTH(col)) FROM db.tbl)
+   max_col_len    Maximum column length (SELECT MAX(LENGTH(col)) FROM db.tbl)
+   min_col_ord    Character code of min_col (SELECT ORD(min_col))
+   max_col_ord    Character code of max_col (SELECT ORD(max_col))
+   chars          Unique characters between min_col and max_col, ordered
+   base           Base (number chars)
+   base_count     Coderef to sub that can count in any base
+
+<chunk()> should return an array of chunks like C<`col` >= X AND `col` < Y>.
+These chunks will be executed in SELECT statements like C<SELECT * FROM
+db.tbl WHERE chunk ORDER BY `col`>.
+
+See method2.pm for an example.
+
 =item --port
 
 short form: -P; type: int
@@ -1378,52 +1927,77 @@ User for login if not current user.
 
 Show version and exit.
 
+=item --where
+
+type: string
+
+WHERE clause.
+
 =back
 
-=head1 DOWNLOADING
+=head1 DSN OPTIONS
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
+These DSN options are used to create a DSN.  Each option is given like
+C<option=value>.  The options are case-sensitive, so P and p are not the
+same option.  There cannot be whitespace before or after the C<=> and
+if the value contains whitespace it must be quoted.  DSN options are
+comma-separated.  See the L<maatkit> manpage for full details.
 
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
+=over
 
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+=item * A
 
-=head1 ENVIRONMENT
+dsn: charset; copy: yes
 
-The environment variable C<MKDEBUG> enables verbose debugging output in all of
-the Maatkit tools:
+Default character set.
 
-   MKDEBUG=1 mk-....
+=item * D
 
-=head1 SYSTEM REQUIREMENTS
+dsn: database; copy: yes
 
-You need Perl and some core packages that ought to be installed in any
-reasonably new version of Perl.
+Default database.
 
-=head1 BUGS
+=item * F
 
-For a list of known bugs see:
-L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_upgrade%20type=Defect>.
+dsn: mysql_read_default_file; copy: yes
 
-Please use Google Code Issues and Groups to report bugs or request support:
-L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
-discuss Maatkit.
+Only read default options from the given file
 
-Please include the complete command-line used to reproduce the problem you are
-seeing, the version of all MySQL servers involved, the complete output of the
-tool when run with L<"--version">, and if possible, debugging output produced by
-running with the C<MKDEBUG=1> environment variable.
+=item * h
+
+dsn: host; copy: yes
+
+Connect to host.
+
+=item * p
+
+dsn: password; copy: yes
+
+Password to use when connecting.
+
+=item * P
+
+dsn: port; copy: yes
+
+Port number to use for connection.
+
+=item * S
+
+dsn: mysql_socket; copy: yes
+
+Socket file to use for connection.
+
+=item * u
+
+dsn: user; copy: yes
+
+User for login if not current user.
+
+=back
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright 2009-@CURRENTYEAR@ Percona, Inc.
+This program is copyright 2010 Percona, Inc.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
