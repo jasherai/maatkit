@@ -120,6 +120,8 @@ sub parse {
    # above that parses col props like nullability, auto_inc, type, etc.
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
+   my ($charset) = $ddl =~ m/DEFAULT CHARSET=(\w+)/;
+
    return {
       name           => $name,
       cols           => \@cols,
@@ -135,6 +137,7 @@ sub parse {
       is_numeric     => \%is_numeric,
       engine         => $engine,
       type_for       => \%type_for,
+      charset        => $charset,
    };
 }
 

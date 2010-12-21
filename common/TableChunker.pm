@@ -540,13 +540,6 @@ sub _chunk_char {
    $row = $dbh->selectrow_arrayref($sql);
    my ($min_col, $max_col) = ($row->[0], $row->[1]);
 
-   # Get the min and max string lengths in the column.  The max is used later.
-   $sql = "SELECT MIN(LENGTH($chunk_col)), MAX(LENGTH($chunk_col)) "
-        . "FROM $db_tbl ORDER BY `$chunk_col`";
-   MKDEBUG && _d($dbh, $sql);
-   $row = $dbh->selectrow_arrayref($sql);
-   my ($min_col_len, $max_col_len) = ($row->[0], $row->[1]);
-
    # Get the character codes between the min and max column values.
    $sql = "SELECT ORD(?) AS min_col_ord, ORD(?) AS max_col_ord";
    MKDEBUG && _d($dbh, $sql);
@@ -554,54 +547,90 @@ sub _chunk_char {
    $ord_sth->execute($min_col, $max_col);
    $row = $ord_sth->fetchrow_arrayref();
    my ($min_col_ord, $max_col_ord) = ($row->[0], $row->[1]);
+   MKDEBUG && _d("Min/max col char code:", $min_col_ord, $max_col_ord);
 
-   MKDEBUG && _d("Min column, length, ord:",$min_col,$min_col_len,$min_col_ord);
-   MKDEBUG && _d("Max column, length, ord:",$max_col,$max_col_len,$max_col_ord);
+   # Create a sorted chacater-to-number map of the unique characters in
+   # the column ranging from the min character code to the max.
+   my $base;
+   my @chars;
+   MKDEBUG && _d("Table charset:", $args{tbl_struct}->{charset});
+   if ( ($args{tbl_struct}->{charset} || "") eq "latin1" ) {
+      # These are the unique, sorted latin1 character codes according to
+      # MySQL.  You'll notice that many are missing.  That's because MySQL
+      # treats many characters as the same, for example "e" and "é".
+      my @sorted_latin1_chars = (
+          32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,
+          46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,
+          60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,
+          74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,  85,  86,  87,
+          88,  89,  90,  91,  92,  93,  94,  95,  96, 123, 124, 125, 126, 161,
+         162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+         176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
+         190, 191, 215, 216, 222, 223, 247, 255);
 
-   # Populate a temp table with all the characters between the min and max
-   # max character codes.  This is our char-to-number map.
-   my $tmp_tbl    = '__maatkit_char_chunking_map';
-   my $tmp_db_tbl = $q->quote($args{db}, $tmp_tbl);
-   $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
-   MKDEBUG && _d($dbh, $sql);
-   $dbh->do($sql);
-   
-   my $col_def = $args{tbl_struct}->{defs}->{$chunk_col};
-   $sql        = "CREATE TEMPORARY TABLE $tmp_db_tbl ($col_def) ENGINE=MEMORY";
-   MKDEBUG && _d($dbh, $sql);
-   $dbh->do($sql);
+      my ($first_char, $last_char);
+      for my $i ( 0..$#sorted_latin1_chars ) {
+         $first_char = $i and last if $sorted_latin1_chars[$i] >= $min_col_ord;
+      }
+      for my $i ( $first_char..$#sorted_latin1_chars ) {
+         $last_char = $i and last if $sorted_latin1_chars[$i] >= $max_col_ord;
+      };
 
-   $sql = "INSERT INTO $tmp_db_tbl VALUE (CHAR(?))";
-   MKDEBUG && _d($dbh, $sql);
-   my $ins_char_sth = $dbh->prepare($sql);  # avoid quoting issues
-   for my $char_code ( $min_col_ord..$max_col_ord ) {
-      $ins_char_sth->execute($char_code);
+      @chars = map { chr $_; } @sorted_latin1_chars[$first_char..$last_char];
+      $base  = scalar @chars;
    }
+   else {
+      # If the table's charset isn't latin1, who knows what charset is being
+      # used, what characters it contains, and how those characters are sorted.
+      # So we create a character map and let MySQL tell us these things.
 
-   # Select from the char-to-number map all characters between the
-   # min and max col values, letting MySQL order them.  The first
-   # character returned becomes "zero" in a new base system of counting,
-   # the second character becomes "one", etc.  So if 42 chars are
-   # returned like [a, B, c, d, é, ..., ü] then we have a base 42
-   # system where 0=a, 1=B, 2=c, 3=d, 4=é, ... 41=ü.  count_base()
-   # helps us count in arbitrary systems.
-   $sql = "SELECT `$chunk_col` FROM $tmp_db_tbl "
-        . "WHERE `$chunk_col` BETWEEN ? AND ? "
-        . "ORDER BY `$chunk_col`";
-   MKDEBUG && _d($dbh, $sql);
-   my $sel_char_sth = $dbh->prepare($sql);
-   $sel_char_sth->execute($min_col, $max_col);
-   my @chars = map { $_->[0] } @{ $sel_char_sth->fetchall_arrayref() };
-   my $base  = scalar @chars;
+      # Create a temp table with the same char col def as the original table.
+      my $tmp_tbl    = '__maatkit_char_chunking_map';
+      my $tmp_db_tbl = $q->quote($args{db}, $tmp_tbl);
+      $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+      my $col_def = $args{tbl_struct}->{defs}->{$chunk_col};
+      $sql        = "CREATE TEMPORARY TABLE $tmp_db_tbl ($col_def) "
+                  . "ENGINE=MEMORY";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+
+      # Populate the temp table with all the characters between the min and max
+      # max character codes.  This is our character-to-number map.
+      $sql = "INSERT INTO $tmp_db_tbl VALUE (CHAR(?))";
+      MKDEBUG && _d($dbh, $sql);
+      my $ins_char_sth = $dbh->prepare($sql);  # avoid quoting issues
+      for my $char_code ( $min_col_ord..$max_col_ord ) {
+         $ins_char_sth->execute($char_code);
+      }
+
+      # Select from the char-to-number map all characters between the
+      # min and max col values, letting MySQL order them.  The first
+      # character returned becomes "zero" in a new base system of counting,
+      # the second character becomes "one", etc.  So if 42 chars are
+      # returned like [a, B, c, d, é, ..., ü] then we have a base 42
+      # system where 0=a, 1=B, 2=c, 3=d, 4=é, ... 41=ü.  count_base()
+      # helps us count in arbitrary systems.
+      $sql = "SELECT `$chunk_col` FROM $tmp_db_tbl "
+           . "WHERE `$chunk_col` BETWEEN ? AND ? "
+           . "ORDER BY `$chunk_col`";
+      MKDEBUG && _d($dbh, $sql);
+      my $sel_char_sth = $dbh->prepare($sql);
+      $sel_char_sth->execute($min_col, $max_col);
+
+      @chars = map { $_->[0] } @{ $sel_char_sth->fetchall_arrayref() };
+      $base  = scalar @chars;
+
+      $sql = "DROP TABLE $tmp_db_tbl";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
    MKDEBUG && _d("Base", $base, "chars:", @chars);
 
-   $sql = "DROP TABLE $tmp_db_tbl";
-   MKDEBUG && _d($dbh, $sql);
-   $dbh->do($sql);
-
    # Now we begin calculating how to chunk the char column.  This is
-   # completely from _chunk_numeric because we're not dealing with the
-   # values to chunk directly (the characters) but rather a map.
+   # completely different from _chunk_numeric because we're not dealing
+   # with the values to chunk directly (the characters) but rather a map.
 
    # In our base system, how many values can 1, 2, etc. characters express?
    # E.g. in a base 26 system (a-z), 1 char expresses 26^1=26 chars (a-z),
@@ -612,6 +641,11 @@ sub _chunk_char {
    # [ant, apple, azur, boy].  We assume data is more evenly distributed
    # than not so we use the minimum number of characters to express a chunk
    # size.
+   $sql = "SELECT MAX(LENGTH($chunk_col)) FROM $db_tbl ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   $row = $dbh->selectrow_arrayref($sql);
+   my $max_col_len = $row->[0];
+   MKDEBUG && _d("Max column value:", $max_col, $max_col_len);
    my $n_values;
    for my $n_chars ( 1..$max_col_len ) {
       $n_values = $base**$n_chars;
@@ -628,7 +662,7 @@ sub _chunk_char {
    # expressed enough values for 1 chunk, then each char in the map will
    # yield roughly one chunk of values, so the interval is 1.  Or, if we need
    # 2 chars to express enough vals for 1 chunk, then we'll increment through
-   # the map 2 chars at a time, like [a,b], [c, d], etc.
+   # the map 2 chars at a time, like [a, b], [c, d], etc.
    my $n_chunks = $args{rows_in_range} / $args{chunk_size};
    my $interval = floor($n_values / $n_chunks) || 1;
 
