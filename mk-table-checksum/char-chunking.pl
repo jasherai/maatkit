@@ -1726,8 +1726,10 @@ my @chunks = $plugin->chunk(
 );
 print scalar @chunks, " chunks\n";
 
-my $total_rows = 0;
-my $biggest_chunk = 0;
+my $total_rows      = 0;
+my $biggest_chunk   = 0;
+my $non_zero_chunks = 0;
+my $oversize_chunks = 0;
 my %values;
 foreach my $chunk ( @chunks ) {
    my $sql = "SELECT $col FROM $tbl WHERE ($chunk) AND ($where) ORDER BY `$col`";
@@ -1736,6 +1738,8 @@ foreach my $chunk ( @chunks ) {
       my $n_rows = scalar @$rows;
       print "$n_rows\t$chunk\n";
       $total_rows += $n_rows;
+      $non_zero_chunks++ if $n_rows > 0;
+      $oversize_chunks++ if $n_rows >= $chunk_size * 2;
       map { $values{$_->[0]}++ } @$rows;
       $biggest_chunk = max($n_rows, $biggest_chunk);
    };
@@ -1746,7 +1750,10 @@ foreach my $chunk ( @chunks ) {
 }
 print "$total_rows total rows\n";
 print "avg chunk size: ", int($total_rows/scalar @chunks), "\n";
+print "avg non-zero row chunk size: ", int($total_rows/$non_zero_chunks), "\n";
+printf "zero row chunks: %d%%\n", ((@chunks-$non_zero_chunks)/@chunks) * 100;
 print "biggest chunk: $biggest_chunk\n";
+printf "oversize chunks: %d%%\n", ($oversize_chunks/@chunks)*100;
 
 my @dupes = map { "$_ ($values{$_})" } grep { $values{$_} > 1 } keys %values;
 print "Dupes (no unique index on `$col`?): @dupes\n" if @dupes;
