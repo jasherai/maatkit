@@ -1102,8 +1102,6 @@ chunk_it(
 # #############################################################################
 # Issue 568: char chunking
 # #############################################################################
-$sb->load_file('master', "common/t/samples/char-chunking/world-city.sql", 'test');
-
 sub count_rows {
    my ( $db_tbl, $col, @chunks ) = @_;
    my $total_rows = 0;
@@ -1174,6 +1172,7 @@ SKIP: {
    );
 }
 
+$sb->load_file('master', "common/t/samples/char-chunking/world-city.sql", 'test');
 $t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'world_city') );
 @chunks = $c->calculate_chunks(
    tbl_struct    => $t,

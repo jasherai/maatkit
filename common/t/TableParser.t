@@ -52,6 +52,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
       name         => 't1',
+      charset      => 'latin1',
    },
    'Basic table is OK',
 );
@@ -106,6 +107,7 @@ is_deeply(
       is_numeric     => {},
       engine         => 'MyISAM',
       type_for       => { a => 'varchar', b => 'varchar' },
+      charset        => 'latin1',
    },
    'Indexes with prefixes parse OK (fixes issue 1)'
 );
@@ -270,6 +272,7 @@ is_deeply(
          last_update          => 'timestamp',
       },
       name => 'film',
+      charset => 'utf8',
    },
    'sakila.film',
 );
@@ -305,6 +308,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
       name         => 't',
+      charset      => 'latin1',
    },
    'Temporary table',
 );
@@ -386,6 +390,7 @@ is_deeply(
       },
       'is_nullable' => {},
       name => 'instrument_relation',
+      charset => 'latin1',
    },
    'Hyphens in indexed columns',
 );
@@ -419,6 +424,7 @@ is_deeply(
       engine       => 'ndbcluster',
       type_for     => { id => 'bigint' },
       name         => 'pipo',
+      charset      => 'latin1',
    },
    'NDB table',
 );
@@ -456,6 +462,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int', b => 'int', mixedcol => 'int' },
       name         => 't',
+      charset      => undef,
    },
    'Mixed-case identifiers',
 );
@@ -492,6 +499,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int', b => 'char' },
       name         => 't2',
+      charset      => 'latin1',
    },
    'No clustered key on MyISAM table'
 );
@@ -874,6 +882,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { country => 'enum' },
       name         => 'issue_132',
+      charset      => 'latin1',
    },
    'ENUM col with backtick in value (issue 132)'
 );
@@ -909,6 +918,7 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
       name         => 'issue_330',
+      charset      => 'latin1',
    },
    'issue with pairing backticks in column comments (issue 330)'
 );
@@ -995,6 +1005,7 @@ is_deeply(
             type         => 'BTREE',
          },
       },
+      charset => undef,
    },
    'Index with comma in its name (issue 388)'
 );
