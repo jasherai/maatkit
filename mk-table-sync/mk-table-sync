@@ -7404,7 +7404,6 @@ sub main {
       );
    }
 
-   my $hdr         = "# %6s %7s %6s %6s %-9s %-4s %s.%s\n";
    my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
 
    # dsn[0] is expected to be the master (i.e. the source).  So if
@@ -7425,7 +7424,6 @@ sub main {
    my %args = (
       dsns    => \@dsns,
       plugins => $plugins,
-      hdr     => $hdr,
       %modules,
    );
 
@@ -7465,7 +7463,6 @@ sub main {
 # Required Arguments:
 #   dsns         - Arrayref of DSNs
 #   plugins      - Arrayref of TableSync* objects
-#   hdr          - Header to print before output
 #   OptionParser - <OptionParser> object
 #   DSNParser    - <DSNParser> object
 #   Quoter       - <Quoter> object
@@ -7474,7 +7471,7 @@ sub main {
 #   Exit status
 sub lock_and_rename {
    my ( %args ) = @_;
-   my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
+   my @required_args = qw(dsns plugins OptionParser DSNParser Quoter
                           VersionParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -7501,9 +7498,7 @@ sub lock_and_rename {
    };
 
    if ( $o->get('verbose') ) {
-      print "# Lock and rename ", $dp->as_string($src->{dsn}), "\n";
-      printf $args{hdr}, @ChangeHandler::ACTIONS,
-         qw(ALGORITHM EXIT DATABASE TABLE);
+      print_header("# Lock and rename " . $dp->as_string($src->{dsn}));
    }
 
    # We don't use lock_server() here because it does the usual stuff wrt
@@ -7558,7 +7553,6 @@ sub lock_and_rename {
 # Required Arguments:
 #   dsns          - Arrayref of DSNs
 #   plugins       - Arrayref of TableSync* objects
-#   hdr           - Header to print before output
 #   OptionParser  - <OptionParser> object
 #   DSNParser     - <DSNParser> object
 #   Quoter        - <Quoter> object
@@ -7568,7 +7562,7 @@ sub lock_and_rename {
 #   Exit status
 sub sync_one_table {
    my ( %args ) = @_;
-   my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
+   my @required_args = qw(dsns plugins OptionParser DSNParser Quoter
                           VersionParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -7597,11 +7591,10 @@ sub sync_one_table {
       };
 
       if ( $o->get('verbose') ) {
-         print "# Syncing ", $dp->as_string($dsn),
-            ($o->get('dry-run') ? ' in dry-run mode, without accessing or '
-               . 'comparing data' : '') , "\n";
-         printf $args{hdr}, @ChangeHandler::ACTIONS,
-            qw(ALGORITHM EXIT DATABASE TABLE);
+         print_header("# Syncing " . $dp->as_string($dsn)
+            . ($o->get('dry-run')
+               ? ' in dry-run mode, without accessing or comparing data'
+               : ''));
       }
 
       lock_server(src => $src, dst => $dst, %args);
@@ -7634,7 +7627,6 @@ sub sync_one_table {
 # Required Arguments:
 #   dsns          - Arrayref of DSNs
 #   plugins       - Arrayref of TableSync* objects
-#   hdr           - Header to print before output
 #   OptionParser  - <OptionParser> object
 #   DSNParser     - <DSNParser> object
 #   Quoter        - <Quoter> object
@@ -7649,7 +7641,7 @@ sub sync_one_table {
 #   <filter_diffs()>
 sub sync_via_replication {
    my ( %args ) = @_;
-   my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
+   my @required_args = qw(dsns plugins OptionParser DSNParser Quoter
                           VersionParser TableChecksum MasterSlave);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -7705,11 +7697,9 @@ sub sync_via_replication {
       );
 
       if ( $o->get('verbose') ) {
-         print "# Syncing via replication ", $dp->as_string($dst->{dsn}),
-            ($o->get('dry-run') ? ' in dry-run mode, without accessing or '
-               . 'comparing data' : '') , "\n";
-         printf $args{hdr}, @ChangeHandler::ACTIONS,
-            qw(ALGORITHM EXIT DATABASE TABLE);
+         print_header("# Syncing via replication " . $dp->as_string($dst->{dsn})
+            . ($o->get('dry-run') ?
+               ' in dry-run mode, without accessing or comparing data' : ''));
       }
 
       if ( @diffs ) {
@@ -7764,11 +7754,12 @@ sub sync_via_replication {
                   );
 
                   if ( $o->get('verbose') ) {
-                     print "# Syncing via replication ", $dp->as_string($dsn),
-                        ($o->get('dry-run') ? ' in dry-run mode, without '
-                           . 'accessing or comparing data' : '') , "\n";
-                     printf $args{hdr}, @ChangeHandler::ACTIONS,
-                        qw(ALGORITHM EXIT DATABASE TABLE);
+                     print_header("# Syncing via replication "
+                        . $dp->as_string($dsn)
+                        . ($o->get('dry-run')
+                           ? ' in dry-run mode, without '
+                             . 'accessing or comparing data'
+                           : ''));
                   }
 
                   if ( @diffs ) {
@@ -7825,7 +7816,6 @@ sub sync_via_replication {
 # Required Arguments:
 #   dsns          - Arrayref of DSNs
 #   plugins       - Arrayref of TableSync* objects
-#   hdr           - Header to print before output
 #   OptionParser  - <OptionParser> object
 #   DSNParser     - <DSNParser> object
 #   Quoter        - <Quoter> object
@@ -7837,7 +7827,7 @@ sub sync_via_replication {
 #   Exit status
 sub sync_all {
    my ( %args ) = @_;
-   my @required_args = qw(dsns plugins hdr OptionParser DSNParser Quoter
+   my @required_args = qw(dsns plugins OptionParser DSNParser Quoter
                           VersionParser TableParser MySQLDump);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -7881,11 +7871,9 @@ sub sync_all {
    my $exit_status = 0;
    foreach my $dsn ( @dsns[1 .. $#dsns] ) {
       if ( $o->get('verbose') ) {
-         print "# Syncing ", $dp->as_string($dsn),
-            ($o->get('dry-run') ? ' in dry-run mode, without accessing or '
-               . 'comparing data' : '') , "\n";
-         printf $args{hdr}, @ChangeHandler::ACTIONS,
-            qw(ALGORITHM EXIT DATABASE TABLE);
+         print_header("# Syncing " . $dp->as_string($dsn)
+            . ($o->get('dry-run')
+               ? ' in dry-run mode, without accessing or comparing data' : ''));
       }
 
       my $dst = {
@@ -8038,9 +8026,12 @@ sub sync_a_table {
    }
    my ($src, $dst, undef, $o, $q, $tp, $du, $syncer) = @args{@required_args};
 
+   my ($start_ts, $end_ts);
    my $exit_status = 0; 
    my %status;
    eval {
+      $start_ts = get_server_time($src->{dbh}) if $o->get('verbose');
+
       # This will either die if there's a problem or return the tbl struct.
       my $tbl_struct = ok_to_sync($src, $dst, %args);
 
@@ -8142,8 +8133,10 @@ sub sync_a_table {
 
    # Print this last so that the exit status is its final result.
    if ( $o->get('verbose') ) {
-      printf($args{hdr},
+      $end_ts = get_server_time($src->{dbh}) || "";
+      print_results(
          map { $_ || '0' } @status{@ChangeHandler::ACTIONS, 'ALGORITHM'},
+         $start_ts, $end_ts,
          $exit_status, $src->{db}, $src->{tbl});
    }
 
@@ -8718,6 +8711,46 @@ sub get_plugins {
    } $contents =~ m/^package TableSync\w{3,};/gm;
 
    return %local_plugins;
+}
+
+{
+# DELETE REPLACE INSERT UPDATE ALGORITHM START END EXIT DATABASE.TABLE
+my $hdr = "# %6s %7s %6s %6s %-9s %-19s %-19s %-4s %s.%s\n";
+
+sub print_header {
+   my ( $title ) = @_;
+   print "$title\n" if $title;
+   printf $hdr, @ChangeHandler::ACTIONS,
+      qw(ALGORITHM START END EXIT DATABASE TABLE);
+   return;
+}
+
+sub print_results {
+   my ( @values ) = @_;
+   printf $hdr, @values;
+   return;
+}
+}
+
+# Sub: get_server_time
+#  Return SELECT NOW() from the server.
+#
+# Parameters:
+#   $dbh - dbh
+sub get_server_time {
+   my ( $dbh ) = @_;
+   return unless $dbh;
+   my $now;
+   eval {
+      my $sql = "SELECT NOW()";
+      MKDEBUG && _d($dbh, $sql);
+      ($now) = $dbh->selectrow_array($sql);
+      MKDEBUG && _d("Server time:", $now);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Failed to get server time:", $EVAL_ERROR);
+   }
+   return $now
 }
 
 sub _d {
