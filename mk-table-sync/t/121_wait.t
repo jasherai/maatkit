@@ -81,7 +81,7 @@ my $t = time - $start;
 
 like(
    $output,
-   qr/Chunk\s+0\s+test\.t2/,
+   qr/Chunk\s+\S+\s+\S+\s+0\s+test\.t2/,
    "Synced table"
 );
 
@@ -112,7 +112,7 @@ $t = time - $start;
 
 like(
    $output,
-   qr/Chunk\s+0\s+test\.t2/,
+   qr/Chunk\s+\S+\s+\S+\s+0\s+test\.t2/,
    "Synced table"
 );
 

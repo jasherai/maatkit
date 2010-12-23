@@ -1688,7 +1688,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 6770
+# TableParser package 7156
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
@@ -1771,6 +1771,8 @@ sub parse {
 
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
+   my ($charset) = $ddl =~ m/DEFAULT CHARSET=(\w+)/;
+
    return {
       name           => $name,
       cols           => \@cols,
@@ -1786,6 +1788,7 @@ sub parse {
       is_numeric     => \%is_numeric,
       engine         => $engine,
       type_for       => \%type_for,
+      charset        => $charset,
    };
 }
 
@@ -2895,7 +2898,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 6770
+# TableChunker package 7156
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -2908,28 +2911,31 @@ package TableChunker;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-use POSIX qw(ceil);
+use POSIX qw(floor ceil);
 use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-my $EPOCH      = '1970-01-01';
-my %int_types  = map { $_ => 1 }
-   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
-my %real_types = map { $_ => 1 }
-   qw(decimal double float);
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter MySQLDump) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $self = { %args };
+
+   my %int_types  = map { $_ => 1 } qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
+   my %real_types = map { $_ => 1 } qw(decimal double float);
+
+   my $self = {
+      %args,
+      int_types  => \%int_types,
+      real_types => \%real_types,
+      EPOCH      => '1970-01-01',
+   };
+
    return bless $self, $class;
 }
 
@@ -2945,7 +2951,7 @@ sub find_chunk_columns {
 
       next unless $index->{type} eq 'BTREE';
 
-      defined $_ && next for @{ $index->{col_prefixes} };
+      next if grep { defined } @{$index->{col_prefixes}};
 
       if ( $args{exact} ) {
          next unless $index->{is_unique} && @{$index->{cols}} == 1;
@@ -2961,8 +2967,10 @@ sub find_chunk_columns {
    foreach my $index ( @possible_indexes ) { 
       my $col = $index->{cols}->[0];
 
-      next unless ( $int_types{$tbl_struct->{type_for}->{$col}}
-                    || $real_types{$tbl_struct->{type_for}->{$col}} );
+      my $col_type = $tbl_struct->{type_for}->{$col};
+      next unless $self->{int_types}->{$col_type}
+               || $self->{real_types}->{$col_type}
+               || $col_type =~ m/char/;
 
       push @candidate_cols, { column => $col, index => $index->{name} };
    }
@@ -3017,24 +3025,101 @@ sub calculate_chunks {
       return '1=1';
    }
 
-   my ($dbh, $db, $tbl) = @args{@required_args};
-   my $q        = $self->{Quoter};
-   my $db_tbl   = $q->quote($db, $tbl);
-   my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
+   my $q          = $self->{Quoter};
+   my $dbh        = $args{dbh};
+   my $chunk_col  = $args{chunk_col};
+   my $tbl_struct = $args{tbl_struct};
+   my $col_type   = $tbl_struct->{type_for}->{$chunk_col};
    MKDEBUG && _d('chunk col type:', $col_type);
 
-   my $range_func = $self->range_func_for($col_type);
+   my %chunker;
+   if ( $tbl_struct->{is_numeric}->{$chunk_col} || $col_type =~ /date|time/ ) {
+      %chunker = $self->_chunk_numeric(%args);
+   }
+   elsif ( $col_type =~ m/char/ ) {
+      %chunker = $self->_chunk_char(%args);
+   }
+   else {
+      die "Cannot chunk $col_type columns";
+   }
+   MKDEBUG && _d("Chunker:", Dumper(\%chunker));
+   my ($col, $start_point, $end_point, $interval, $range_func)
+      = @chunker{qw(col start_point end_point interval range_func)};
+
+   my @chunks;
+   if ( $start_point < $end_point ) {
+
+      push @chunks, "$col = 0" if $chunker{have_zero_chunk};
+
+      my ($beg, $end);
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ($beg, $end) = $self->$range_func($dbh, $i, $interval, $end_point);
+
+         if ( $iter++ == 0 ) {
+            push @chunks,
+               ($chunker{have_zero_chunk} ? "$col > 0 AND " : "")
+               ."$col < " . $q->quote_val($end);
+         }
+         else {
+            push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
+         }
+      }
+
+      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $q->quote_val($beg)
+            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
+                                   : "");
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+   }
+   else {
+      MKDEBUG && _d('No chunks; using single chunk 1=1');
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+sub _chunk_numeric {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $q        = $self->{Quoter};
+   my $db_tbl   = $q->quote($args{db}, $args{tbl});
+   my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
+
+   my $range_func;
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
+      $range_func  = "range_$col_type";
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $range_func  = 'range_datetime';
+   }
+
    my ($start_point, $end_point);
    eval {
       $start_point = $self->value_to_number(
          value       => $args{min},
          column_type => $col_type,
-         dbh         => $dbh,
+         dbh         => $args{dbh},
       );
       $end_point  = $self->value_to_number(
          value       => $args{max},
          column_type => $col_type,
-         dbh         => $dbh,
+         dbh         => $args{dbh},
       );
    };
    if ( $EVAL_ERROR ) {
@@ -3079,7 +3164,7 @@ sub calculate_chunks {
          $start_point = $self->value_to_number(
             value       => $nonzero_val,
             column_type => $col_type,
-            dbh         => $dbh,
+            dbh         => $args{dbh},
          );
          $have_zero_chunk = 1;
       }
@@ -3092,7 +3177,7 @@ sub calculate_chunks {
    my $interval = $args{chunk_size}
                 * ($end_point - $start_point)
                 / $args{rows_in_range};
-   if ( $int_types{$col_type} ) {
+   if ( $self->{int_types}->{$col_type} ) {
       $interval = ceil($interval);
    }
    $interval ||= $args{chunk_size};
@@ -3101,45 +3186,145 @@ sub calculate_chunks {
    }
    MKDEBUG && _d('Chunk interval:', $interval, 'units');
 
-   my @chunks;
-   my $col = $q->quote($args{chunk_col});
-   if ( $start_point < $end_point ) {
+   return (
+      col             => $q->quote($args{chunk_col}),
+      start_point     => $start_point,
+      end_point       => $end_point,
+      interval        => $interval,
+      range_func      => $range_func,
+      have_zero_chunk => $have_zero_chunk,
+   );
+}
 
-      push @chunks, "$col = 0" if $have_zero_chunk;
+sub _chunk_char {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct chunk_col rows_in_range chunk_size);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $q         = $self->{Quoter};
+   my $db_tbl    = $q->quote($args{db}, $args{tbl});
+   my $dbh       = $args{dbh};
+   my $chunk_col = $args{chunk_col};
+   my $row;
+   my $sql;
 
-      my ( $beg, $end );
-      my $iter = 0;
-      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
-         ( $beg, $end ) = $self->$range_func($dbh, $i, $interval, $end_point);
+   $sql = "SELECT MIN($chunk_col), MAX($chunk_col) FROM $db_tbl "
+        . "ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   $row = $dbh->selectrow_arrayref($sql);
+   my ($min_col, $max_col) = ($row->[0], $row->[1]);
 
-         if ( $iter++ == 0 ) {
-            push @chunks,
-               ($have_zero_chunk ? "$col > 0 AND " : "")
-               ."$col < " . $q->quote_val($end);
-         }
-         else {
-            push @chunks, "$col >= " . $q->quote_val($beg) . " AND $col < " . $q->quote_val($end);
-         }
-      }
+   $sql = "SELECT ORD(?) AS min_col_ord, ORD(?) AS max_col_ord";
+   MKDEBUG && _d($dbh, $sql);
+   my $ord_sth = $dbh->prepare($sql);  # avoid quoting issues
+   $ord_sth->execute($min_col, $max_col);
+   $row = $ord_sth->fetchrow_arrayref();
+   my ($min_col_ord, $max_col_ord) = ($row->[0], $row->[1]);
+   MKDEBUG && _d("Min/max col char code:", $min_col_ord, $max_col_ord);
 
-      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
-      pop @chunks;
-      if ( @chunks ) {
-         push @chunks, "$col >= " . $q->quote_val($beg);
+   my $base;
+   my @chars;
+   MKDEBUG && _d("Table charset:", $args{tbl_struct}->{charset});
+   if ( ($args{tbl_struct}->{charset} || "") eq "latin1" ) {
+      my @sorted_latin1_chars = (
+          32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,
+          46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,
+          60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,
+          74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,  85,  86,  87,
+          88,  89,  90,  91,  92,  93,  94,  95,  96, 123, 124, 125, 126, 161,
+         162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+         176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
+         190, 191, 215, 216, 222, 223, 247, 255);
+
+      my ($first_char, $last_char);
+      for my $i ( 0..$#sorted_latin1_chars ) {
+         $first_char = $i and last if $sorted_latin1_chars[$i] >= $min_col_ord;
       }
-      else {
-         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
-      }
-      if ( $nullable ) {
-         push @chunks, "$col IS NULL";
-      }
+      for my $i ( $first_char..$#sorted_latin1_chars ) {
+         $last_char = $i and last if $sorted_latin1_chars[$i] >= $max_col_ord;
+      };
+
+      @chars = map { chr $_; } @sorted_latin1_chars[$first_char..$last_char];
+      $base  = scalar @chars;
    }
    else {
-      MKDEBUG && _d('No chunks; using single chunk 1=1');
-      push @chunks, '1=1';
+
+      my $tmp_tbl    = '__maatkit_char_chunking_map';
+      my $tmp_db_tbl = $q->quote($args{db}, $tmp_tbl);
+      $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+      my $col_def = $args{tbl_struct}->{defs}->{$chunk_col};
+      $sql        = "CREATE TEMPORARY TABLE $tmp_db_tbl ($col_def) "
+                  . "ENGINE=MEMORY";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+
+      $sql = "INSERT INTO $tmp_db_tbl VALUE (CHAR(?))";
+      MKDEBUG && _d($dbh, $sql);
+      my $ins_char_sth = $dbh->prepare($sql);  # avoid quoting issues
+      for my $char_code ( $min_col_ord..$max_col_ord ) {
+         $ins_char_sth->execute($char_code);
+      }
+
+      $sql = "SELECT `$chunk_col` FROM $tmp_db_tbl "
+           . "WHERE `$chunk_col` BETWEEN ? AND ? "
+           . "ORDER BY `$chunk_col`";
+      MKDEBUG && _d($dbh, $sql);
+      my $sel_char_sth = $dbh->prepare($sql);
+      $sel_char_sth->execute($min_col, $max_col);
+
+      @chars = map { $_->[0] } @{ $sel_char_sth->fetchall_arrayref() };
+      $base  = scalar @chars;
+
+      $sql = "DROP TABLE $tmp_db_tbl";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
+   MKDEBUG && _d("Base", $base, "chars:", @chars);
+
+
+   $sql = "SELECT MAX(LENGTH($chunk_col)) FROM $db_tbl ORDER BY `$chunk_col`";
+   MKDEBUG && _d($dbh, $sql);
+   $row = $dbh->selectrow_arrayref($sql);
+   my $max_col_len = $row->[0];
+   MKDEBUG && _d("Max column value:", $max_col, $max_col_len);
+   my $n_values;
+   for my $n_chars ( 1..$max_col_len ) {
+      $n_values = $base**$n_chars;
+      if ( $n_values >= $args{chunk_size} ) {
+         MKDEBUG && _d($n_chars, "chars in base", $base, "expresses",
+            $n_values, "values");
+         last;
+      }
    }
 
-   return @chunks;
+   my $n_chunks = $args{rows_in_range} / $args{chunk_size};
+   my $interval = floor($n_values / $n_chunks) || 1;
+
+   my $range_func = sub {
+      my ( $self, $dbh, $start, $interval, $max ) = @_;
+      my $start_char = $self->base_count(
+         count_to => $start,
+         base     => $base,
+         symbols  => \@chars,
+      );
+      my $end_char = $self->base_count(
+         count_to => min($max, $start + $interval),
+         base     => $base,
+         symbols  => \@chars,
+      );
+      return $start_char, $end_char;
+   };
+
+   return (
+      col         => $q->quote($chunk_col),
+      start_point => 0,
+      end_point   => $n_values,
+      interval    => $interval,
+      range_func  => $range_func,
+   );
 }
 
 sub get_first_chunkable_column {
@@ -3352,22 +3537,6 @@ sub value_to_number {
    return $num;
 }
 
-sub range_func_for {
-   my ( $self, $col_type ) = @_;
-   return unless $col_type;
-   my $range_func;
-   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
-      $range_func  = 'range_num';
-   }
-   elsif ( $col_type =~ m/^(?:timestamp|date|time)$/ ) {
-      $range_func  = "range_$col_type";
-   }
-   elsif ( $col_type eq 'datetime' ) {
-      $range_func  = 'range_datetime';
-   }
-   return $range_func;
-}
-
 sub range_num {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $end = min($max, $start + $interval);
@@ -3403,8 +3572,8 @@ sub range_date {
 
 sub range_datetime {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
-       . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
+   my $sql = "SELECT DATE_ADD('$self->{EPOCH}', INTERVAL $start SECOND), "
+       . "DATE_ADD('$self->{EPOCH}', INTERVAL LEAST($max, $start + $interval) SECOND)";
    MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
@@ -3419,10 +3588,10 @@ sub range_timestamp {
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
    my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
-      . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+      . "- TO_DAYS('$self->{EPOCH} 00:00:00') * 86400";
    MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
-   $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+   $sql = "SELECT DATE_ADD('$self->{EPOCH}', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
@@ -3614,6 +3783,36 @@ sub get_nonzero_value {
    }
 
    return $val;
+}
+
+sub base_count {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(count_to base symbols);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($n, $base, $symbols) = @args{@required_args};
+
+   return $symbols->[0] if $n == 0;
+
+   my $highest_power = floor(log($n)/log($base));
+   if ( $highest_power == 0 ){
+      return $symbols->[$n];
+   }
+
+   my @base_powers;
+   for my $power ( 0..$highest_power ) {
+      push @base_powers, ($base**$power) || 1;  
+   }
+
+   my @base_multiples;
+   foreach my $base_power ( reverse @base_powers ) {
+      my $multiples = floor($n / $base_power);
+      push @base_multiples, $multiples;
+      $n -= $multiples * $base_power;
+   }
+
+   return join('', map { $symbols->[$_] } @base_multiples);
 }
 
 sub _d {
@@ -8715,7 +8914,7 @@ sub get_plugins {
 
 {
 # DELETE REPLACE INSERT UPDATE ALGORITHM START END EXIT DATABASE.TABLE
-my $hdr = "# %6s %7s %6s %6s %-9s %-19s %-19s %-4s %s.%s\n";
+my $hdr = "# %6s %7s %6s %6s %-9s %-8s %-8s %-4s %s.%s\n";
 
 sub print_header {
    my ( $title ) = @_;
@@ -8733,7 +8932,7 @@ sub print_results {
 }
 
 # Sub: get_server_time
-#  Return SELECT NOW() from the server.
+#  Return HH:MM:SS of SELECT NOW() from the server.
 #
 # Parameters:
 #   $dbh - dbh
@@ -8746,6 +8945,7 @@ sub get_server_time {
       MKDEBUG && _d($dbh, $sql);
       ($now) = $dbh->selectrow_array($sql);
       MKDEBUG && _d("Server time:", $now);
+      $now =~ s/^\S+//;
    };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d("Failed to get server time:", $EVAL_ERROR);
@@ -8775,7 +8975,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-table-sync - Synchronize MySQL tables efficiently.
+mk-table-sync - Synchronize MySQL table data efficiently.
 
 =head1 SYNOPSIS
 
@@ -8786,38 +8986,38 @@ mk-table-sync synchronizes data efficiently between MySQL tables.
 This tool changes data, so for maximum safety, you should back up your data
 before you use it.
 
-To sync db.tbl1 from host1 to host2:
+Sync db.tbl on host1 to host2:
 
- mk-table-sync --execute u=user,p=pass,h=host1,D=db,t=tbl host2
+  mk-table-sync --execute h=host1,D=db,t=tbl h=host2
 
-Sync all tables in host1 to host2 and host3:
+Sync all tables on host1 to host2 and host3:
 
- mk-table-sync --execute host1 host2 host3
-
-Resolve differences L<mk-table-checksum> found on this master's slaves:
-
- mk-table-sync --execute --replicate test.checksum master1
+  mk-table-sync --execute host1 host2 host3
 
 Make slave1 have the same data as its replication master:
 
- mk-table-sync --execute --sync-to-master slave1
+  mk-table-sync --execute --sync-to-master slave1
 
-Ditto, resolving differences L<mk-table-checksum> found:
+Resolve differences that L<mk-table-checksum> found on all slaves of master1:
 
- mk-table-sync --execute --sync-to-master \
-   --replicate test.checksum slave1
+  mk-table-sync --execute --replicate test.checksum master1
 
-Sync server2 in a master-master replication configuration, where server2's copy
-of db1.tbl1 is known or suspected to be incorrect:
+Same as above but only resolve differences on slave1:
 
- mk-table-sync --execute --sync-to-master h=server2,D=db1,t=tbl1
+  mk-table-sync --execute --replicate test.checksum \
+    --sync-to-master slave1
+
+Sync master2 in a master-master replication configuration, where master2's copy
+of db.tbl is known or suspected to be incorrect:
+
+  mk-table-sync --execute --sync-to-master h=master2,D=db,t=tbl
 
 Note that in the master-master configuration, the following will NOT do what you
-want, because it will make changes directly on server2, which will then flow
-through replication and change server1's data:
+want, because it will make changes directly on master2, which will then flow
+through replication and change master1's data:
 
- # Don't do this in a master-master setup!
- mk-table-sync --execute h=server1,D=db1,t=tbl1 h=server2
+  # Don't do this in a master-master setup!
+  mk-table-sync --execute h=master1,D=db,t=tbl master2
 
 =head1 RISKS
 
@@ -8844,7 +9044,7 @@ child tables.
 
 In general, this tool is best suited when your tables have a primary key or
 unique index.  Although it can synchronize data in tables lacking a primary key
-or unique index, it might be best to sychronize that data by another means.
+or unique index, it might be best to synchronize that data by another means.
 
 At the time of this release, there is a potential bug using
 L<"--lock-and-rename"> with MySQL 5.1, a bug detecting certain differences,
@@ -8859,28 +9059,16 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-B<WARNING> this tool is unfinished and could perform slowly.  The Chunk
-algorithm is great when it can be used, and so is Nibble, but otherwise GroupBy
-is the default choice and it may not perform very well.  Please run with
-L<"--dry-run"> before subjecting your servers to this tool, and make backups of
-your data!
-
-This tool is designed to do one-way and bidirectional synchronization of data.
-It finds differences efficiently with one of several algorithms
-(see L<"ALGORITHMS">).  It makes changes on the destination table(s) so it
-matches the source.
-
+mk-table-sync does one-way and bidirectional synchronization of table data.
 It does B<not> synchronize table structures, indexes, or any other schema
-changes.  It synchronizes only data.
+objects.  The following describes one-way synchronization.
+L<"BIDIRECTIONAL SYNCING"> is described later.
 
-It can operate through replication by comparing a slave with its master and
-making changes on the master.  These changes will flow through replication and
-correct any differences found on the slave.
-
-It accepts a list of DSNs (see the L<"--help"> output) to tell it where and how
-to connect.
-
-There are many ways to invoke it.  The following is the abbreviated logic:
+This tool is complex and functions in several different ways.  To use it
+safely and effectively, you should understand three things: the purpose
+of L<"--replicate">, finding differences, and specifying hosts.  These
+three concepts are closely related and determine how the tool will run. 
+The following is the abbreviated logic:
 
    if DSN has a t part, sync only that table:
       if 1 DSN:
@@ -8903,8 +9091,56 @@ There are many ways to invoke it.  The following is the abbreviated logic:
          find tables, filtering with --databases etc, and sync each
          DSN to the first.
 
-If you're confused about how it the DSNs are interpreted, use the
-L<"--explain-hosts"> option and it will tell you.
+mk-table-sync can run in one of two ways: with L<"--replicate"> or without.
+The default is to run without L<"--replicate"> which causes mk-table-sync
+to automatically find differences efficiently with one of several
+algorithms (see L<"ALGORITHMS">).  Alternatively, the value of
+L<"--replicate">, if specified, causes mk-table-sync to use the differences
+already found by having previously ran L<mk-table-checksum> with its own
+C<--replicate> option.  Strictly speaking, you don't need to use
+L<"--replicate"> because mk-table-sync can find differences, but many
+people use L<"--replicate"> if, for example, they checksum regularly
+using L<mk-table-checksum> then fix differences as needed with mk-table-sync.
+If you're unsure, read each tool's documentation carefully and decide for
+yourself, or consult with an expert.
+
+Regardless of whether L<"--replicate"> is used or not, you need to specify
+which hosts to sync.  There are two ways: with L<"--sync-to-master"> or
+without.  Specifying L<"--sync-to-master"> makes mk-table-sync expect
+one and only slave DSN on the command line.  The tool will automatically
+discover the slave's master and sync it so that its data is the same as
+its master.  This is accomplished by making changes on the master which
+then flow through replication and update the slave to resolve its differences.
+B<Be careful though>: although this option specifies and syncs a single
+slave, if there are other slaves on the same master, they will receive
+via replication the changes intended for the slave that you're trying to
+sync.
+
+Alternatively, if you do not specify L<"--sync-to-master">, the first
+DSN given on the command line is the source host.  There is only ever
+one source host.  If you do not also specify L<"--replicate">, then you
+must specify at least one other DSN as the destination host.  There
+can be one or more destination hosts.  Source and destination hosts
+must be independent; they cannot be in the same replication topology.
+mk-table-sync will die with an error if it detects that a destination
+host is a slave because changes are written directly to destination hosts
+(and it's not safe to write directly to slaves).  Or, if you specify
+L<"--replicate"> (but not L<"--sync-to-master">) then mk-table-sync expects
+one and only one master DSN on the command line.  The tool will automatically
+discover all the master's slaves and sync them to the master.  This is
+the only way to sync several (all) slaves at once (because
+L<"--sync-to-master"> only specifies one slave).
+
+Each host on the command line is specified as a DSN.  The first DSN
+(or only DSN for cases like L<"--sync-to-master">) provides default values
+for other DSNs, whether those other DSNs are specified on the command line
+or auto-discovered by the tool.  So in this example,
+
+  mk-table-sync --execute h=host1,u=msandbox,p=msandbox h=host2
+
+the host2 DSN inherits the C<u> and C<p> DSN parts from the host1 DSN.
+Use the L<"--explain-hosts"> option to see how mk-table-sync will interpret
+the DSNs given on the command line.
 
 =head1 OUTPUT
 
@@ -8978,10 +9214,11 @@ mk-table-sync from complaining that it is changing data on a slave.
 
 =head1 ALGORITHMS
 
-This tool has a generic data-syncing framework, within which it is possible to
-use any number of different algorithms to actually find differences.  It chooses
-the best algorithm automatically.  While I plan to add more algorithms in the
-future, the following are implemented now:
+mk-table-sync has a generic data-syncing framework which uses different
+algorithms to find differences.  The tool automatically chooses the best
+algorithm for each table based on indexes, column types, and the algorithm
+preferences specified by L<"--algorithms">.  The following algorithms are
+available, listed in their default order of preference:
 
 =over
 
@@ -9032,7 +9269,7 @@ there is no suitable index for them to use.
 =item Future Plans
 
 Possibilities for future algorithms are TempTable (what I originally called
-bottom-up in earlier versions of this tool), DrillDown (what I originallly
+bottom-up in earlier versions of this tool), DrillDown (what I originally
 called top-down), and GroupByPrefix (similar to how SqlYOG Job Agent works).
 Each algorithm has strengths and weaknesses.  If you'd like to implement your
 favorite technique for finding differences between two sources of data on
@@ -9473,7 +9710,7 @@ default: yes
 C<HEX()> C<BLOB>, C<TEXT> and C<BINARY> columns.
 
 When row data from the source is fetched to create queries to sync the
-data (i.e. the queries seen with L<"--print"> and exeucted by L<"--execute">),
+data (i.e. the queries seen with L<"--print"> and executed by L<"--execute">),
 binary columns are wrapped in HEX() so the binary data does not produce
 an invalid SQL statement.  You can disable this option but you probably
 shouldn't.
@@ -9709,7 +9946,7 @@ Keep going if L<"--wait"> fails.
 If you specify L<"--wait"> and the slave doesn't catch up to the master's
 position before the wait times out, the default behavior is to abort.  This
 option makes the tool keep going anyway.  B<Warning>: if you are trying to get a
-consistent comparision between the two servers, you probably don't want to keep
+consistent comparison between the two servers, you probably don't want to keep
 going after a timeout.
 
 =item --[no]transaction

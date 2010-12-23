@@ -27,30 +27,63 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 1;
+   plan tests => 6;
 }
 
-my $output = '';
-my @args   = (qw(--verbose --print --sync-to-master), 'h=127.1,P=12346,u=msandbox,p=msandbox');
+my $output;
+my @args = ('h=127.1,P=12346,u=msandbox,p=msandbox', qw(--sync-to-master -t test.ascii -v -v --print --chunk-size 30));
 
-# #############################################################################
-# Issue 377: Make mk-table-sync print start/end times
-# #############################################################################
+$sb->create_dbs($master_dbh, ['test']);
+$sb->load_file('master', "common/t/samples/char-chunking/ascii.sql", "test");
+$master_dbh->do('alter table test.ascii drop column `i`');
+
+wait_until(
+   sub {
+      my $row;
+      eval {$row = $slave_dbh->selectall_arrayref("select * from test.ascii");};
+      return 1 if $row && @$row > 100;
+   },
+);
+
+$slave_dbh->do('delete from test.ascii where c like "Zesus%"');
+
 $output = output(
-   sub { mk_table_sync::main(@args, qw(-t mysql.user)) }
+   sub { mk_table_sync::main(@args) },
+);
+
+like(
+   $output,
+   qr/#\s+0\s+4\s+0\s+0\s+Chunk\s+/,
+   "Chunks char col"
 );
 like(
    $output,
-   qr/#\s+0\s+0\s+0\s+0\s+Nibble\s+
-   \d\d:\d\d:\d\d\s+
-   \d\d:\d\d:\d\d\s+
-   0\s+mysql.user/x,
-   "Server time printed with --verbose (issue 377)"
+   qr/FORCE INDEX \(`c`\)/,
+   "Uses char col index"
+);
+like(
+   $output,
+   qr/VALUES \('Zesus'\)/,
+   "Replaces first value"
+);
+like(
+   $output,
+   qr/VALUES \('Zesus!'\)/,
+   "Replaces second value"
+);
+like(
+   $output,
+   qr/VALUES \('Zesus!!'\)/,
+   "Replaces third value"
+);
+like(
+   $output,
+   qr/VALUES \('ZESUS!!!'\)/,
+   "Replaces fourth value"
 );
 
 # #############################################################################
 # Done.
 # #############################################################################
 $sb->wipe_clean($master_dbh);
-$sb->wipe_clean($slave_dbh);
 exit;

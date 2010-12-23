@@ -39,18 +39,12 @@ $output = output(
    sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms GroupBy)) },
    trf => \&remove_traces,
 );
-is(
-   $output,
-"# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d2`.`t`(`x`) VALUES ('1');
-#      0       0      1      0 GroupBy   2    d1.t
-# Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d3`.`t`(`x`) VALUES ('1');
-INSERT INTO `d3`.`t`(`x`) VALUES ('2');
-#      0       0      2      0 GroupBy   2    d1.t
-",
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_631_output_1.txt",
+      cmd_output => 1,
+   ),
    'GroupBy can sync issue 631'
 );
 
@@ -58,18 +52,12 @@ $output = output(
    sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms Stream)) },
    trf => \&remove_traces,
 );
-is(
-   $output,
-"# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d2`.`t`(`x`) VALUES ('1');
-#      0       0      1      0 Stream    2    d1.t
-# Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-INSERT INTO `d3`.`t`(`x`) VALUES ('1');
-INSERT INTO `d3`.`t`(`x`) VALUES ('2');
-#      0       0      2      0 Stream    2    d1.t
-",
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_631_output_2.txt",
+      cmd_output => 1,
+   ),
    'Stream can sync issue 631'
 );
 

@@ -35,15 +35,18 @@ else {
 my $output;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
 my $cmd = "$trunk/mk-table-sync/mk-table-sync -F $cnf"; 
+my $t   = qr/\d\d:\d\d:\d\d/;
 
 $sb->wipe_clean($master_dbh);
 $sb->load_file('master', 'mk-table-sync/t/samples/filter_tables.sql');
 
 $output = `$cmd h=127.1,P=12345 P=12346 --no-check-slave --dry-run -t issue_806_1.t2 | tail -n 2`;
+$output =~ s/$t/00:00:00/g;
+$output =~ s/[ ]{2,}/ /g;
 is(
    $output,
-"# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-#      0       0      0      0 Chunk     0    issue_806_1.t2
+"# DELETE REPLACE INSERT UPDATE ALGORITHM START END EXIT DATABASE.TABLE
+# 0 0 0 0 Chunk 00:00:00 00:00:00 0 issue_806_1.t2
 ",
    "db-qualified --tables (issue 806)"
 );
@@ -64,28 +67,34 @@ my $mk_table_checksum = "$trunk/mk-table-checksum/mk-table-checksum";
 `$mk_table_checksum -F $cnf --replicate test.checksum h=127.1,P=12345 -d issue_806_1,issue_806_2 --replicate-check 1 --quiet`;
 
 $output = `$cmd h=127.1,P=12345 --replicate test.checksum --dry-run | tail -n 2`;
+$output =~ s/$t/00:00:00/g;
+$output =~ s/[ ]{2,}/ /g;
 is(
    $output,
-"#      0       0      0      0 Chunk     0    issue_806_2.t2
-#      0       0      0      0 Chunk     0    issue_806_1.t1
+"# 0 0 0 0 Chunk 00:00:00 00:00:00 0 issue_806_2.t2
+# 0 0 0 0 Chunk 00:00:00 00:00:00 0 issue_806_1.t1
 ",
    "--replicate with no filters"
 );
 
 $output = `$cmd h=127.1,P=12345 --replicate test.checksum --dry-run -t t1 | tail -n 2`;
+$output =~ s/$t/00:00:00/g;
+$output =~ s/[ ]{2,}/ /g;
 is(
    $output,
-"# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-#      0       0      0      0 Chunk     0    issue_806_1.t1
+"# DELETE REPLACE INSERT UPDATE ALGORITHM START END EXIT DATABASE.TABLE
+# 0 0 0 0 Chunk 00:00:00 00:00:00 0 issue_806_1.t1
 ",
    "--replicate with --tables"
 );
 
 $output = `$cmd h=127.1,P=12345 --replicate test.checksum --dry-run -d issue_806_2 | tail -n 2`;
+$output =~ s/$t/00:00:00/g;
+$output =~ s/[ ]{2,}/ /g;
 is(
    $output,
-"# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-#      0       0      0      0 Chunk     0    issue_806_2.t2
+"# DELETE REPLACE INSERT UPDATE ALGORITHM START END EXIT DATABASE.TABLE
+# 0 0 0 0 Chunk 00:00:00 00:00:00 0 issue_806_2.t2
 ",
    "--replicate with --databases"
 );

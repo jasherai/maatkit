@@ -156,7 +156,7 @@ like(
 );
 like(
    $output,
-   qr/2 Chunk\s+2\s+test.test3/,
+   qr/2 Chunk\s+\S+\s+\S+\s+2\s+test.test3/,
    'Right number of rows to update',
 );
 
