@@ -8945,7 +8945,7 @@ sub get_server_time {
       MKDEBUG && _d($dbh, $sql);
       ($now) = $dbh->selectrow_array($sql);
       MKDEBUG && _d("Server time:", $now);
-      $now =~ s/^\S+//;
+      $now =~ s/^\S+\s+//;
    };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d("Failed to get server time:", $EVAL_ERROR);
