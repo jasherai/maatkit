@@ -28,7 +28,7 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 1;
+   plan tests => 2;
 }
 
 $sb->wipe_clean($master_dbh);
@@ -49,6 +49,18 @@ ok(
       cmd_output => 1,
    ),
    'Sync infinite loop (issue 644)'
+);
+
+# Thanks to issue 568, this table can be chunked on the char col.
+$output = `$trunk/mk-table-sync/mk-table-sync --algo Chunk --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_644 --print --chunk-size 2 -v`;
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_644_output_2.txt",
+      cmd_output => 1,
+   ),
+   'Sync infinite loop with Chunk algo (issue 644)'
 );
 
 # #############################################################################
