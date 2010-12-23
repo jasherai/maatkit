@@ -40,13 +40,14 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 # #############################################################################
 diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_644.sql`);
 sleep 1;
-$output = `$trunk/mk-table-sync/mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_644 --print --chunk-size 2 -v`;
-is(
-   $output,
-"# Syncing P=12346,h=127.1,p=...,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-#      0       0      0      0 Nibble    0    issue_644.t
-",
+$output = `$trunk/mk-table-sync/mk-table-sync --algo Nibble --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_644 --print --chunk-size 2 -v`;
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_644_output_1.txt",
+      cmd_output => 1,
+   ),
    'Sync infinite loop (issue 644)'
 );
 
