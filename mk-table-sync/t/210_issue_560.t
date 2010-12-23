@@ -48,14 +48,13 @@ $slave_dbh->do('UPDATE issue_560.buddy_list SET buddy_id=0 WHERE player_id=486')
 diag(`$trunk/mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345,u=msandbox,p=msandbox  -d issue_560 --chunk-size 50 > /dev/null`);
 sleep 1;
 $output = `$trunk/mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345,u=msandbox,p=msandbox  -d issue_560 --replicate-check 1 --chunk-size 50`;
-is(
-   $output,
-"Differences on P=12346,h=127.0.0.1
-DB        TBL        CHUNK CNT_DIFF CRC_DIFF BOUNDARIES
-issue_560 buddy_list     7        0        1 `player_id` >= '301' AND `player_id` < '351'
-issue_560 buddy_list    10        0        1 `player_id` >= '451'
-
-",
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_560_output_1.txt",
+      cmd_output => 1,
+   ),
    'Found checksum differences (issue 560)'
 );
 
@@ -63,31 +62,13 @@ $output = output(
    sub { mk_table_sync::main('--sync-to-master', 'h=127.1,P=12346,u=msandbox,p=msandbox', qw(-d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum)) },
    trf => \&remove_traces,
 );
-is(
-   $output,
-"# Syncing via replication P=12346,h=127.1,p=...,u=msandbox
-# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '350') OR (`player_id` = '350' AND `buddy_id` <= '2454'))) AND ((`player_id` >= '301' AND `player_id` < '351')) FOR UPDATE
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '350') OR (`player_id` = '350' AND `buddy_id` <= '2454'))) AND ((`player_id` >= '301' AND `player_id` < '351')) LOCK IN SHARE MODE
-# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '350') OR (`player_id` = '350' AND `buddy_id` <= '2454'))) AND (`player_id` >= '301' AND `player_id` < '351') ORDER BY `player_id`, `buddy_id` FOR UPDATE
-# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '350') OR (`player_id` = '350' AND `buddy_id` <= '2454'))) AND (`player_id` >= '301' AND `player_id` < '351') ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='333' AND `buddy_id`='0' LIMIT 1;
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='334' AND `buddy_id`='0' LIMIT 1;
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('333', '3414');
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('334', '6626');
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE ((((`player_id` > '350') OR (`player_id` = '350' AND `buddy_id` > '2454')) AND 1=1)) AND ((`player_id` >= '301' AND `player_id` < '351')) FOR UPDATE
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE ((((`player_id` > '350') OR (`player_id` = '350' AND `buddy_id` > '2454')) AND 1=1)) AND ((`player_id` >= '301' AND `player_id` < '351')) LOCK IN SHARE MODE
-#      2       2      0      0 Nibble    2    issue_560.buddy_list
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '500') OR (`player_id` = '500' AND `buddy_id` <= '4272'))) AND ((`player_id` >= '451')) FOR UPDATE
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '500') OR (`player_id` = '500' AND `buddy_id` <= '4272'))) AND ((`player_id` >= '451')) LOCK IN SHARE MODE
-# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '500') OR (`player_id` = '500' AND `buddy_id` <= '4272'))) AND (`player_id` >= '451') ORDER BY `player_id`, `buddy_id` FOR UPDATE
-# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE (((`player_id` < '500') OR (`player_id` = '500' AND `buddy_id` <= '4272'))) AND (`player_id` >= '451') ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
-DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`='486' AND `buddy_id`='0' LIMIT 1;
-REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES ('486', '1660');
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE ((((`player_id` > '500') OR (`player_id` = '500' AND `buddy_id` > '4272')) AND 1=1)) AND ((`player_id` >= '451')) FOR UPDATE
-# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, COALESCE(LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)), 0) AS crc FROM `issue_560`.`buddy_list` FORCE INDEX (`PRIMARY`) WHERE ((((`player_id` > '500') OR (`player_id` = '500' AND `buddy_id` > '4272')) AND 1=1)) AND ((`player_id` >= '451')) LOCK IN SHARE MODE
-#      1       1      0      0 Nibble    2    issue_560.buddy_list
-",
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
+ok(
+   no_diff(
+      $output,
+      "mk-table-sync/t/samples/issue_560_output_2.txt",
+      cmd_output => 1,
+   ),
    'Sync only --replicate chunks'
 );
 

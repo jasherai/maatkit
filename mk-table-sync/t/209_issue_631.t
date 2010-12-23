@@ -39,6 +39,7 @@ $output = output(
    sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms GroupBy)) },
    trf => \&remove_traces,
 );
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
 ok(
    no_diff(
       $output,
@@ -52,6 +53,7 @@ $output = output(
    sub { mk_table_sync::main('h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t', 'h=127.1,P=12345,D=d2,t=t', 'h=127.1,P=12345,D=d3,t=t', qw(--print -v --algorithms Stream)) },
    trf => \&remove_traces,
 );
+$output =~ s/\d\d:\d\d:\d\d/00:00:00/g;
 ok(
    no_diff(
       $output,
