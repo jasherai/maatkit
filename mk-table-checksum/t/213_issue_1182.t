@@ -39,18 +39,18 @@ my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -t sakila.film --c
 
 # Unfortunately we don't have a good method for testing that the tool
 # uses the correct chunks.  That's tested directly in TableChunker.t.
-# So here we make sure that --closed-range doesn't affect anything; it
-# should chunk and checksum identically to not using --closed-range.
+# So here we make sure that --chunk-range doesn't affect anything; it
+# should chunk and checksum identically to not using --chunk-range.
 
 diag(`rm -rf /tmp/mk-checksum-test-output-?.txt`);
 
-`$cmd                >/tmp/mk-table-checksum-test-output-1.txt`;
-`$cmd --closed-range >/tmp/mk-table-checksum-test-output-2.txt`;
+`$cmd                          >/tmp/mk-table-checksum-test-output-1.txt`;
+`$cmd --chunk-range openclosed >/tmp/mk-table-checksum-test-output-2.txt`;
 
 is(
    `diff /tmp/mk-table-checksum-test-output-1.txt /tmp/mk-table-checksum-test-output-2.txt`,
    "",
-   "--closed-range does not alter chunks or checksums"
+   "--chunk-range does not alter chunks or checksums"
 );
 
 # #############################################################################
