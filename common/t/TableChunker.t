@@ -1217,7 +1217,7 @@ SKIP: {
       dbh           => $dbh,
       db            => 'sakila',
       tbl           => 'film',
-      closed_range  => 1,
+      chunk_range   => 'openclosed',
    );
    is_deeply(
       \@chunks,
@@ -1227,7 +1227,7 @@ SKIP: {
          "`film_id` >= '60' AND `film_id` < '90'",
          "`film_id` >= '90' AND `film_id` <= '99'",
       ],
-      'closed_range adds AND chunk_col <= max (issue 1182)'
+      'openclosed chunk range adds AND chunk_col <= max (issue 1182)'
    );
 };
 

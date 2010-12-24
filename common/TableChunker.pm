@@ -201,9 +201,9 @@ sub find_chunk_columns {
 #   chunk_size    - requested size of each chunk
 #
 # Optional Arguments:
-#   exact        - Use exact chunk_size? Use approximates is not.
-#   tries        - Fetch up to this many rows to find a non-zero value
-#   closed_range - Close range by adding "AND chunk_col <= max" to last chunk
+#   exact       - Use exact chunk_size? Use approximates is not.
+#   tries       - Fetch up to this many rows to find a non-zero value
+#   chunk_range - Make chunk range open (default) or openclosed
 #
 # Returns:
 #   Array of WHERE predicates like "`col` >= '10' AND `col` < '20'",
@@ -300,14 +300,15 @@ sub calculate_chunks {
 
       # Remove the last chunk and replace it with one that matches everything
       # from the beginning of the last chunk to infinity, or to the max col
-      # value if closed_range is true.  If the chunk column is nullable, do
-      # NULL separately.
-      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
+      # value if chunk_range is openclosed.  If the chunk column is nullable,
+      # do NULL separately.
+      my $chunk_range = $args{chunk_range} || 'open';
+      my $nullable    = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
       pop @chunks;
       if ( @chunks ) {
          push @chunks, "$col >= " . $q->quote_val($beg)
-            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
-                                   : "");
+            . ($chunk_range eq 'openclosed'
+               ? " AND $col <= " . $q->quote_val($args{max}) : "");
       }
       else {
          push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
