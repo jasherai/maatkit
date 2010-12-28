@@ -9148,13 +9148,15 @@ If you specify the L<"--verbose"> option, you'll see information about the
 differences between the tables.  There is one row per table.  Each server is
 printed separately.  For example,
 
-   # Syncing h=host1,D=test,t=test1
-   # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-   #      0       0      3      0 Chunk     2    test.test1
+  # Syncing h=host1,D=test,t=test1
+  # DELETE REPLACE INSERT UPDATE ALGORITHM START    END      EXIT DATABASE.TABLE
+  #      0       0      3      0 Chunk     13:00:00 13:00:17 2    test.test1
 
 Table test.test1 on host1 required 3 C<INSERT> statements to synchronize
-and it used the Chunk algorithm (see L<"ALGORITHMS">).  Because differences were
-found, its L<"EXIT STATUS"> was 2.
+and it used the Chunk algorithm (see L<"ALGORITHMS">).  The sync operation
+for this table started at 13:00:00 and ended 17 seconds later (times taken
+from C<NOW()> on the source host).  Because differences were found, its
+L<"EXIT STATUS"> was 2.
 
 If you specify the L<"--print"> option, you'll see the actual SQL statements
 that the script uses to synchronize the table if L<"--execute"> is also
