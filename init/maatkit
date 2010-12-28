@@ -1,0 +1,207 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:          maatkit
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Advanced command-line tools for open-source databases.
+### END INIT INFO
+
+# Author: Daniel Nichter <daniel@percona.com>
+
+# This script is mostly a copy of /etc/init.d/skeleton with some changes
+# here and there.
+
+# Do NOT "set -e"
+
+# If you don't see the [OK]/[fail] messages from log_daemon_msg try running
+# with INIT_VERBOSE=yes.
+
+# This initscript works for several Maatkit tools because the tools
+# are symlinked in /etc/init.d/ like /etc/init.d/mk-slave-restart ->
+# /etc/init.d/maatkit.  So $0 will be "/etc/init.d/mk-slave-restart"
+# and we cut the tool's name from the end.
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="Maatkit tool"
+NAME=`echo $0 | awk -F '/'  '{print $NF}'`
+SCRIPTNAME=/etc/init.d/$NAME
+# For testing you can explicitly set where the Maatkit tool/daemon is located.
+if [ -n "$MKDAEMON" ]; then
+   DAEMON=$MKDAEMON
+else
+   DAEMON=`which $NAME`
+fi
+PIDFILE=/var/run/$NAME.pid
+LOGFILE=/var/log/$NAME.log
+DAEMON_ARGS="--daemonize --log $LOGFILE --pid $PIDFILE"
+TOOL_ARGS=""  # set later by calling set_tool_args
+
+# #############################################################################
+# Script/system init
+# #############################################################################
+
+# Die if the Maatkit tool isn't installed.
+if [ ! -x "$DAEMON" ]; then
+   echo "Cannot find $DESC $NAME in path $PATH."
+   exit 1
+fi
+
+# Read configuration variable file if it is present
+[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+# #############################################################################
+# Subroutines
+# #############################################################################
+
+set_tool_args()
+{
+   case "$1" in
+      mk-slave-restart)
+         TOOL_ARGS="--verbose"
+      ;;
+   esac
+}
+
+# Return
+#   0 if daemon has been started
+#   1 if daemon was already running
+#   2 if daemon could not be started
+do_start()
+{
+   start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null || return 1
+   start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_ARGS >>$LOGFILE 2>&1 || return 2
+
+   return 0  # success
+}
+
+# Return
+#   0 if daemon has been stopped
+#   1 if daemon was already stopped
+#   2 if daemon could not be stopped
+#   other if a failure occurred
+do_stop()
+{
+   get_status
+
+   if [ "$running" = 1 ] || [ "$running" = 2 ]; then
+      start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE
+   	RETVAL="$?"
+      [ "$RETVAL" = 1 ] || [ "$RETVAL" = 2 ] && return $RETVAL
+
+      # Wait for children to finish too if this is a daemon that forks
+      # and if the daemon is only ever run from this initscript.
+      # If the above conditions are not satisfied then add some other code
+      # that waits for the process to drop all resources that could be
+      # needed by services started subsequently.  A last resort is to
+      # sleep for some time.
+      start-stop-daemon --stop --quiet --oknodo --retry=0/30/KILL/5 --exec $DAEMON
+      [ "$?" = 2 ] && return 2
+   else
+      RETVAL=0
+   fi
+
+   # Maatkit tools should remove their PID files, but just in case...
+   if [ -f $PIDFILE ]; then
+      rm -rf $PIDFILE
+   fi
+
+   return "$RETVAL"
+}
+
+get_status()
+{
+   pidfile_exists=0
+   running=0
+   if [ -f "$PIDFILE" ]; then
+      pidfile_exists=1
+      PID=`cat $PIDFILE`
+      kill -0 $PID >/dev/null 2>&1
+      if [ "$?" = 0 ]; then
+         running=1
+      else
+         ps --pid $PID >/dev/null
+         [ "$?" = 0 ] && running=1
+      fi
+   fi
+}
+
+do_status()
+{
+   get_status
+
+   echo -n "$DESC $NAME "
+   if [ "$running" = 1 ]; then
+      echo "running."
+   else
+      echo -n "is not running"
+      if [ "$pidfile_exists" = 1 ]; then
+         echo -n " but PID file still exists"
+      fi
+      echo "."
+   fi
+}
+
+# #############################################################################
+# Begin init script
+# #############################################################################
+
+# All tools are started with DAEMON_ARGS, but a few need extra
+# args to make them run sensibly.
+set_tool_args
+
+case "$1" in
+   start)
+      [ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC" "$NAME"
+      do_start
+      case "$?" in
+         0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+         2)   [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+      esac
+   ;;
+   stop)
+      [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
+      do_stop
+      case "$?" in
+         0)   [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+         1|2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+      esac
+   ;;
+   status)
+      do_status
+   ;;
+   restart)
+      log_daemon_msg "Restarting $DESC" "$NAME"
+      do_stop
+      case "$?" in
+         0|1)
+            do_start
+            case "$?" in
+               0) log_end_msg 0 ;;
+               1) log_end_msg 1 ;; # Old process is still running
+               *) log_end_msg 1 ;; # Failed to start
+            esac
+         ;;
+         *)
+            # Failed to stop
+            log_end_msg 1
+         ;;
+      esac
+   ;;
+   *)
+      echo "Usage: $SCRIPTNAME {start|stop|restart|status}" >&2
+      exit 3
+   ;;
+esac
+
+:
