@@ -2,6 +2,7 @@ Changelog for mk-table-sync:
 
    * Made performance_schema an always ignored database (issue 1193).
    * Added START and END times to verbose output (issue 377).
+   * Added CURRENT_USER() to insufficient privileges error message (issue 1167).
 
 2010-08-01: version 1.0.30
 

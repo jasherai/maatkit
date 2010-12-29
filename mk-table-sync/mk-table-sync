@@ -8632,11 +8632,13 @@ sub ok_to_sync {
    if ( $o->get('check-privileges') ) {
       MKDEBUG && _d('Checking privileges');
       if ( !$syncer->have_all_privs($src->{dbh}, $src->{db}, $src->{tbl}) ) {
-         die "User does not have all necessary privileges on ",
+         my $user = get_current_user($src->{dbh}) || "";
+         die "User $user does not have all necessary privileges on ",
             $q->quote($src->{db}, $src->{tbl});
       }
       if ( !$syncer->have_all_privs($dst->{dbh}, $dst->{db}, $dst->{tbl}) ) {
-         die "User does not have all necessary privileges on ",
+         my $user = get_current_user($dst->{dbh}) || "";
+         die "User $user does not have all necessary privileges on ",
             $q->quote($dst->{db}, $dst->{tbl});
       }
    }
@@ -8951,6 +8953,23 @@ sub get_server_time {
       MKDEBUG && _d("Failed to get server time:", $EVAL_ERROR);
    }
    return $now
+}
+
+sub get_current_user {
+   my ( $dbh ) = @_;
+   return unless $dbh;
+
+   my $user;
+   eval {
+      my $sql = "SELECT CURRENT_USER()";
+      MKDEBUG && _d($dbh, $sql);
+      ($user) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Error getting current user:", $EVAL_ERROR);
+   }
+
+   return $user;
 }
 
 sub _d {

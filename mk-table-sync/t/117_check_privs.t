@@ -62,7 +62,7 @@ $output = output(
 );
 like(
    $output,
-   qr/User does not have all necessary privileges/,
+   qr/User test_907\@localhost does not have all necessary privileges/,
    "Can't --print without all privs"
 );
 
