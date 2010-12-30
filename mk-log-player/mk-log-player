@@ -3197,50 +3197,69 @@ Discard L<"--split"> events for which this Perl code doesn't return true.
 
 This option only works with L<"--split">.
 
-This option is a string of Perl code or a file containing Perl code that gets
-compiled into a subroutine with one argument: $event.  This is a hashref.
-If the given value is a readable file, then mk-log-player reads the entire
-file and uses its contents as the code.  The file should not contain
-a shebang (#!/usr/bin/perl) line.
+This option allows you to inject Perl code into the tool to affect how the
+tool runs.  Usually your code should examine C<$event> to decided whether
+or not to allow the event.  C<$event> is a hashref of attributes and values of
+the event being filtered.  Or, your code could add new attribute-value pairs
+to C<$event> for use by other options that accept event attributes as their
+value.  You can find an explanation of the structure of C<$event> at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
-If the code returns true, the query is split; otherwise it is discarded.
-The code is the last statement in the subroutine other than C<return $event>. 
-The subroutine template is:
+There are two ways to supply your code: on the command line or in a file.
+If you supply your code on the command line, it is injected into the following
+subroutine where C<$filter> is your code:
 
-  sub { $event = shift; filter && return $event; }
+   sub {
+      MKDEBUG && _d('callback: filter');
+      my( $event ) = shift;
+      ( $filter ) && return $event;
+   }
 
-Filters given on the command line are wrapped inside parentheses like like
-C<( filter )>.  For complex, multi-line filters, you must put the code inside
-a file so it will not be wrapped inside parentheses.  Either way, the filter
-must produce syntactically valid code given the template.  For example, an
-if-else branch given on the command line would not be valid:
+Therefore you must ensure two things: first, that you correctly escape any
+special characters that need to be escaped on the command line for your
+shell, and two, that your code is syntactically valid when injected into
+the subroutine above.
 
-  --filter 'if () { } else { }'  # WRONG
-
-Since it's given on the command line, the if-else branch would be wrapped inside
-parentheses which is not syntactically valid.  So to accomplish something more
-complex like this would require putting the code in a file, for example
-filter.txt:
-
-  my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
-
-Then specify C<--filter filter.txt> to read the code from filter.txt.
-
-If the filter code won't compile, mk-log-player will die with an error.
-If the filter code does compile, an error may still occur at runtime if the
-code tries to do something wrong (like pattern match an undefined value).
-mk-log-player does not provide any safeguards so code carefully!
-
-An example filter that discards everything but SELECT statements:
+Here's an example filter supplied on the command line that discards
+events that are not SELECT statements:
 
   --filter '$event->{arg} =~ m/^select/i'
 
-This is compiled into a subroutine like the following:
+The second way to supply your code is in a file.  If your code is too complex
+to be expressed on the command line that results in valid syntax in the
+subroutine above, then you need to put the code in a file and give the file
+name as the value to L<"--filter">.  The file should not contain a shebang
+(C<#!/usr/bin/perl>) line.  The entire contents of the file is injeted into
+the following subroutine:
 
-  sub { $event = shift; ( $event->{arg} =~ m/^select/i ) && return $event; }
+   sub {
+      MKDEBUG && _d('callback: filter');
+      my( $event ) = shift;
+      $filter && return $event;
+   }
 
-You can find an explanation of the structure of $event at
-L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+That subroutine is almost identical to the one above except your code is
+not wrapped in parentheses.  This allows you to write multi-line code like:
+
+   my $event_ok;
+   if (...) {
+      $event_ok = 1;
+   }
+   else {
+      $event_ok = 0;
+   }
+   $event_ok
+
+Notice that the last line is not syntactically valid by itself, but it
+becomes syntactically valid when injected into the subroutine because it
+becomes:
+
+   $event_ok && return $event;
+
+If your code doesn't compile, the tool will die with an error.  Even if your
+code compmiles, it may crash to tool during runtime if, for example, it tries
+a pattern match an undefined value.  No safeguards of any kind of provided so
+code carefully!
 
 =item --help
 
