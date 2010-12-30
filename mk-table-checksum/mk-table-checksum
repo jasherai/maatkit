@@ -5391,11 +5391,14 @@ sub main {
    # Check for replication filters.
    # ########################################################################
    if ( $o->get('replicate') && $o->get('check-replication-filters') ) {
+      MKDEBUG && _d("Recursing to slaves to check for replication filters");
       my @all_repl_filters;
       $ms->recurse_to_slaves(
          {  dbh        => $main_dbh,
             dsn        => $hosts[0],
             dsn_parser => $dp,
+            recurse    => undef,  # check for filters anywhere
+            method     => $o->get('recursion-method'),
             callback   => sub {
                my ( $dsn, $dbh, $level, $parent ) = @_;
                my $repl_filters = $ms->get_replication_filters(dbh=>$dbh);
@@ -5408,7 +5411,6 @@ sub main {
                }
                return;
             },
-            method => $o->get('recursion-method'),
          }
       );
       if ( @all_repl_filters ) {
@@ -5435,8 +5437,8 @@ sub main {
    # here.
    # ########################################################################
    if ( defined $o->get('replicate-check') ) {
-      MKDEBUG && _d("Running --replicate-check: depth:"
-         . $o->get('replicate-check'));
+      MKDEBUG && _d("Recursing to slaves for replicate check, depth",
+         $o->get('replicate-check'));
       my $callback = $o->get('recheck')
                    ? \&save_inconsistent_tbls
                    : \&print_inconsistent_tbls;
@@ -5445,6 +5447,7 @@ sub main {
             dsn        => $hosts[0],
             dsn_parser => $dp,
             recurse    => $o->get('replicate-check'),
+            method     => $o->get('recursion-method'),
             callback   => sub {
                my ( $dsn, $dbh, $level, $parent ) = @_;
                my @tbls = $tc->find_replication_differences(
@@ -5464,7 +5467,6 @@ sub main {
                   %common_modules
                );
             },
-            method => $o->get('recursion-method'),
          }
       );
       return $exit_status unless $o->get('recheck');
