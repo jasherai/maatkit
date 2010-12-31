@@ -1595,7 +1595,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 6094
+# LogSplitter package 7177
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/LogSplitter.pm
@@ -1801,7 +1801,7 @@ sub _save_event {
       $session->{db} = $db;
    }
 
-   print $session_fh flatten($event->{arg}), "\n\n";
+   print $session_fh $self->flatten($event->{arg}), "\n\n";
    $self->{n_events_saved}++;
 
    return;
@@ -1895,7 +1895,7 @@ sub _get_next_session_file {
 }
 
 sub flatten {
-   my ( $query ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s!/\*.*?\*/! !g;
    $query =~ s/^\s+//;
@@ -3432,6 +3432,13 @@ The type of log to L<"--split"> (default slowlog).  The permitted types are
 =item binlog
 
 Split the output of running C<mysqlbinlog> against a binary log file.
+Currently, splitting binary logs does not always work well depending
+on what the binary logs contain.  Be sure to check the session files
+after splitting to ensure proper L<"OUTPUT">.
+
+If the binary log contains row-based replication data, you need to run
+C<mysqlbinlog> with options C<--base64-output=decode-rows --verbose>,
+else invalid statements will be written to the session files.
 
 =item genlog
 
