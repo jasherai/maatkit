@@ -31,7 +31,7 @@ else {
 
 my $output = "";
 my $cnf    = "/tmp/12345/my.sandbox.cnf";
-my @args   = (qw(--print-all --report-format full --review), "F=$cnf,D=test,t=query_review");
+my @args   = (qw(--print-all --report-format full --group-by none --review), "F=$cnf,D=test,t=query_review");
 
 my $review_tbl = "CREATE TABLE query_review (
   checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,

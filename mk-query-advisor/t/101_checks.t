@@ -16,7 +16,7 @@ shift @INC;  # These two shifts are required for tools that use base and
 shift @INC;  # derived classes.  See mk-query-digest/t/101_slowlog_analyses.t
 require "$trunk/mk-query-advisor/mk-query-advisor";
 
-my @args = qw(--print-all --report-format full --query);
+my @args = qw(--print-all --report-format full --group-by none --query);
 my $query;
 
 # #############################################################################
