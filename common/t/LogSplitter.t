@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 23;
 
 use LogSplitter;
 use SlowLogParser;
@@ -268,7 +268,6 @@ $ls = new LogSplitter(
    parser         => $lp,
    session_files  => 2,
    quiet          => 1,
-
 );
 $ls->split("$trunk/common/t/samples/slow006.txt");
 
@@ -285,6 +284,28 @@ is(
    '',
    'Random file 2 file has correct SQL statements'
 );
+
+# #############################################################################
+# Issue 1179: mk-log-player --filter example does not work
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute      => 'cmd',
+   base_dir       => $tmpdir,
+   parser         => $lp,
+   session_files  => 2,
+   quiet          => 1,
+);
+$ls->split("$trunk/common/t/samples/binlogs/binlog010.txt");
+$output = `cat $tmpdir/sessions-1.txt`;
+ok(
+   no_diff(
+      $output,
+      "common/t/samples/LogSplitter/binlog010.txt",
+      cmd_output => 1,
+   ),
+   "Split binlog with RBR data (issue 1179)"
+);   
 
 # #############################################################################
 # Done.

@@ -236,7 +236,7 @@ sub _save_event {
       $session->{db} = $db;
    }
 
-   print $session_fh flatten($event->{arg}), "\n\n";
+   print $session_fh $self->flatten($event->{arg}), "\n\n";
    $self->{n_events_saved}++;
 
    return;
@@ -351,7 +351,7 @@ sub _get_next_session_file {
 # Flattens multiple new-line and spaces to single new-lines and spaces
 # and remove /* comment */ blocks.
 sub flatten {
-   my ( $query ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s!/\*.*?\*/! !g;
    $query =~ s/^\s+//;
