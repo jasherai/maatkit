@@ -292,6 +292,10 @@ is($t->pending_changes(), 0, 'No pending changes');
 # ###########################################################################
 # Test can_sync().
 # ###########################################################################
+# With the introduction of char chunking (issue 568), this table can
+# be chunked.  But to keep the spirit of this test the same, we drop
+# the index which makes the table unchunkable again.
+$dbh->do('alter table test.test6 drop index a');
 $ddl        = $du->get_create_table($dbh, $q, 'test', 'test6');
 $tbl_struct = $tp->parse($ddl);
 is_deeply(

@@ -51,7 +51,7 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 60;
+   plan tests => 61;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -244,9 +244,22 @@ is_deeply(
    'Best plugin Chunk'
 );
 
+# With the introduction of char chunking (issue 568), test6 can be chunked
+# with Chunk or Nibble.  Chunk will be prefered.
+
 $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test6'));
 ($plugin, %plugin_args) = $syncer->get_best_plugin(
    plugins     => $plugins,
+   tbl_struct  => $tbl_struct,
+);
+is_deeply(
+   [ $plugin, \%plugin_args, ],
+   [ $sync_chunk, { chunk_index => 'a', chunk_col => 'a'} ],
+   'Best plugin Chunk (char chunking)'
+);
+# Remove TableSyncChunk to test that it can chunk that char col with Nibble too.
+($plugin, %plugin_args) = $syncer->get_best_plugin(
+   plugins     => [$sync_nibble, $sync_groupby, $sync_stream],
    tbl_struct  => $tbl_struct,
 );
 is_deeply(
