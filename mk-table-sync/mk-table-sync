@@ -9327,7 +9327,7 @@ is found during the bidirectional sync.  "Same but differing" means that
 two rows have the same primary key (id) value but different values for some
 other column, like the name column in this example.  Same but differing
 conflicts are resolved by a "conflict".  A conflict compares some column of
-the competing rows to determine a "winner".  The winnning row becomes the
+the competing rows to determine a "winner".  The winning row becomes the
 source and its values are used to update the other row.
 
 There are subtle differences between three columns used to achieve
@@ -9370,7 +9370,7 @@ These options are:
   * L<"--conflict-error">  (optional)
 
 Use L<"--print"> to test this option before L<"--execute">.  The printed
-SQL statements will have comments saying on which host the statment
+SQL statements will have comments saying on which host the statement
 would be executed if you used L<"--execute">.
 
 Technical side note: the first DSN is always the "left" server and the other
