@@ -13185,7 +13185,7 @@ specify a filter like:
   --filter '($event->{Row_ratio} = $event->{Rows_sent} / ($event->{Rows_examined})) && 1'
 
 The C<&& 1> trick is needed to create a valid one-line syntax that is always
-true, even if the assignment happens to evalute false.  The new attribute will
+true, even if the assignment happens to evaluate false.  The new attribute will
 automatically appears in the output:
 
   # Row ratio           1.00    0.00       1    0.50       1    0.71    0.50
@@ -13230,7 +13230,7 @@ The report, by default, begins with a paragraph about the entire analysis run
 The information is very similar to what you'll see for each class of queries in
 the log, but it doesn't have some information that would be too expensive to
 keep globally for the analysis.  It also has some statistics about the code's
-excution itself, such as the CPU and memory usage, the local date and time
+execution itself, such as the CPU and memory usage, the local date and time
 of the run, and a list of input file read/parsed.
 
 Following this is the response-time profile over the events.  This is a
@@ -13561,7 +13561,7 @@ type: array; default: db|Schema
 List of attribute|alias,etc.
 
 Certain attributes have multiple names, like db and Schema.  If an event does
-not have the priamry attribute, mk-query-digest looks for an alias attribute.
+not have the primary attribute, mk-query-digest looks for an alias attribute.
 If it finds an alias, it creates the primary attribute with the alias
 attribute's value and removes the alias attribute.
 
@@ -14207,7 +14207,7 @@ Print these sections of the query analysis report.
 
 The sections are printed in the order specified.  The rusage, date, files and
 header sections are grouped together if specified together; other sections are
-separted by blank lines.
+separated by blank lines.
 
 See L<"OUTPUT"> for more information on the various parts of the query report.
 
@@ -14550,14 +14550,14 @@ several types:
   * Any time expression evaluated by MySQL:
     CURRENT_DATE - INTERVAL 7 DAY
 
-If you give a MySQL time expression, then you must also specifiy a DSN
-so that mk-query-digest can connect to MySQL to evalue the expression.  If you
+If you give a MySQL time expression, then you must also specify a DSN
+so that mk-query-digest can connect to MySQL to evaluate the expression.  If you
 specify L<"--execute">, L<"--explain">, L<"--processlist">, L<"--review">
 or L<"--review-history">, then one of these DSNs will be used automatically.
 Otherwise, you must specify an L<"--aux-dsn"> or mk-query-digest will die
 saying that the value is invalid.
 
-The MySQL time expression is warpped inside a query like
+The MySQL time expression is wrapped inside a query like
 "SELECT UNIX_TIMESTAMP(<expression>)", so be sure that the expression is
 valid inside this query.  For example, do not use UNIX_TIMESTAMP() because
 UNIX_TIMESTAMP(UNIX_TIMESTAMP()) returns 0.
@@ -14620,7 +14620,7 @@ the events.  Each query is still grouped and aggregate into classes according to
 L<"--group-by">, but then they are printed in chronological order.  The timeline
 report prints out the timestamp, interval, count and value of each classes.
 
-If all you want is the timeline report, then specifiy C<--no-report> to
+If all you want is the timeline report, then specify C<--no-report> to
 suppress the default query analysis report.  Otherwise, the timeline report
 will be printed at the end before the response-time profile
 (see L<"--report-format"> and L<"OUTPUT">).
@@ -14807,7 +14807,7 @@ won't work, so you must specify the IP address and port to watch.
 
 If you want to watch a mix of servers, some running on standard port 3306
 and some running on non-standard ports, you need to create separate
-tcpdump outputs for the non-stanard port servers and then specify this
+tcpdump outputs for the non-standard port servers and then specify this
 option for each.  At present mk-query-digest cannot auto-detect servers on
 port 3306 and also be told to watch a server on a non-standard port.
 
