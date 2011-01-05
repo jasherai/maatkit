@@ -2366,7 +2366,7 @@ mk-visual-explain - Format EXPLAIN output as a tree.
 Usage: mk-visual-explain [OPTION...] [FILE...]
 
 mk-visual-explain transforms EXPLAIN output into a tree representation of
-the query plan.  If FILE isgiven, input is read from the file(s).  With no
+the query plan.  If FILE is given, input is read from the file(s).  With no
 FILE, or when FILE is -, read standard input.
 
 Examples:
@@ -2573,7 +2573,7 @@ example,
  |  2 | SUBQUERY    | film       |
 
 If the results were in order 2-3-4, I think that would mean 3 is a subquery of
-2, 4 is a subquery of 3.  As it is, this means 4 is a subquery of the neares
+2, 4 is a subquery of 3.  As it is, this means 4 is a subquery of the nearest
 previous recent row with a smaller id, which is 1.  Likewise for 3 and 2.
 
 This structure is hard to programatically build into a tree for the same reason
