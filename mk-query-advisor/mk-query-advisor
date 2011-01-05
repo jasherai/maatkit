@@ -6520,7 +6520,7 @@ severity: warn
 
 Aliasing the '*' wildcard.  Aliasing a column wildcard, such as
 "SELECT tbl.* col1, col2" probably indicates a bug in your SQL.
-You probably meant for the query to retrive col1, but instead it
+You probably meant for the query to retrieve col1, but instead it
 renames the last column in the *-wildcarded list.
 
 =item ALI.003
