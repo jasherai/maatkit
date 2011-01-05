@@ -4048,10 +4048,10 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.  If the value is UTF8, sets Perl's binmode on
-STDOUT to UTF8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
-without the UTF8 layer, and runs SET NAMES after connecting to MySQL.
+without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --config
 
