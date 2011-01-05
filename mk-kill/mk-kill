@@ -4048,10 +4048,10 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.  If the value is utf8, sets Perl's binmode on
-STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
+Default character set.  If the value is UTF8, sets Perl's binmode on
+STDOUT to UTF8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
-without the utf8 layer, and runs SET NAMES after connecting to MySQL.
+without the UTF8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --config
 
@@ -4205,7 +4205,7 @@ These options specify what criteria a query must match for C<mk-kill>
 to either L<"--kill">, L<"--print"> or L<"--execute-command"> for it.
 The ignore commands take precedence.  The matches for command, db, host, etc.
 correspond to the columns returned by SHOW PROCESSLIST: Command, db, Host, etc.
-All pattern matches are case-senstive.
+All pattern matches are case-sensitive.
 
 =over
 
@@ -4235,7 +4235,7 @@ a specific user (e.g. L<"--match-user"> john) and then kill all but the
 longest running of their queries.
 
 This option can be used to prevent "cache stampedes", the condition where
-serveral identical queries are executed and create a backlog while the first
+several identical queries are executed and create a backlog while the first
 query attempts to finish.  Since all queries are identical, all but the first
 query are killed so that it can complete and populate the cache.
 
@@ -4480,7 +4480,7 @@ Execute this command when a query matches.
 
 After the command is executed, mk-kill has no control over it, so the command
 is responsible for its own info gathering, logging, interval, etc.  The
-command is excuted each time a query matches, so be careful that the command
+command is executed each time a query matches, so be careful that the command
 behaves well when multiple instances are ran.  No information from mk-kill is
 passed to the command.
 
