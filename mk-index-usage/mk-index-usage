@@ -2641,7 +2641,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 6770
+# TableParser package 7156
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableParser.pm
@@ -2724,6 +2724,8 @@ sub parse {
 
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
+   my ($charset) = $ddl =~ m/DEFAULT CHARSET=(\w+)/;
+
    return {
       name           => $name,
       cols           => \@cols,
@@ -2739,6 +2741,7 @@ sub parse {
       is_numeric     => \%is_numeric,
       engine         => $engine,
       type_for       => \%type_for,
+      charset        => $charset,
    };
 }
 

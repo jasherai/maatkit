@@ -3021,7 +3021,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchStatus package 5401
+# WatchStatus package 7133
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/WatchStatus.pm
@@ -3154,7 +3154,7 @@ sub _get_val_from_status {
 
 sub _show_innodb_status {
    my ( $dbh, %args ) = @_;
-   my @text = $dbh->selectrow_array("SHOW INNODB STATUS");
+   my @text = $dbh->selectrow_array("SHOW /*!40100 ENGINE*/ INNODB STATUS");
    return $text[2] || $text[0];
 }
 

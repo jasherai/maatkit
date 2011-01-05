@@ -2898,7 +2898,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 7156
+# TableChunker package 7169
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/TableChunker.pm
@@ -3066,12 +3066,13 @@ sub calculate_chunks {
          }
       }
 
-      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
+      my $chunk_range = lc $args{chunk_range} || 'open';
+      my $nullable    = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
       pop @chunks;
       if ( @chunks ) {
          push @chunks, "$col >= " . $q->quote_val($beg)
-            . ($args{closed_range} ? " AND $col <= " . $q->quote_val($args{max})
-                                   : "");
+            . ($chunk_range eq 'openclosed'
+               ? " AND $col <= " . $q->quote_val($args{max}) : "");
       }
       else {
          push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
