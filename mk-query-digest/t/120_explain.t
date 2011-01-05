@@ -107,7 +107,9 @@ ok(
          '--report-format', 'profile,query_report',
          "$trunk/mk-query-digest/t/samples/issue_1196.log",)
       },
-      "mk-query-digest/t/samples/issue_1196-output.txt",
+      ($sandbox_version ge '5.1'
+         ? "mk-query-digest/t/samples/issue_1196-output.txt"
+         : "mk-query-digest/t/samples/issue_1196-output-5.0.txt"),
    ),
    "--explain sparkline uses event db and doesn't crash ea (issue 1196"
 );
