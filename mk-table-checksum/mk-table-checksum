@@ -7593,7 +7593,7 @@ if a table is chunked into 100 chunks, 0-99, then mk-table-checksum does:
 
   DELETE FROM replicate table WHERE db=? AND tbl=? AND chunk > 99
 
-That removes any high-end chunks from preivous runs which no longer exist.
+That removes any high-end chunks from previous runs which no longer exist.
 Currently, this operation cannot be disabled.
 
 If you use L<"--resume">, L<"--resume-replicate">, or L<"--modulo">, then
@@ -8406,7 +8406,7 @@ C<mk-table-checksum>.  For example:
 
 The command line options given to the first run and the resumed run must
 be identical (except, of course, for --resume).  If they are not, the result
-will be unpredictible and probably wrong.
+will be unpredictable and probably wrong.
 
 L<"--resume"> does not work with L<"--replicate">; for that, use
 L<"--resume-replicate">.
@@ -8433,7 +8433,7 @@ timestamps are different from ordinary values.
 
 =item --schema
 
-Checksum C<SHOW CREATE TABLE> intead of table data.
+Checksum C<SHOW CREATE TABLE> instead of table data.
 
 =item --separator
 
