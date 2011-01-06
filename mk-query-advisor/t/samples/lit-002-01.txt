@@ -3,6 +3,7 @@
 # WARN LIT.002 Unquoted date/time literal.
 #   matches near: < 2010-02-15
 SELECT c FROM tbl WHERE c < 2010-02-15
+
 # Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== =============================

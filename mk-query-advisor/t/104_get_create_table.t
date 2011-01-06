@@ -62,7 +62,8 @@ $output = output(
 );
 is(
    $output,
-   "# Profile
+   "
+# Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== ==========================================
 # 0xE697459A77FBF34F    0    0    0 select c from l left join r on l_id = r_id where r_other is ?

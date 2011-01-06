@@ -23,6 +23,7 @@ select a, b, c from x where id<1000 group by a, b
 # Query ID 0x01BF72F436E936F1 at byte 659
 # Also: RES.001
 select x, y, z from foo where id>1000 group by x, y
+
 # Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== ==========================================

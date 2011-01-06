@@ -15,6 +15,7 @@ SELECT * FROM   `wibble_chapter`
       AND `wibble_series`.`poster_id` = `auth_user`.`id`
       ORDER  BY `wibble_chapter`.`create_time` DESC
       LIMIT  1
+
 # Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== ==========================================

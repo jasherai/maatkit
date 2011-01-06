@@ -3,6 +3,7 @@
 # WARN LIT.001 Storing an IP address as characters.
 #   matches near: p="127.0.0.1"
 SELECT ip FROM tbl WHERE ip="127.0.0.1"
+
 # Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== =============================

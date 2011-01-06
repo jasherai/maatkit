@@ -3,6 +3,7 @@
 # WARN ALI.002 Aliasing the '*' wildcard.
 # NOTE COL.001 SELECT *.
 SELECT tbl.* AS foo, bar FROM tbl WHERE id=2
+
 # Profile
 # Query ID           NOTE WARN CRIT Item
 # ================== ==== ==== ==== ==========================================
