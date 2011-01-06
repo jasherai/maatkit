@@ -81,7 +81,7 @@ my $rev = `head -n 1 packlist | awk '{print \$2}'` + 0;
 my $distbase = "maatkit-$rev";
 my $dist = "release/$distbase";
 print `rm -rf release html cache`;
-print `mkdir -p html cache $dist/bin $dist/lib $dist/udf`;
+print `mkdir -p html cache $dist/bin $dist/lib $dist/udf $dist/init`;
 
 # Copy the executables and their Changelog files into the $dist dir, and set the
 # $VERSION variable correctly
@@ -110,6 +110,7 @@ foreach my $file ( qw(README Makefile.PL COPYING INSTALL ../spec/maatkit.spec) )
    print `cp $file $dist`;
 }
 print `cp ../udf/murmur_udf.cc ../udf/fnv_udf.cc $dist/udf`;
+print `cp ../init/maatkit $dist/init`;
 
 # Set the DISTRIB variable
 print `grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
