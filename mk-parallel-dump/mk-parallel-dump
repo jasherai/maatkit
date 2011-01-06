@@ -5083,7 +5083,8 @@ use mk-parallel-dump for backups.
 
 At the time of this release there is a bug that prevents L<"--lock-tables"> from
 working correctly, an unconfirmed bug that prevents the tool from finishing,
-and a bug that causes the wrong character set to be used.
+a bug that causes the wrong character set to be used, and a bug replacing
+default values.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
