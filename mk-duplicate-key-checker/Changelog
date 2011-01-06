@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+2011-01-06: version 1.2.14
+
    * Uppercase index names caused incorrect ALTER TABLE (issue 1192).
    * Made performance_schema an always ignored database (issue 1193).
 

@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2011-01-06: version 1.0.21
+
    * --secondary-indexes did not work for some converted DELETE statements.
 
 2010-08-01: version 1.0.20

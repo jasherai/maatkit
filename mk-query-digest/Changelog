@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2011-01-06: version 0.9.25
+
    * EXPLAIN sparklines sometimes didn't work or caused errors (issue 1196).
    * Item column in profile was incorrectly truncated to "It" (issue 1196).
 

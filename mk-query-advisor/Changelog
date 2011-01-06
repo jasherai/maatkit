@@ -1,5 +1,7 @@
 Changelog for mk-query-advisor:
 
+2011-01-06: version 1.0.4
+
    * Added --group-by and changed default to rule_id (issue 1156).
    * Added profile to output (issue 1156).
 
