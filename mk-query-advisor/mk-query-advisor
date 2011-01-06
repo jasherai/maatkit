@@ -6162,6 +6162,7 @@ sub main {
             advice_queue => \%advice_queue,
             group_by     => $groupby,
             event        => $args{event},
+            Advisor      => $adv,
          );
          return $args{event};
       };
@@ -6259,7 +6260,6 @@ sub main {
       print_grouped_report(
          advice_queue  => \%advice_queue,
          group_by      => $groupby,
-         Advisor       => $adv,
          verbose       => $o->get('verbose'),
          report_format => $o->get('report-format'),
       )
@@ -6332,11 +6332,11 @@ sub print_advice {
 
 sub queue_advice {
    my ( %args ) = @_;
-   my @required_args = qw(advice_queue group_by event);
+   my @required_args = qw(advice_queue group_by event Advisor);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($advice_queue, $groupby, $event) = @args{@required_args};
+   my ($advice_queue, $groupby, $event, $adv) = @args{@required_args};
 
    my $advice = $event->{advice};
    return unless scalar @$advice;
@@ -6347,36 +6347,71 @@ sub queue_advice {
       return;
    }
 
-   if ( $groupby eq 'query_id' ) {
-      map { $advice_queue->{$query_id}->{$_}++ } @$advice;
-   }
-   elsif ( $groupby eq 'rule_id' ) {
-      map { $advice_queue->{$_}->{$query_id}++ } @$advice;
-   }
-   else {
-      die "I don't know how to group items by $groupby";
-   }
+   foreach my $rule_id ( @$advice ) {
+      my $info = $adv->get_rule_info($rule_id);
+      if ( $groupby eq 'query_id' ) {
+         $advice_queue->{$query_id}->{$rule_id}->{$info->{severity}}++;
+         $advice_queue->{$query_id}->{$rule_id}->{item} ||= $event->{fingerprint};
+      }
+      elsif ( $groupby eq 'rule_id' ) {
+         $advice_queue->{$rule_id}->{$query_id}->{$info->{severity}}++;
+         $advice_queue->{$rule_id}->{$query_id}->{item} ||= $event->{fingerprint};
+      }
+      else {
+         die "I don't know how to group items by $groupby";
+      }
+   } 
 
    return;
 }
 
 sub print_grouped_report {
    my ( %args ) = @_;
-   my @required_args = qw(advice_queue group_by Advisor);
+   my @required_args = qw(advice_queue group_by);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($advice_queue, $groupby, $adv) = @args{@required_args};
+   my ($advice_queue, $groupby) = @args{@required_args};
    my $verbose = $args{verbose} || 0;
+   my %seen;
+
+   my $profile = new ReportFormatter(
+      long_last_column => 1,
+      extend_right     => 1,
+   );
+   $profile->set_columns(
+      { name => 'Query ID',                     },
+      { name => 'NOTE',     right_justify => 1, },
+      { name => 'WARN',     right_justify => 1, },
+      { name => 'CRIT',     right_justify => 1, },
+      { name => 'Item',                         },
+   );
 
    foreach my $groupby_attrib ( sort keys %$advice_queue ) {
       print "0x" if $groupby eq 'query_id';
       print $groupby_attrib;
       foreach my $groupby_value (sort keys %{$advice_queue->{$groupby_attrib}}){
          print " " . ($groupby ne 'query_id' ? '0x' : '') . $groupby_value;
+
+         my $query_id = $groupby eq 'query_id' ? $groupby_attrib
+                      :                          $groupby_value;
+
+         if ( !$seen{$query_id}++ ) {
+            my $severities = $advice_queue->{$groupby_attrib}->{$groupby_value};
+            my ($note, $warn, $crit) = @{$severities}{qw(note warn crit)};
+            $profile->add_line(
+               "0x$query_id",
+               $note || 0,
+               $warn || 0,
+               $crit || 0,
+               $severities->{item} || "",
+            );
+         }
       }
       print "\n\n";
    }
+
+   print $profile->get_report();
 
    return;
 }
