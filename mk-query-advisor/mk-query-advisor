@@ -6369,10 +6369,11 @@ sub print_grouped_report {
    my ($advice_queue, $groupby, $adv) = @args{@required_args};
    my $verbose = $args{verbose} || 0;
 
-   foreach my $groupby_attrib ( keys %$advice_queue ) {
+   foreach my $groupby_attrib ( sort keys %$advice_queue ) {
+      print "0x" if $groupby eq 'query_id';
       print $groupby_attrib;
-      foreach my $groupby_value ( keys %{$advice_queue->{$groupby_attrib}} ) {
-         print " " . ($groupby ne 'query_id' ? "0x" : "") . $groupby_value;
+      foreach my $groupby_value (sort keys %{$advice_queue->{$groupby_attrib}}){
+         print " " . ($groupby ne 'query_id' ? '0x' : '') . $groupby_value;
       }
       print "\n\n";
    }
