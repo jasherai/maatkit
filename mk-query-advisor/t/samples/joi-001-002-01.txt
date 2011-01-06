@@ -15,3 +15,7 @@ SELECT * FROM   `wibble_chapter`
       AND `wibble_series`.`poster_id` = `auth_user`.`id`
       ORDER  BY `wibble_chapter`.`create_time` DESC
       LIMIT  1
+# Profile
+# Query ID           NOTE WARN CRIT Item
+# ================== ==== ==== ==== ==========================================
+# 0x95718954DB8B7620    1    0    2 select * from `wibble_chapter` inner join `wibble_series` as `wibble_chapter__series` on `wibble_chapter`.`series_id` = `wibble_chapter__series`.`id`, `wibble_series`, `auth_user` where ( `wibble_chapter`.`chapnum` = ? and `wibble_chapter`.`status` = ? and `wibble_chapter__series`.`title` = ? ) and `wibble_chapter`.`series_id` = `wibble_series`.`id` and `wibble_series`.`poster_id` = `auth_user`.`id` order by `wibble_chapter`.`create_time` desc limit ?

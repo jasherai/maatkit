@@ -26,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output = "";
@@ -54,6 +54,20 @@ is(
    $output,
    "",
    "JOI.004 doesn't work with --no-show-create-table"
+);
+
+$output = output(
+  sub { mk_query_advisor::main(@args, '--query', $query,
+   '--no-show-create-table', '--print-all') },
+);
+is(
+   $output,
+   "# Profile
+# Query ID           NOTE WARN CRIT Item
+# ================== ==== ==== ==== ==========================================
+# 0xE697459A77FBF34F    0    0    0 select c from l left join r on l_id = r_id where r_other is ?
+",
+   "--print-all shows 0/0/0 item"
 );
 
 # #############################################################################
