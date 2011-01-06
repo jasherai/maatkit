@@ -6421,12 +6421,11 @@ sub print_grouped_report {
 
 
    foreach my $groupby_attrib ( sort keys %$advice_queue ) {
-      print "0x" if $groupby eq 'query_id';
-      print $groupby_attrib;
+      print "\n" . ($groupby eq 'query_id' ? "0x" : "") . $groupby_attrib;
       foreach my $groupby_value (sort keys %{$advice_queue->{$groupby_attrib}}){
          print " " . ($groupby ne 'query_id' ? '0x' : '') . $groupby_value;
       }
-      print "\n\n";
+      print "\n";
    }
 
    return;
