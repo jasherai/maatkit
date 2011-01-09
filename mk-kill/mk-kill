@@ -3585,6 +3585,7 @@ sub main {
    $o->set('only-oldest', 0) if $o->get('all');
    $o->set('only-oldest', 0) if $o->get('all-but-oldest');
 
+   # TODO: isn't this better done with a POD rule?
    if ( $o->got('only-oldest') && $o->got('all-but-oldest') ) {
       $o->save_error("--only-oldest contradicts --all-but-oldest.");
    }
@@ -3806,8 +3807,13 @@ sub main {
                      . " seconds before kill");
                   sleep $o->get('wait-before-kill');
                }
-               $kill_sth->execute($query->{Id});
-               heartbeat("Killed $query->{Id}");
+               eval { $kill_sth->execute($query->{Id}); };
+               if ( $EVAL_ERROR ) {
+                  heartbeat("Error killing $query->{Id}: $EVAL_ERROR");
+               }
+               else {
+                  heartbeat("Killed $query->{Id}");
+               }
             }
          }
       }
