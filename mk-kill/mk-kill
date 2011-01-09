@@ -3700,6 +3700,7 @@ sub main {
    # Class-based match criteria.
    my $query_count    = $o->get('query-count');
    my $each_busy_time = $o->get('each-busy-time');
+   my $any_busy_time  = $o->get('any-busy-time');
    my $group_by       = $o->get('group-by');
    if ( $group_by ) {
       # Processlist.pm is case-sensitive.  It matches Id, Host, db, etc.
@@ -3783,6 +3784,18 @@ sub main {
                         Dumper($proc));
                      next CLASS;
                   }
+               }
+            }
+            elsif ( $any_busy_time ) {
+               my $max_busy_time = 0;
+               foreach my $proc ( @matches ) {
+                  if ( ($proc->{Time} || 0) > $max_busy_time ) {
+                     $max_busy_time = $proc->{Time};
+                  }
+               }
+               MKDEBUG && _d("Max busy time:", $max_busy_time);
+               if ( $any_busy_time > $max_busy_time ) {
+                  next CLASS;
                }
             }
             push @queries, @matches;
@@ -4255,6 +4268,13 @@ Kill connections that have been running for longer than this time.  The queries
 must be in Command=Query status.  This matches a query's Time value as
 reported by SHOW PROCESSLIST.
 
+=item --any-busy-time
+
+type: time; group: Matches
+
+Match query class if any query has been running for longer than this time.
+See L<"--each-busy-time"> for more details.
+
 =item --each-busy-time
 
 type: time; group: Matches
@@ -4266,7 +4286,8 @@ been running for longer than this time.  If L<"--group-by">
 is not specified then this option causes matches to apply only if all queries
 shown by SHOW PROCESSLIST have been running for longer than this time.
 
-See also L<"--busy-time">.
+See also L<"--any-busy-time"> (to match a group if ANY query has been running
+longer than the specified time) and L<"--busy-time">.
 
 =item --group-by
 
