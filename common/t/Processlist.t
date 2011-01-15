@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 23;
 
 use Processlist;
 use MaatkitTest;
@@ -289,7 +289,6 @@ is_deeply(
 # #########################################################################
 
 my %find_spec = (
-   only_oldest  => 1,
    busy_time    => 60,
    idle_time    => 0,
    ignore => {
@@ -407,7 +406,6 @@ my $expected = [
 is_deeply(\@queries, $expected, 'Basic find()');
 
 %find_spec = (
-   only_oldest  => 1,
    busy_time    => 1,
    ignore => {
       User     => qr/^system.user$/,
@@ -435,7 +433,6 @@ is_deeply(\@queries, $expected, 'Basic find()');
 is(scalar(@queries), 0, 'Did not find any query');
 
 %find_spec = (
-   only_oldest  => 1,
    busy_time    => undef,
    idle_time    => 15,
    ignore => {
@@ -535,79 +532,6 @@ is_deeply(
       }
    ],
    "Find all queries that aren't ignored"
-);
-
-# #############################################################################
-# Issue 1181: Make mk-kill prevent cache stampedes
-# #############################################################################
-
-# Most of the stuff to make this issue work is handled in mk-kill before
-# Processlist::find() is called.  find() just has to implement all_but_oldest.
-%find_spec = (
-   only_oldest    => 0,
-   all_but_oldest => 1,
-   busy_time      => 1,
-   ignore => {
-   },
-   match => {
-   },
-);
-is_deeply(
-   [
-      $pl->find(
-         [
-            {
-               'Id'      => '1',
-               'User'    => 'user1',
-               'Host'    => '0.1.2.11:40605',
-               'db'      => 'forest',
-               'Command' => 'Query',
-               'Time'    => '30',
-               'State'   => 'preparing',
-            },
-            {
-               'Id'      => '2',
-               'User'    => 'user1',
-               'Host'    => '0.1.2.11:40605',
-               'db'      => 'forest',
-               'Command' => 'Query',
-               'Time'    => '20',
-               'State'   => 'preparing',
-            },
-            {
-               'Id'      => '3',
-               'User'    => 'user1',
-               'Host'    => '0.1.2.11:40605',
-               'db'      => 'forest',
-               'Command' => 'Query',
-               'Time'    => '10',
-               'State'   => 'preparing',
-            },      
-         ],
-         %find_spec,
-      )
-   ],
-   [
-      {
-         'Id'      => '2',
-         'User'    => 'user1',
-         'Host'    => '0.1.2.11:40605',
-         'db'      => 'forest',
-         'Command' => 'Query',
-         'Time'    => '20',
-         'State'   => 'preparing',
-      },
-      {
-         'Id'      => '3',
-         'User'    => 'user1',
-         'Host'    => '0.1.2.11:40605',
-         'db'      => 'forest',
-         'Command' => 'Query',
-         'Time'    => '10',
-         'State'   => 'preparing',
-      },
-   ],
-   'all_but_oldest'
 );
 
 # #############################################################################

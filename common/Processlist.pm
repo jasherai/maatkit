@@ -312,9 +312,7 @@ sub _get_rows {
 # ignore and match.
 #
 # Possible find_spec are:
-#   * only_oldest    Match the oldest running query
 #   * all            Match all not-ignored queries
-#   * all_but_oldest Match all but the oldest, not-ignored query
 #   * busy_time      Match queries that have been Command=Query for longer than
 #                    this time
 #   * idle_time      Match queries that have been Command=Sleep for longer than
@@ -388,20 +386,6 @@ sub find {
       }
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
-
-   if ( @matches
-        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
-   { 
-      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
-      my $oldest = $matches[0];
-      MKDEBUG && _d('Oldest query:', Dumper($oldest));
-      if ( $find_spec{only_oldest} ) {
-         @matches = ($oldest);  # only return the oldest query
-      }
-      elsif ( $find_spec{all_but_oldest} ) {
-         shift @matches;  # remove fist/oldest query
-      }
-   }
 
    return @matches;
 }
