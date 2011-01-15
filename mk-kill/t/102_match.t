@@ -114,26 +114,26 @@ like(
 );
 
 # The queries in recset002 are both State: Locked which is ignored
-# by default so nothing should match, not even for --all.
+# by default so nothing should match, not even for --match-all.
 $output = output(
    sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt",
-      qw(--all --print)); }
+      qw(--match-all --print)); }
 );
 is(
    $output,
    '',
-   "--all except ignored"
+   "--match-all except ignored"
 );
 
-# Now --all should match.
+# Now --match-all should match.
 $output = output(
    sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt",
-      qw(--all --victims all --print --ignore-state blahblah)); }
+      qw(--match-all --victims all --print --ignore-state blahblah)); }
 );
 like(
    $output,
    qr/(?:(?:KILL 1.+KILL 2)|(?:KILL 2.+KILL 1))/s,
-   "--all"
+   "--match-all"
 );
 
 # #############################################################################

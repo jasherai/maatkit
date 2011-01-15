@@ -2,9 +2,10 @@ Changelog for mk-kill:
 
    * Removed option --[no]only-oldest (issue 1221).
    * Removed option --all-but-oldest (issue 1221).
+   * Changed option --all to --match-all (issue 1221).
    * Added option --victims (issue 1221).
-   * Group and matching logic was incorrect (issue 1221).
    * Added option --any-busy-time.
+   * Group and matching logic was incorrect (issue 1221).
    * Tool crashed if connection to be killed was already gone.
 
 2010-12-11: version 0.9.8

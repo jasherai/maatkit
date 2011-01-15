@@ -3698,7 +3698,7 @@ sub main {
    my %find_spec = (
       busy_time           => $o->get('busy-time'),
       idle_time           => $o->get('idle-time'),
-      all                 => $o->get('all'),
+      all                 => $o->get('match-all'),
       replication_threads => $o->get('replication-threads'),
       ignore => {
          Command  => $o->get('ignore-command'),
@@ -4045,9 +4045,9 @@ killed.  By default, the matching query with the highest Time value is killed
 (the oldest query).  See the next section, L<"GROUP, MATCH AND KILL">,
 for more details.
 
-Usually you need to specify at least one C<--match-*> option, else no
-queries will match.  Or, you can specify L<"--all"> to match all queries
-that aren't ignored by an C<--ignore-*>.
+Usually you need to specify at least one C<--match> option, else no
+queries will match.  Or, you can specify L<"--match-all"> to match all queries
+that aren't ignored by an C<--ignore> option.
 
 mk-kill is a work in progress, and there is much more it could do.
 
@@ -4338,7 +4338,7 @@ See also L<"GROUP, MATCH AND KILL">.
 
 =over
 
-=item --all
+=item --match-all
 
 group: Query Matches
 

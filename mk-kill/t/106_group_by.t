@@ -26,7 +26,7 @@ my $output;
 # that one out.
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
-      qw(--group-by info --query-count 2 --each-busy-time 2 --all),
+      qw(--group-by info --query-count 2 --each-busy-time 2 --match-all),
       qw(--victims all-but-oldest --print)); }
 );
 like(
