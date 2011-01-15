@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 8;
 
 use MaatkitTest;
 use Sandbox;
@@ -27,7 +27,7 @@ my $output;
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
       qw(--group-by info --query-count 2 --each-busy-time 2 --all),
-      qw(--all-but-oldest --print)); }
+      qw(--victims all-but-oldest --print)); }
 );
 like(
    $output,
@@ -39,7 +39,7 @@ like(
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
       qw(--group-by info --query-count 2 --each-busy-time 2 --match-user user1),
-      qw(--all-but-oldest --print)); }
+      qw(--victims all-but-oldest --print)); }
 );
 like(
    $output,
@@ -47,11 +47,37 @@ like(
    "Kill all but oldest, matching specific user"
 );
 
+# But queries matches with --any-busy-time.  There's 3 queries in the class
+# with Times: 9, 9, 10.  The 9s don't match because they're not longer than
+# 9, but the 10 does.  This is correct (see issue 1221) because --victims
+# is applied *after* per-class query matching.
+$output = output(
+   sub { mk_kill::main("$sample/recset010.txt", qw(--print),
+      qw(--group-by info --query-count 2 --any-busy-time 10 --match-user user1),
+      qw(--victims oldest --print)); }
+);
+is(
+   $output,
+   "",
+   "Any busy time doesn't match"
+);
+
+$output = output(
+   sub { mk_kill::main("$sample/recset010.txt", qw(--print),
+      qw(--group-by info --query-count 2 --any-busy-time 9 --match-user user1),
+      qw(--victims oldest --print)); }
+);
+like(
+   $output,
+   qr/# \S+ KILL 1 \(Query 10 sec\)/,
+   "Any busy time matches"
+);
+
 # Nothing matches because --each-busy-time isn't satifised.
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
       qw(--group-by info --query-count 2 --each-busy-time 10 --match-user user1),
-      qw(--all-but-oldest --print)); }
+      qw(--victims all-but-oldest --print)); }
 );
 is(
    $output,
@@ -62,8 +88,8 @@ is(
 # Each busy time matches on the lowest possible value.
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
-      qw(--group-by info --query-count 2 --each-busy-time 9 --match-user user1),
-      qw(--all-but-oldest --print)); }
+      qw(--group-by info --query-count 2 --each-busy-time 8 --match-user user1),
+      qw(--victims all-but-oldest --print)); }
 );
 like(
    $output,
@@ -74,8 +100,8 @@ like(
 # Nothing matches because --query-count isn't satisified.
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
-      qw(--group-by info --query-count 3 --each-busy-time 1 --match-user user1),
-      qw(--all-but-oldest --print)); }
+      qw(--group-by info --query-count 4 --each-busy-time 1 --match-user user1),
+      qw(--victims all-but-oldest --print)); }
 );
 is(
    $output,
@@ -87,7 +113,7 @@ is(
 $output = output(
    sub { mk_kill::main("$sample/recset010.txt", qw(--print),
       qw(--group-by info --query-count 2 --each-busy-time 2 --match-user user1),
-      qw(--all-but-oldest --print --no-strip-comments)); }
+      qw(--victims all-but-oldest --print --no-strip-comments)); }
 );
 is(
    $output,

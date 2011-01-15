@@ -60,12 +60,12 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/pl/recset003.txt", qw(--match-state Updating --print --no-only-oldest)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset003.txt", qw(--match-state Updating --print --victims all)); }
 );
 like(
    $output,
-   qr/KILL 29393612.+KILL 29393640/s,
-   '--no-only-oldest'
+   qr/(?:(?:KILL 29393612.+KILL 29393640)|(?:KILL 29393640.+KILL 29393612))/s,
+   '--victims all'
 );
 
 $output = output(
@@ -128,11 +128,11 @@ is(
 # Now --all should match.
 $output = output(
    sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt",
-      qw(--all --print --ignore-state blahblah)); }
+      qw(--all --victims all --print --ignore-state blahblah)); }
 );
 like(
    $output,
-   qr/KILL 1 \(Query 4 sec\).+?KILL 2 \(Query 5 sec\)/ms,
+   qr/(?:(?:KILL 1.+KILL 2)|(?:KILL 2.+KILL 1))/s,
    "--all"
 );
 

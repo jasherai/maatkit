@@ -1916,7 +1916,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 7096
+# Processlist package 7213
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2159,20 +2159,6 @@ sub find {
       }
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
-
-   if ( @matches
-        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
-   { 
-      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
-      my $oldest = $matches[0];
-      MKDEBUG && _d('Oldest query:', Dumper($oldest));
-      if ( $find_spec{only_oldest} ) {
-         @matches = ($oldest);  # only return the oldest query
-      }
-      elsif ( $find_spec{all_but_oldest} ) {
-         shift @matches;  # remove fist/oldest query
-      }
-   }
 
    return @matches;
 }
@@ -3582,18 +3568,16 @@ sub main {
          unless $o->got('interval');
    }
 
-   $o->set('only-oldest', 0) if $o->get('all');
-   $o->set('only-oldest', 0) if $o->get('all-but-oldest');
-
-   # TODO: isn't this better done with a POD rule?
-   if ( $o->got('only-oldest') && $o->got('all-but-oldest') ) {
-      $o->save_error("--only-oldest contradicts --all-but-oldest.");
-   }
-
    # If parsing files, then don't wait.
    if ( @ARGV ) {
       $o->set('run-time', 0);
       $o->set('interval', 0);
+   }
+
+   # TODO: parse valid values from POD
+   my $victims = lc $o->get('victims');
+   if ( !grep { $victims eq $_ } qw(oldest all all-but-oldest) ) {
+      $o->save_error("Invalid value for --victims: $victims");
    }
 
    $o->usage_or_errors();
@@ -3712,8 +3696,6 @@ sub main {
 
    # Per-class match criteria.
    my %find_spec = (
-      only_oldest         => $o->get('only-oldest'),
-      all_but_oldest      => $o->get('all-but-oldest'),
       busy_time           => $o->get('busy-time'),
       idle_time           => $o->get('idle-time'),
       all                 => $o->get('all'),
@@ -3757,9 +3739,10 @@ sub main {
 
       my @queries;
       if ( $proclist ) {
-
+         # ##################################################################
          # Group queries into classes.  If --group-by wasn't specified
          # then all queries will be put in the "default" class.
+         # ##################################################################
          my $query_classes = group_queries(
             proclist       => $proclist,
             group_by       => $group_by,
@@ -3767,19 +3750,30 @@ sub main {
             QueryRewriter  => $qr,
          );
 
+         # ##################################################################
+         # Find matching queries in each class.
+         # ##################################################################
          CLASS:
          foreach my $class ( keys %$query_classes ) {
             MKDEBUG && _d("Finding matching queries for class", $class);
             my @matches = $pl->find($query_classes->{$class}, %find_spec);
+            if ( !@matches ) {
+               MKDEBUG && _d("Class has no matching queries");
+               next CLASS;
+            }
 
-            if (  $query_count && @matches < $query_count ) {
+            # ###############################################################
+            # Apply class-based filters.
+            # ###############################################################
+            if ( $query_count && @matches < $query_count ) {
                MKDEBUG && _d("Class does not have enough queries; has",
                   scalar @matches, "but needs at least", $query_count);
                next CLASS;
             }
+
             if ( $each_busy_time ) {
                foreach my $proc ( @matches ) {
-                  if ( ($proc->{Time} || 0) < $each_busy_time ) {
+                  if ( ($proc->{Time} || 0) <= $each_busy_time ) {
                      MKDEBUG && _d("This proc hasn't been running long enough:",
                         Dumper($proc));
                      next CLASS;
@@ -3787,19 +3781,44 @@ sub main {
                }
             }
             elsif ( $any_busy_time ) {
-               my $max_busy_time = 0;
+               my $busy_enough = 0;
                foreach my $proc ( @matches ) {
-                  if ( ($proc->{Time} || 0) > $max_busy_time ) {
-                     $max_busy_time = $proc->{Time};
+                  if ( ($proc->{Time} || 0) > $any_busy_time ) {
+                     $busy_enough = 1;
+                     last;
                   }
                }
-               MKDEBUG && _d("Max busy time:", $max_busy_time);
-               if ( $any_busy_time > $max_busy_time ) {
+               if ( !$busy_enough ) {
+                  MKDEBUG && _d("No proc is busy enough");
                   next CLASS;
                }
             }
+
+            # ###############################################################
+            # Select the victims (which of the matching queries to kill).
+            # ###############################################################
+            @matches = reverse sort {
+                  ($a->{Time} || 0) <=> ($b->{Time} || 0) } @matches;
+            if ( $victims eq 'oldest' ) {
+               @matches = ($matches[0]);
+            }
+            elsif ( $victims eq 'all-but-oldest' ) {
+               shift @matches;  # remove fist/oldest query
+            }
+            elsif ( $victims eq 'all' ) {
+               # Don't do anything.
+            }
+            else {
+               # Shouldn't happen.  Option val should be verified earlier.
+               die "I don't know how to kill $victims";
+            }
+
+            # ###############################################################
+            # Save matching queries in this class.
+            # ###############################################################
+            MKDEBUG && _d(scalar @matches, "queries in class to kill");
             push @queries, @matches;
-         }
+         } # CLASS
          heartbeat('Matched ' . scalar @queries . ' queries');
 
          MATCHING_QUERY:
@@ -3970,11 +3989,11 @@ Print, do not kill, queries running longer than 60s:
 
 Check for sleeping processes and kill them all every 10s:
 
-  mk-kill --match-command Sleep --kill --no-only-oldest --interval 10
+  mk-kill --match-command Sleep --kill --victims all --interval 10
 
 Print all login processes:
 
-  mk-kill --match-state login --print --no-only-oldest
+  mk-kill --match-state login --print --victims all
 
 =head1 RISKS
 
@@ -4016,21 +4035,50 @@ mk-kill to make sure that your matches kill the proper queries.  There are a
 lot of special rules to follow, such as "don't kill replication threads,"
 so be careful to not kill something important!
 
-Two important options to know are L<"--busy-time"> and L<"--[no]only-oldest">.
+Two important options to know are L<"--busy-time"> and L<"--victims">.
 First, whereas most match/filter options match their corresponding value from
 SHOW PROCESSLIST (e.g. L<"--match-command"> matches a query's Command value),
 the Time value is matched by L<"--busy-time">.  See also L<"--interval">.
 
-Secondly, L<"--[no]only-oldest"> affects which matching query is killed.
-By default, the matching query with the highest Time value is killed.  So
-if you want to match and kill ALL queries for a certain criteria regardless
-of which is the "oldest", you must specify C<--no-only-oldest>.
+Second, L<"--victims"> controls which matching queries from each class are
+killed.  By default, the matching query with the highest Time value is killed
+(the oldest query).  See the next section, L<"GROUP, MATCH AND KILL">,
+for more details.
 
 Usually you need to specify at least one C<--match-*> option, else no
 queries will match.  Or, you can specify L<"--all"> to match all queries
 that aren't ignored by an C<--ignore-*>.
 
 mk-kill is a work in progress, and there is much more it could do.
+
+=head1 GROUP, MATCH AND KILL
+
+Queries pass through several steps to determine which exactly will be killed
+(or printed--whatever action is specified).  Understanding these steps will
+help you match precisely the queries you want.
+
+The first step is grouping queries into classes.  The L<"--group-by"> option
+controls grouping.  By default, this option has no value so all queries are
+grouped into one, big default class.  All types of matching and filtering
+(the next step) are applied per-class.  Therefore, you may need to group
+queries in order to match/filter some classes but not others.
+
+The second step is matching.  Matching implies filtering since if a query
+doesn't match some criteria, it is removed from its class.
+Matching happens for each class.  First, queries are filtered from their
+class by the various C<Query Matches> options like L<"--match-user">.
+Then, entire classes are filtered by the various C<Class Matches> options
+like L<"--query-count">.
+
+The third step is victim selection, that is, which matching queries in each
+class to kill.  This is controlled by the L<"--victims"> option.  Although
+many queries in a class may match, you may only want to kill the oldest
+query, or all queries, etc.
+
+The forth and final step is to take some action on all matching queries
+from all classes.  The C<Actions> options specify which actions will be
+taken.  At this step, there are no more classes, just a single list of
+querys to kill, print, etc.
 
 =head1 OUTPUT
 
@@ -4053,6 +4101,10 @@ with the command.
 =head1 OPTIONS
 
 Specify at least one of L<"--kill">, L<"--kill-query">, L<"--print">, L<"--execute-command"> or L<"--stop">.
+
+L<"--any-busy-time"> and L<"--each-busy-time"> are mutually exclusive.
+
+L<"--kill"> and L<"--kill-query"> are mutually exclusive.
 
 This tool accepts additional command-line arguments.  Refer to the
 L<"SYNOPSIS"> and usage information for details.
@@ -4090,6 +4142,29 @@ short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
+
+=item --group-by
+
+type: string
+
+Apply matches to each class of queries grouped by this SHOW PROCESSLIST column.
+In addition to the basic columns of SHOW PROCESSLIST (user, host, command,
+state, etc.), queries can be matched by C<fingerprint> which abstracts the
+SQL query in the C<Info> column.
+
+By default, queries are not grouped, so matches and actions apply to all
+queries.  Grouping allows matches and actions to apply to classes of
+similar queries, if any queries in the class match.
+
+For example, detecting cache stampedes (see C<all-but-oldest> under
+L<"--victims"> for an explanation of that term) requires that queries are
+grouped by the C<arg> attribute.  This creates classes of identical queries
+(stripped of comments).  So queries C<"SELECT c FROM t WHERE id=1"> and
+C<"SELECT c FROM t WHERE id=1"> are grouped into the same class, but
+query c<"SELECT c FROM t WHERE id=3"> is not identical to the first two
+queries so it is grouped into another class. Then when L<"--victims">
+C<all-but-oldest> is specified, all but the oldest query in each class is
+killed for each class of queries that matches the match criteria.
 
 =item --heartbeat
 
@@ -4199,6 +4274,38 @@ User for login if not current user.
 
 Show version and exit.
 
+=item --victims
+
+type: string; default: oldest
+
+Which of the matching queries in each class will be killed.  After classes
+have been matched/filtered, this option specifies which of the matching
+queries in each class will be killed (or printed, etc.).  The following
+values are possible:
+
+=over
+
+=item oldest
+
+Only kill the single oldest query.  This is to prevent killing queries that
+aren't really long-running, they're just long-waiting.  This sorts matching
+queries by Time and kills the one with the highest Time value.
+
+=item all
+
+Kill all queries in the class.
+
+=item all-but-oldest
+
+Kill all but the oldest query.  This is the inverse of the C<oldest> value.
+
+This value can be used to prevent "cache stampedes", the condition where
+several identical queries are executed and create a backlog while the first
+query attempts to finish.  Since all queries are identical, all but the first
+query are killed so that it can complete and populate the cache.
+
+=back
+
 =item --wait-after-kill
 
 type: time
@@ -4218,111 +4325,55 @@ MySQL or system information before it's killed.
 
 =back
 
-=head2 MATCHES
+=head2 QUERY MATCHES
 
-These options specify what criteria a query must match for C<mk-kill>
-to either L<"--kill">, L<"--print"> or L<"--execute-command"> for it.
-The ignore commands take precedence.  The matches for command, db, host, etc.
-correspond to the columns returned by SHOW PROCESSLIST: Command, db, Host, etc.
-All pattern matches are case-sensitive.
+These options filter queries from their classes.  If a query does not
+match, it is removed from its class.  The C<--ignore> options take precedence.
+The matches for command, db, host, etc. correspond to the columns returned
+by SHOW PROCESSLIST: Command, db, Host, etc.  All pattern matches are
+case-sensitive by default, but they can be made case-insenstive by specifying
+a regex pattern like C<(?i-xsm:select)>.
+
+See also L<"GROUP, MATCH AND KILL">.
 
 =over
 
 =item --all
 
-group: Matches
+group: Query Matches
 
-Kill all connections that are not ignored.
+Match all queries that are not ignored.  If no ignore options are specified,
+then every query matches (except replication threads, unless
+L<"--replication-threads"> is also specified).  This option allows you to
+specify negative matches, i.e. "match every query I<except>..." where the
+execptions are defined by specifying varous C<--ignore> options.
 
-If no ignore options are specified, then every connection is killed (except
-replication threads, unless L<"--replication-threads"> is also specified).
-If some ignore options are specified, then every connection except ignored
-connections are killed.
-
-Implies C<--no-only-oldest>.
-
-=item --all-but-oldest
-
-group: Matches
-
-Kill all but the oldest (longest) running query.  Matching queries are sorted
-by Time and all but the longest running query are killed.
-
-Unlike L<"--all">, the various C<--match-*> options do apply, as well as
-the C<--ignore-*> options.  So, for example, you can match all queries from
-a specific user (e.g. L<"--match-user"> john) and then kill all but the
-longest running of their queries.
-
-This option can be used to prevent "cache stampedes", the condition where
-several identical queries are executed and create a backlog while the first
-query attempts to finish.  Since all queries are identical, all but the first
-query are killed so that it can complete and populate the cache.
-
-Implies C<--no-only-oldest>.
+This option is I<not> the same as L<"--victims"> C<all>.  This option matches
+all queries within a class, whereas L<"--victims"> C<all> specifies that all
+matching quries in a class (however they matched) will be killed.  Normally,
+however, the two are used together because if, for example, you specify
+L<"--victims"> C<oldest>, then although all queries may match, only the oldest
+will be killed.
 
 =item --busy-time
 
-type: time; group: Matches
+type: time; group: Query Matches
 
-Kill connections that have been running for longer than this time.  The queries
+Match queries that have been running for longer than this time.  The queries
 must be in Command=Query status.  This matches a query's Time value as
 reported by SHOW PROCESSLIST.
 
-=item --any-busy-time
-
-type: time; group: Matches
-
-Match query class if any query has been running for longer than this time.
-See L<"--each-busy-time"> for more details.
-
-=item --each-busy-time
-
-type: time; group: Matches
-
-Match query class if each query has been running for longer than this time.
-When queries are grouped into classes by specifying L<"--group-by">, this
-option causes matches to apply only to classes in which all queries have
-been running for longer than this time.  If L<"--group-by">
-is not specified then this option causes matches to apply only if all queries
-shown by SHOW PROCESSLIST have been running for longer than this time.
-
-See also L<"--any-busy-time"> (to match a group if ANY query has been running
-longer than the specified time) and L<"--busy-time">.
-
-=item --group-by
-
-type: string; group: Matches
-
-Apply matches to each class of queries grouped by this SHOW PROCESSLIST column.
-In addition to the basic columns of SHOW PROCESSLIST (user, host, command,
-state, etc.), queries can be matched by C<fingerprint> which abstracts the
-SQL query in the C<Info> column.
-
-By default, queries are not grouped, so matches and actions apply to all
-queries.  Grouping allows matches and actions to apply to classes of
-similar queries, if any queries in the class match.
-
-For example, detecting cache stampedes (see L<"--all-but-oldest"> for an
-explanation of that term) requires that queries are grouped by the C<arg>
-attribute.  This creates classes of identical queries (stripped of comments).
-So queries C<"SELECT c FROM t WHERE id=1"> and C<"SELECT c FROM t WHERE id=1">
-are grouped into the same class, but query c<"SELECT c FROM t WHERE id=3"> is
-not identical to the first two queries so it is grouped into another class.
-Then when L<"--all-but-oldest"> is specified, all but the oldest query
-in each class is killed for each class of queries that matches the match
-criteria.
-
 =item --idle-time
 
-type: time; group: Matches
+type: time; group: Query Matches
 
-Kill connections that have been idle/sleeping for longer than this time.
+Match queries that have been idle/sleeping for longer than this time.
 The queries must be in Command=Sleep status.  This matches a query's Time
 value as reported by SHOW PROCESSLIST.
 
 =item --ignore-command
 
-type: string; group: Matches
+type: string; group: Query Matches
 
 Ignore queries whose Command matches this Perl regex.
 
@@ -4330,7 +4381,7 @@ See L<"--match-command">.
 
 =item --ignore-db
 
-type: string; group: Matches
+type: string; group: Query Matches
 
 Ignore queries whose db (database) matches this Perl regex.
 
@@ -4338,7 +4389,7 @@ See L<"--match-db">.
 
 =item --ignore-host
 
-type: string; group: Matches
+type: string; group: Query Matches
 
 Ignore queries whose Host matches this Perl regex.
 
@@ -4346,7 +4397,7 @@ See L<"--match-host">.
 
 =item --ignore-info
 
-type: string; group: Matches
+type: string; group: Query Matches
 
 Ignore queries whose Info (query) matches this Perl regex.
 
@@ -4354,13 +4405,13 @@ See L<"--match-info">.
 
 =item --[no]ignore-self
 
-default: yes; group: Matches
+default: yes; group: Query Matches
 
 Don't kill mk-kill's own connection.
 
 =item --ignore-state
 
-type: string; group: Matches; default: Locked
+type: string; group: Query Matches; default: Locked
 
 Ignore queries whose State matches this Perl regex.  The default is to keep
 threads from being killed if they are locked waiting for another thread.
@@ -4369,7 +4420,7 @@ See L<"--match-state">.
 
 =item --ignore-user
 
-type: string; group: Matches
+type: string; group: Query Matches
 
 Ignore queries whose user matches this Perl regex.
 
@@ -4377,9 +4428,9 @@ See L<"--match-user">.
 
 =item --match-command
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose Command matches this Perl regex.
+Match only queries whose Command matches this Perl regex.
 
 Common Command values are:
 
@@ -4403,32 +4454,32 @@ list and description of Command values.
 
 =item --match-db
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose db (database) matches this Perl regex.
+Match only queries whose db (database) matches this Perl regex.
 
 =item --match-host
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose Host matches this Perl regex.
+Match only queries whose Host matches this Perl regex.
 
 The Host value often time includes the port like "host:port".
 
 =item --match-info
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose Info (query) matches this Perl regex.
+Match only queries whose Info (query) matches this Perl regex.
 
 The Info column of the processlist shows the query that is being executed
 or NULL if no query is being executed.
 
 =item --match-state
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose State matches this Perl regex.
+Match only queries whose State matches this Perl regex.
 
 Common State values are:
 
@@ -4451,24 +4502,13 @@ a full list and description of State values.
 
 =item --match-user
 
-type: string; group: Matches
+type: string; group: Query Matches
 
-Kill only queries whose User matches this Perl regex.
-
-=item --[no]only-oldest
-
-default: yes; group: Matches
-
-Only kill the single oldest query.  This is to prevent killing queries that
-aren't really long-running, they're just long-waiting.  This sorts matching
-queries by Time and kills the one with the highest Time value.
-
-This option is disabled if L<"--all"> is specified.  See also
-L<"--all-but-oldest">.
+Match only queries whose User matches this Perl regex.
 
 =item --replication-threads
 
-group: Matches
+group: Query Matches
 
 Allow matching and killing replication threads.
 
@@ -4476,9 +4516,44 @@ By default, matches do not apply to replication threads; i.e. replication
 threads are completely ignored.  Specifying this option allows matches to
 match (and potentially kill) replication threads on masters and slaves.
 
+=back
+
+=head2 CLASS MATCHES
+
+These matches apply to entire query classes.  Classes are created by specifying
+the L<"--group-by"> option, else all queries are members of a single, default
+class.
+
+See also L<"GROUP, MATCH AND KILL">.
+
+=over
+
+=item --any-busy-time
+
+type: time; group: Class Matches
+
+Match query class if any query has been running for longer than this time.
+"Longer than" means that if you specify C<10>, for example, the class will
+only match if there's at least one query that has been running for greater
+than 10 seconds.
+
+See L<"--each-busy-time"> for more details.
+
+=item --each-busy-time
+
+type: time; group: Class Matches
+
+Match query class if each query has been running for longer than this time.
+"Longer than" means that if you specify C<10>, for example, the class will
+only match if each and every query has been running for greater than 10
+seconds.
+
+See also L<"--any-busy-time"> (to match a class if ANY query has been running
+longer than the specified time) and L<"--busy-time">.
+
 =item --query-count
 
-type: int; group: Matches
+type: int; group: Class Matches
 
 Match query class if it has at least this many queries.  When queries are
 grouped into classes by specifying L<"--group-by">, this option causes matches
@@ -4490,12 +4565,14 @@ are at least this many queries in the entire SHOW PROCESSLIST.
 
 =head2 ACTIONS
 
-When a query matches, one or more of these actions is taken.  The actions are
-taken in this order: L<"--print">, L<"--execute-command">, L<"--kill">.
-If given, mk-kill sleeps for L<"--wait-before-kill"> before L<"--kill"> (if
-L<"--kill"> is given).  This order allows L<"--execute-command"> to see the 
-output of L<"--print"> and the query before L<"--kill">.  This may be helpful
-because mk-kill does not pass any information to L<"--execute-command">.
+These actions are taken for every matching query from all classes.
+The actions are taken in this order: L<"--print">, L<"--execute-command">,
+L<"--kill">/L<"--kill-query">.  This order allows L<"--execute-command">
+to see the output of L<"--print"> and the query before
+L<"--kill">/L<"--kill-query">.  This may be helpful because mk-kill does
+not pass any information to L<"--execute-command">.
+
+See also L<"GROUP, MATCH AND KILL">.
 
 =over
 
@@ -4521,8 +4598,7 @@ Kill the connection for matching queries.
 
 This option makes mk-kill kill the connections (a.k.a. processes, threads) that
 have matching queries.  Use L<"--kill-query"> if you only want to kill
-individual queries and not their connections.  If both L<"--kill"> and
-L<"--kill-query"> are specified, only L<"--kill-query"> is used.
+individual queries and not their connections.
 
 Unless L<"--print"> is also given, no other information is printed that shows
 that mk-kill matched and killed a query.
@@ -4537,8 +4613,7 @@ Kill matching queries.
 
 This option makes mk-kill kill matching queries.  This requires MySQL 5.0 or
 newer.  Unlike L<"--kill"> which kills the connection for matching queries,
-this option only kills the query, not its connection.  If both L<"--kill"> and
-L<"--kill-query"> are specified, only L<"--kill-query"> is used.
+this option only kills the query, not its connection.
 
 =item --print
 
@@ -4673,7 +4748,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz
+Baron Schwartz, Daniel Nichter
 
 =head1 ABOUT MAATKIT
 
