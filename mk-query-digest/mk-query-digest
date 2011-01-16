@@ -11647,6 +11647,17 @@ sub main {
       $orderby[$i] ||= $default_orderby;
    }
    $o->set('order-by', \@orderby);
+      
+   eval {
+      verify_run_time(
+         run_mode => $o->get('run-time-mode'),
+         run_time => $o->get('run-time'),
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      chomp $EVAL_ERROR;
+      $o->save_error($EVAL_ERROR);
+   }
 
    $o->usage_or_errors();
 
@@ -13061,6 +13072,66 @@ sub save_results {
    return;
 }
 
+# Sub: verify_run_time
+#   Verify that the given run mode and run time are valid.  If the run mode
+#   is "interval", the time boundary (in seconds) for the run time is returned
+#   if valid.  Else, undef is returned because modes "clock" and "event" have
+#   no boundaries that need to be verified.  In any case the sub will die if
+#   something is invalid, so the caller should eval their call.  The eval
+#   error message is suitable for <OptionParser::save_error()>.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   run_mode - Name of run mode (e.g. "clock", "event" or "interval")
+#   run_time - Run time in seconds
+#
+# Returns:
+#   Time boundary in seconds if run mode and time are valid; dies if
+#   they are not.  Time boundary is undef except for interval run mode.
+sub verify_run_time {
+   my ( %args ) = @_;
+   my $run_mode = lc $args{run_mode};
+   my $run_time = lc $args{run_time};
+   MKDEBUG && _d("Verifying run time mode", $run_mode, "and time", $run_time);
+
+   die "Invalid --run-time-mode: $run_mode\n"
+      unless $run_mode =~ m/clock|event|interval/;
+
+   if ( $run_mode =~ m/event|interval/ && ($run_time || 0) <= 0 ) {
+      die "--run-time must be greater than zero for --run-time-mode $run_mode\n";
+   }
+
+   my $boundary;
+   if ( $run_mode eq 'interval' ) {
+      if ( $run_time > 86400 ) {  # 1 day
+         # Make sure run time is a whole day and not something like 25h.
+         if ( $run_time % 86400 ) {
+            die "Invalid --run-time argument for --run-time-mode $run_mode; "
+            . "see documentation.\n"
+         }
+         $boundary = $run_time;
+      }
+      else {
+         # If run time is sub-minute (some amount of seconds), it should
+         # divide evenly into minute boundaries.  If it's sub-minute
+         # (some amount of minutes), it should divide evently into hour
+         # boundaries.  If it's sub-hour, it should divide evently into
+         # day boundaries.
+         $boundary = $run_time <= 60   ? 60     # seconds divide into minutes
+                   : $run_time <= 3600 ? 3600   # minutes divide into hours
+                   :                     86400; # hours divide into days
+         if ( $boundary % $run_time ) {
+            die "Invalid --run-time argument for --run-time-mode $run_mode; "
+               . "see documentation.\n"
+         }
+      }
+   }
+
+   return $boundary;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -14452,6 +14523,52 @@ type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).  See also L<"--iterations">.
+
+=item --run-time-mode
+
+type: string; default: clock
+
+Set what the value of L<"--run-time"> operates on.  Following are the possible
+values for this option:
+
+=over
+
+=item clock
+
+L<"--run-time"> specifies an amount of real clock time during which the tool
+should run for each L<"--iteration">.
+
+=item event
+
+L<"--run-time"> specifies an amount of log time.  Log time is determined by
+timestamps in the log.  The first timestamp seen is remembered, and each
+timestamp after that is compared to the first to determine how much log time
+has passed.  For example, if the first timestamp seen is C<12:00:00> and the
+next is C<12:01:30>, that is 1 minute and 30 seconds of log time.  The tool
+will read events until the log time is greater than or equal to the specified
+L<"--run-time"> value.
+
+Since timestamps in logs are not always printed, or not always printed
+frequently, this mode varies in accuracy.
+
+=item interval
+
+L<"--run-time"> specifies interval boundaries of log time into which events
+are divided and reports are generated.  This mode is different from the
+others because it doesn't specify how long to run.  The value of
+L<"--run-time"> must be an interval that divides evenly into minutes, hours
+or days.  For example, C<5m> divides evently into hours (60/5=12, so 12
+5 minutes intervals per hour) but C<7m> does not (60/7=8.6).
+
+Specifying C<--run-time-mode interval --run-time 30m> is similar to
+specifying C<--run-time-mode clock --run-time 30m --iterations 0>.  In the
+latter case, mk-query-digest will run forever, producing reports every
+30 minutes, but this only works effectively with  continuous inputs like
+STDIN and the processlist.  For fixed inputs, like log files, the latter
+example produces multiple reports by dividing the log into 30 minutes
+intervals based on timestamps.
+
+=back
 
 =item --sample
 
