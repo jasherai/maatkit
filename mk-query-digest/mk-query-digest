@@ -2091,7 +2091,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 7096
+# Processlist package 7213
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
@@ -2334,20 +2334,6 @@ sub find {
       }
       MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
-
-   if ( @matches
-        && ($find_spec{only_oldest} || $find_spec{all_but_oldest}) )
-   { 
-      @matches   = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
-      my $oldest = $matches[0];
-      MKDEBUG && _d('Oldest query:', Dumper($oldest));
-      if ( $find_spec{only_oldest} ) {
-         @matches = ($oldest);  # only return the oldest query
-      }
-      elsif ( $find_spec{all_but_oldest} ) {
-         shift @matches;  # remove fist/oldest query
-      }
-   }
 
    return @matches;
 }
@@ -11524,6 +11510,115 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Runtime package 7218
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Runtime.pm
+#   trunk/common/t/Runtime.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Runtime;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(now);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   if ( ($args{runtime} || 0) < 0 ) {
+      die "runtime argument must be greater than zero"
+   }
+
+   my $self = {
+      %args,
+      start_time => undef,
+      end_time   => undef,
+      time_left  => undef,
+   };
+
+   return bless $self, $class;
+}
+
+sub time_left {
+   my ( $self, %args ) = @_;
+
+   my $now = $self->{now}->(%args);
+   MKDEBUG && _d("Current time:", $now);
+
+   if ( !defined $self->{start_time} ) {
+      $self->{start_time} = $now;
+   }
+
+   return unless defined $now;
+
+   my $runtime = $self->{runtime};
+   return unless defined $runtime;
+
+   if ( !$self->{end_time} ) {
+      $self->{end_time} = $now + $runtime;
+      MKDEBUG && _d("End time:", $self->{end_time});
+   }
+
+   $self->{time_left} = $self->{end_time} - $now;
+   MKDEBUG && _d("Time left:", $self->{time_left});
+   return $self->{time_left};
+}
+
+sub have_time {
+   my ( $self, %args ) = @_;
+   my $time_left = $self->time_left(%args);
+   return 1 if !defined $time_left;  # run forever
+   return $time_left <= 0 ? 0 : 1;   # <=0s means runtime has elapsed
+}
+
+sub time_elapsed {
+   my ( $self, %args ) = @_;
+
+   my $start_time = $self->{start_time};
+   return 0 unless $start_time;
+
+   my $now = $self->{now}->(%args);
+   MKDEBUG && _d("Current time:", $now);
+
+   my $time_elapsed = $now - $start_time;
+   MKDEBUG && _d("Time elapsed:", $time_elapsed);
+   if ( $time_elapsed < 0 ) {
+      warn "Current time $now is earlier than start time $start_time";
+   }
+   return $time_elapsed;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{start_time} = undef;
+   $self->{end_time}   = undef;
+   $self->{time_left}  = undef;
+   MKDEBUG && _d("Reset runtime");
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Runtime package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -11892,13 +11987,17 @@ sub main {
          },
       };
 
+      my $interval_sleep = $o->get('interval') * 1_000_000;
+      my $pollno         = 0;
       push @callbacks, sub {
          my ( $event, %args ) = @_;
+         MKDEBUG && _d('callback: poll processlist');
+         usleep($interval_sleep) if $pollno++;
          return $pl->parse_event(%args);
       };
       $callback_names{$callbacks[-1]} = ref $pl;
       MKDEBUG && _d('Added Processlist module to callbacks');
-   }
+   }  # get events from processlist
    else {
       my %alias_for = (
          slowlog   => ['SlowLogParser'],
@@ -11939,12 +12038,13 @@ sub main {
          }
          push @callbacks, sub {
             my ( $event, %args ) = @_;
+            MKDEBUG && _d('callback: parse log file');
             return $parser->parse_event(%args);
          };
          $callback_names{$callbacks[-1]} = ref $parser;
          MKDEBUG && _d('Added', $module, 'module to callbacks');
       }
-   }
+   }  # get events from log file
 
    # Filter early for --since and --until.
    my $past_since;
@@ -12361,15 +12461,6 @@ sub main {
       }
    }
 
-   if ( $o->get('processlist') ) {
-      push @callbacks, sub {
-         MKDEBUG && _d('callback: interval sleep');
-         usleep($o->get('interval') * 1_000_000);
-         return @_;
-      };
-      $callback_names{$callbacks[-1]} = 'interval sleep';
-   }
-
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
    # ########################################################################
@@ -12415,6 +12506,16 @@ sub main {
    my $fi        = new FileIterator();
    my $next_file = $fi->get_file_itr(@ARGV);
    my @read_files;
+
+   # Setup a Runtime object.
+   my $runtime;
+   my $run_time_mode = lc $o->get('run-time-mode');
+   if ( $run_time_mode eq 'clock' ) {
+      $runtime = new Runtime(
+         now     => sub { return time; },
+         runtime => $o->get('run-time'),
+      );
+   }
 
    # Get first input (a file, STDIN, proclist, etc.)
    my ($fh, $filename, $filesize) = $next_file->();
@@ -12464,18 +12565,19 @@ sub main {
             );
          }
 
-         # Parse and process the events in this input
-         # limited run-time.
-         my $start       = time;
-         my $end         = $start + ($o->get('run-time') || 0); # when to stop
-         my $now         = $start;
+         # Reset runtime for this iteration.  Event processing (the EVENT
+         # loop below) is limited to runtime.  The time is checked before
+         # each event, so make sure the runtime obj is efficient!
+         $runtime->reset();
+
+         # Parse and process the events in this input.
          my $event       = {};
          my $more_events = 1;
          my $oktorun_sub = sub { $more_events = $_[0]; };
          EVENT:
          while (                                 # Quit if:
             $oktorun                             # instructed to quit
-            && ($start == $end || $now < $end)   # or time is exceeded
+            && $runtime->have_time()             # or time is exceeded
             && $more_events )                    # or there are no more events
          {
             eval {
@@ -12487,6 +12589,7 @@ sub main {
                # reasons.  Some inputs are infinite streams of events, like the
                # proclist, so oktorun is never set to false and it's the user's
                # job to tell us when to stop.
+               PIPELINE_PROCESS:
                foreach my $callback ( @callbacks ) {
                   last unless $oktorun;  # the global oktorun var
                   my $call_start = $instrument ? time : 0;
@@ -12508,7 +12611,7 @@ sub main {
                      $prof{total}->{time} += $call_t;
                      $prof{total}->{count}++;
                   }
-                  last unless $event;
+                  last PIPELINE_PROCESS unless $event;
                }
                if ( !$more_events ) {
                   MKDEBUG && _d('No more events');
@@ -12535,7 +12638,6 @@ sub main {
             }
 
             $pr->update($tell) if $pr;
-            $now = time();
          }  # EVENT
       }  # INPUT
 
