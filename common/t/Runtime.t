@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 20;
 
 use MaatkitTest;
 use Runtime;
@@ -117,6 +117,29 @@ is(
    $runtime->time_elapsed(),
    2,
    "Running forever: time still elapses"
+);
+
+# #############################################################################
+# Test start/stop with clock time.
+# #############################################################################
+
+$runtime = new Runtime(
+   now     => sub { return time; },
+   runtime => 3,
+);
+
+is(
+   $runtime->time_left(),
+   3,
+   "Start/stop: started with 3s left"
+);
+
+$runtime->stop();
+
+is(
+   $runtime->have_time(),
+   0,
+   "Start/stop: no time after stop"
 );
 
 # #############################################################################

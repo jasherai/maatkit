@@ -59,6 +59,7 @@ sub new {
       start_time => undef,
       end_time   => undef,
       time_left  => undef,
+      stop       => 0,
    };
 
    return bless $self, $class;
@@ -78,6 +79,11 @@ sub new {
 #   if running forever.
 sub time_left {
    my ( $self, %args ) = @_;
+
+   if ( $self->{stop} ) {
+      MKDEBUG && _d("No time left because stop was called");
+      return 0;
+   }
 
    my $now = $self->{now}->(%args);
    MKDEBUG && _d("Current time:", $now);
@@ -166,7 +172,27 @@ sub reset {
    $self->{start_time} = undef;
    $self->{end_time}   = undef;
    $self->{time_left}  = undef;
+   $self->{stop}       = 0;
    MKDEBUG && _d("Reset runtime");
+   return;
+}
+
+# Sub: stop
+#   Stop the coutdown, make <time_left()> return 0 and <have_time()> false.
+#   After calling this sub, you must call <start()> or <reset()> to
+#   recommence the countdown.
+sub stop {
+   my ( $self ) = @_;
+   $self->{stop} = 1;
+   return;
+}
+
+# Sub: start
+#   Restart the countdown after having called <stop()>.  Calling this sub
+#   has no affect unless <stop()> was called first.
+sub start {
+   my ( $self ) = @_;
+   $self->{stop} = 0;
    return;
 }
 
