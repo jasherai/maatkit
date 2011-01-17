@@ -13,7 +13,10 @@ use Test::More;
 
 use MaatkitTest;
 use Sandbox;
-use DSNParser;
+shift @INC;  # our unshift (above)
+shift @INC;  # MaatkitTest's unshift
+shift @INC;  # Sandbox's unshift
+require "$trunk/mk-query-digest/mk-query-digest";
 
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -23,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 # #############################################################################
@@ -46,6 +49,33 @@ ok(
 );
 
 diag(`rm -rf /tmp/mk-query-digest.log`);
+
+
+# #############################################################################
+# Issue 1150: Make mk-query-digest --run-time behavior more flexible
+# #############################################################################
+
+# --run-time-mode event without a --run-time should result in the same output
+# as --run-time-mode clock because the log ts will be effectively ignored.
+
+my $before = output(
+   sub { mk_query_digest::main("$trunk/common/t/samples/slow033.txt",
+      '--report-format', 'query_report,profile')
+   },
+);
+
+my $after = output(
+   sub { mk_query_digest::main("$trunk/common/t/samples/slow033.txt",
+      '--report-format', 'query_report,profile',
+      qw(--run-time-mode event))
+   },
+);
+
+is(
+   $before,
+   $after,
+   "Event run time mode doesn't change analysis"
+);
 
 # #############################################################################
 # Done.

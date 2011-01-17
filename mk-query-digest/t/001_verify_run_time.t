@@ -99,9 +99,9 @@ like(
    "event -1s invalid"
 );
 
-like(
+is(
    verify('event', 0),
-   qr/--run-time must be greater than zero/,
+   undef,
    "event 0 invalid"
 );
 

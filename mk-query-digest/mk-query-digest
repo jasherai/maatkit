@@ -11510,7 +11510,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Runtime package 7218
+# Runtime package 7221
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Runtime.pm
@@ -11541,6 +11541,7 @@ sub new {
       start_time => undef,
       end_time   => undef,
       time_left  => undef,
+      stop       => 0,
    };
 
    return bless $self, $class;
@@ -11548,6 +11549,11 @@ sub new {
 
 sub time_left {
    my ( $self, %args ) = @_;
+
+   if ( $self->{stop} ) {
+      MKDEBUG && _d("No time left because stop was called");
+      return 0;
+   }
 
    my $now = $self->{now}->(%args);
    MKDEBUG && _d("Current time:", $now);
@@ -11600,7 +11606,20 @@ sub reset {
    $self->{start_time} = undef;
    $self->{end_time}   = undef;
    $self->{time_left}  = undef;
+   $self->{stop}       = 0;
    MKDEBUG && _d("Reset runtime");
+   return;
+}
+
+sub stop {
+   my ( $self ) = @_;
+   $self->{stop} = 1;
+   return;
+}
+
+sub start {
+   my ( $self ) = @_;
+   $self->{stop} = 0;
    return;
 }
 
@@ -11638,7 +11657,7 @@ $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
 
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
-   any_unix_timestamp));
+   any_unix_timestamp parse_timestamp unix_timestamp));
 
 use constant MKDEBUG        => $ENV{MKDEBUG}        || 0;
 use constant MKDEBUG_MEMORY => $ENV{MKDEBUG_MEMORY} || 0;
@@ -12045,6 +12064,46 @@ sub main {
          MKDEBUG && _d('Added', $module, 'module to callbacks');
       }
    }  # get events from log file
+
+   # Setup a Runtime object.
+   my $now_callback;
+   my $run_time_mode = lc $o->get('run-time-mode');
+   if ( $run_time_mode eq 'clock' ) {
+      $now_callback = sub { return time; };
+   }
+   elsif ( $run_time_mode eq 'event' ) {
+      $now_callback = sub {
+         my ( %args ) = @_;
+         my $event = $args{event};
+         return unless $event && $event->{ts};
+         MKDEBUG && _d("Log time:", $event->{ts});
+         return unix_timestamp(parse_timestamp($event->{ts}));
+      };
+   }
+   my $runtime = new Runtime(
+      now     => $now_callback,
+      runtime => $o->get('run-time'),
+   );
+   push @callbacks, sub {
+      my ( $event, %args ) = @_;
+      MKDEBUG && _d("callback: runtime");
+
+      if ( $run_time_mode eq 'event' ) {
+         if ( !$runtime->have_time(event=>$event) ) {
+            # This event exceeds runtime so we need to terminate the pipeline
+            # (the return) and then stop the EVENT loop (stop()), else this
+            # event will be processed and the report will include one event
+            # that it shouldn't.
+            # TODO: ultimately we'll need to push this even to an event queue.
+            MKDEBUG && _d("Event log time exceeds runtime");
+            $runtime->stop();
+            return;
+         }
+      }
+
+      return $event;
+   };
+   $callback_names{$callbacks[-1]} = "runtime";
 
    # Filter early for --since and --until.
    my $past_since;
@@ -12507,16 +12566,6 @@ sub main {
    my $next_file = $fi->get_file_itr(@ARGV);
    my @read_files;
 
-   # Setup a Runtime object.
-   my $runtime;
-   my $run_time_mode = lc $o->get('run-time-mode');
-   if ( $run_time_mode eq 'clock' ) {
-      $runtime = new Runtime(
-         now     => sub { return time; },
-         runtime => $o->get('run-time'),
-      );
-   }
-
    # Get first input (a file, STDIN, proclist, etc.)
    my ($fh, $filename, $filesize) = $next_file->();
    MKDEBUG && _d('Reading', $filename);
@@ -12575,10 +12624,10 @@ sub main {
          my $more_events = 1;
          my $oktorun_sub = sub { $more_events = $_[0]; };
          EVENT:
-         while (                                 # Quit if:
-            $oktorun                             # instructed to quit
-            && $runtime->have_time()             # or time is exceeded
-            && $more_events )                    # or there are no more events
+         while (                                  # Quit if:
+            $oktorun                              # instructed to quit
+            && $runtime->have_time(event=>$event) # or time is exceeded
+            && $more_events )                     # or there are no more events
          {
             eval {
                # Run events through the pipeline.  The first pipeline process
@@ -13195,18 +13244,23 @@ sub save_results {
 sub verify_run_time {
    my ( %args ) = @_;
    my $run_mode = lc $args{run_mode};
-   my $run_time = lc $args{run_time};
+   my $run_time = defined $args{run_time} ? lc $args{run_time} : undef;
    MKDEBUG && _d("Verifying run time mode", $run_mode, "and time", $run_time);
 
    die "Invalid --run-time-mode: $run_mode\n"
       unless $run_mode =~ m/clock|event|interval/;
 
-   if ( $run_mode =~ m/event|interval/ && ($run_time || 0) <= 0 ) {
-      die "--run-time must be greater than zero for --run-time-mode $run_mode\n";
+   if ( defined $run_time && $run_time < 0 ) {
+      die "--run-time must be greater than zero\n";
    }
 
    my $boundary;
    if ( $run_mode eq 'interval' ) {
+      if ( !defined $run_time || $run_time <= 0 ) {
+         die "--run-time must be greater than zero for "
+            . "--run-time-mode $run_mode\n";
+      }
+
       if ( $run_time > 86400 ) {  # 1 day
          # Make sure run time is a whole day and not something like 25h.
          if ( $run_time % 86400 ) {
