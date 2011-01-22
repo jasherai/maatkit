@@ -34,12 +34,13 @@ $Data::Dumper::Quotekeys = 0;
 # and just incrementing the bucket each time works, although it is imprecise.
 # See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
 # ###########################################################################
-use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
-use constant BUCK_SIZE    => 1.05;
-use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
-use constant NUM_BUCK     => 1000;
-use constant MIN_BUCK     => .000001;
+use constant MKDEBUG        => $ENV{MKDEBUG} || 0;
+use constant BUCK_SIZE      => 1.05;
+use constant BASE_LOG       => log(BUCK_SIZE);
+use constant BASE_OFFSET    => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
+use constant NUM_BUCK       => 1000;
+use constant MIN_BUCK       => .000001;
+use constant MAX_VARIATIONS => 1_000;
 
 # Used in buckets_of() to map buckets of log10 to log1.05 buckets.
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
@@ -75,6 +76,7 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #                       if none, then 0.
 #   type_for          - Hashref of attribute=>type pairs.  Types are: num, bool,
 #                       string (see $type in <make_handler()>).
+#   variations        - Arrayref of attributes to count variations of values.
 #
 # Returns:
 #   EventAggregator object
@@ -106,6 +108,7 @@ sub new {
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 1000,
       attrib_limit => $args{attrib_limit},
+      variations   => { map { $_ => 1 } @{$args{variations}} },
       result_classes => {},
       result_globals => {},
       result_samples => {},
@@ -186,10 +189,11 @@ sub aggregate {
             my $handler = $self->{handlers}->{ $attrib };
             if ( !$handler ) {
                $handler = $self->make_handler(
-                  $attrib,
-                  $event,
-                  wor => $self->{worst} eq $attrib,
-                  alt => $self->{attributes}->{$attrib},
+                  event      => $event,
+                  attribute  => $attrib,
+                  alternates => $self->{attributes}->{$attrib},
+                  worst      => $self->{worst} eq $attrib,
+                  variations => $self->{variations}->{$attrib},
                );
                $self->{handlers}->{$attrib} = $handler;
             }
@@ -305,52 +309,44 @@ sub type_for {
    return $self->{type_for}->{$attrib};
 }
 
-# Make subroutines that do things with events.
+# Sub: make_handler
+#   Make an attribute handler subroutine for <aggregate()>.  Each attribute
+#   needs a handler to keep trach of the min and max values, worst sample, etc.
+#   Handlers differ depending on the type of attribute (num, bool or string).
 #
-# $attrib: the name of the attrib (Query_time, Rows_read, etc)
-# $event:  a sample event
-# %args:
-#     min => keep min for this attrib (default except strings)
-#     max => keep max (default except strings)
-#     sum => keep sum (default for numerics)
-#     cnt => keep count (default except strings)
-#     unq => keep all unique values per-class (default for strings and bools)
-#     all => keep a bucketed list of values seen per class (default for numerics)
-#     glo => keep stats globally as well as per-class (default)
-#     trf => An expression to transform the value before working with it
-#     wor => Whether to keep worst-samples for this attrib (default no)
-#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
+# Parameters:
+#   %args - Arguments
 #
-# The bucketed list works this way: each range of values from MIN_BUCK in
-# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
-# buckets.  The upper end of the range is more than 1.5e15 so it should be big
-# enough for almost anything.  The buckets are accessed by a log base BUCK_SIZE,
-# so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
-# shift all values up 284 so we have values from 0 to 999 that can be used as
-# array indexes.  A value that falls into a bucket simply increments the array
-# entry.  We do NOT use POSIX::floor() because it is too expensive.
+# Required Arguments:
+#   event     - Event hashref
+#   attribute - Attribute name
 #
-# This eliminates the need to keep and sort all values to calculate median,
-# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
-# the number of distinct aggregated values, not the number of events.
+# Optional Arguments:
+#   alternates - Arrayref of alternate names for the attribute
+#   worst      - Keep a sample of the attribute's worst value (default no)
+#   variations - Count the variations of the attribute's value (default no)
 #
-# Return value:
-# a subroutine with this signature:
-#    my ( $event, $class, $global ) = @_;
-# where
-#  $event   is the event
-#  $class   is the container to store the aggregated values
-#  $global  is is the container to store the globally aggregated values
+# Returns:
+#   A subroutine that can aggregate the attribute.
 sub make_handler {
-   my ( $self, $attrib, $event, %args ) = @_;
-   die "I need an attrib" unless defined $attrib;
-   my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
-   my $is_array = 0;
-   if (ref $val eq 'ARRAY') {
-      $is_array = 1;
-      $val      = $val->[0];
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event attribute);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   return unless defined $val; # Can't decide type if it's undef.
+   my ($event, $attrib) = @args{@required_args};
+
+   my $val;
+   eval { $val= $self->_get_value(%args); };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Cannot make", $attrib, "handler:", $EVAL_ERROR);
+      return;
+   }
+   return unless defined $val; # can't determine type if it's undef
+
+   # TODO: I think this is vestigial.  Afaik, no value is every an array
+   # of values.  EventAggregator.t passes when this is disabled.
+   my $is_array = 0;
 
    # Ripped off from Regexp::Common::number and modified.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
@@ -362,48 +358,54 @@ sub make_handler {
       '(sample:', $val, '), is array:', $is_array);
    $self->{type_for}->{$attrib} = $type;
 
-   %args = ( # Set up defaults
-      min => 1,
-      max => 1,
-      sum => $type =~ m/num|bool/    ? 1 : 0,
-      cnt => 1,
-      unq => $type =~ m/bool|string/ ? 1 : 0,
-      all => $type eq 'num'          ? 1 : 0,
-      glo => 1,
-      trf => ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0} : undef,
-      wor => 0,
-      alt => [],
-      %args,
-   );
+   # ########################################################################
+   # Begin creating the handler subroutine by writing lines of code.
+   # ########################################################################
+   my @lines;
 
-   my @lines = ("# type: $type"); # Lines of code for the subroutine
-   if ( $args{trf} ) {
-      push @lines, q{$val = } . $args{trf} . ';';
+   # First, do any transformations to the value if needed.  Right now,
+   # it's just bool type attribs that need to be transformed.
+   my $trf = ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0}
+           :                     undef;
+   if ( $trf ) {
+      push @lines, q{$val = } . $trf . ';';
    }
 
+   # Then keep track of the basic stuff: min/max values, etc.
+   my %track = ( # Set up defaults
+      glo => 1,                                # aggregate in global stats
+      cnt => 1,                                # count of all values seen
+      min => 1,                                # minimum value
+      max => 1,                                # maximum value
+      sum => $type =~ m/num|bool/    ? 1 : 0,  # sum of values
+      unq => $type =~ m/bool|string/ ? 1 : 0,  # count of unique values seen
+      all => $type eq 'num'          ? 1 : 0,  # all values in bucketed list
+   );
    foreach my $place ( qw($class $global) ) {
       my @tmp;
-      if ( $args{min} ) {
+      if ( $track{min} ) {
          my $op   = $type eq 'num' ? '<' : 'lt';
          push @tmp, (
             'PLACE->{min} = $val if !defined PLACE->{min} || $val '
                . $op . ' PLACE->{min};',
          );
       }
-      if ( $args{max} ) {
+      if ( $track{max} ) {
          my $op = ($type eq 'num') ? '>' : 'gt';
          push @tmp, (
             'PLACE->{max} = $val if !defined PLACE->{max} || $val '
                . $op . ' PLACE->{max};',
          );
       }
-      if ( $args{sum} ) {
+      if ( $track{sum} ) {
          push @tmp, 'PLACE->{sum} += $val;';
       }
-      if ( $args{cnt} ) {
+      if ( $track{cnt} ) {
          push @tmp, '++PLACE->{cnt};';
       }
-      if ( $args{all} ) {
+      if ( $track{all} ) {
+         # Values are saved in a bucketed list.  See bucket_idx() for how
+         # these work.
          push @tmp, (
             'exists PLACE->{all} or PLACE->{all} = {};',
             '++PLACE->{all}->{ EventAggregator::bucket_idx($val) };',
@@ -413,10 +415,10 @@ sub make_handler {
    }
 
    # We only save unique/worst values for the class, not globally.
-   if ( $args{unq} ) {
+   if ( $track{unq} ) {
       push @lines, '++$class->{unq}->{$val};';
    }
-   if ( $args{wor} ) {
+   if ( $args{worst} ) {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
          'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
@@ -437,7 +439,7 @@ sub make_handler {
    # Make sure the value is constrained to legal limits.  If it's out of bounds,
    # just use the last-seen value for it.
    my @limit;
-   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+   if ( $track{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
          '   $val = $class->{last} ||= 0;',
@@ -451,7 +453,7 @@ sub make_handler {
       "\$val = \$event->{'$attrib'};",
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alt}}),
+         grep { $_ ne $attrib } @{$args{alternates}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
       '};',
@@ -459,14 +461,15 @@ sub make_handler {
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
-   # Build a subroutine with the code.
+   # Finally, complete the subroutine by wrapping the code lines inside
+   # a "sub { ... }" template.
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global, $samples, $group_by ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
       "\$val = \$event->{'$attrib'};",
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alt}}),
+         grep { $_ ne $attrib } @{$args{alternates}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @broken_query_time,
@@ -483,12 +486,34 @@ sub make_handler {
    return $sub;
 }
 
-# Returns the bucket number for the given val. Buck numbers are zero-indexed,
-# so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
-# *** Notice that this sub is not a class method, so either call it
-# from inside this module like bucket_idx() or outside this module
-# like EventAggregator::bucket_idx(). ***
-# TODO: could export this by default to avoid having to specific packge::.
+# Sub: bucket_idx
+#   Return the bucket number for the given value. Buck numbers are zero-indexed,
+#   so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
+# 
+#   Notice that this sub is not a class method, so either call it
+#   from inside this module like bucket_idx() or outside this module
+#   like EventAggregator::bucket_idx().
+#
+#   The bucketed list works this way: each range of values from MIN_BUCK in
+#   increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
+#   buckets.  The upper end of the range is more than 1.5e15 so it should be big
+#   enough for almost anything.  The buckets are accessed by log base BUCK_SIZE,
+#   so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
+#   shift all values up 284 so we have values from 0 to 999 that can be used as
+#   array indexes.  A value that falls into a bucket simply increments the array
+#   entry.  We do NOT use POSIX::floor() because it is too expensive.
+#
+#   This eliminates the need to keep and sort all values to calculate median,
+#   standard deviation, 95th percentile, etc.  So memory usage is bounded by
+#   the number of distinct aggregated values, not the number of events.
+#
+#   TODO: could export this by default to avoid having to specific packge::.
+#
+# Parameters:
+#   $val - Numeric value to bucketize
+#
+# Returns:
+#   Bucket number (0 to NUM_BUCK-1) for the value
 sub bucket_idx {
    my ( $val ) = @_;
    return 0 if $val < MIN_BUCK;
@@ -496,14 +521,22 @@ sub bucket_idx {
    return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
-# Returns the value for the given bucket.
-# The value of each bucket is the first value that it covers. So the value
-# of bucket 1 is 0.000001000 because it covers [0.000001000, 0.000001050).
+# Sub: bucket_value
+#   Return the value corresponding to the given bucket.  The value of each
+#   bucket is the first value that it covers. So the value of bucket 1 is
+#   0.000001000 because it covers [0.000001000, 0.000001050).
 #
-# *** Notice that this sub is not a class method, so either call it
-# from inside this module like bucket_idx() or outside this module
-# like EventAggregator::bucket_value(). ***
-# TODO: could export this by default to avoid having to specific packge::.
+#   Notice that this sub is not a class method, so either call it
+#   from inside this module like bucket_idx() or outside this module
+#   like EventAggregator::bucket_value().
+#
+#   TODO: could export this by default to avoid having to specific packge::.
+#
+# Parameters:
+#   $bucket - Bucket number (0 to NUM_BUCK-1)
+#
+# Returns:
+#   Numeric value corresponding to the bucket
 sub bucket_value {
    my ( $bucket ) = @_;
    return 0 if $bucket == 0;
@@ -1184,6 +1217,51 @@ sub calculate_apdex {
       $apdex);
 
    return $apdex;
+}
+
+# Sub: _get_value
+#   Get the value of the attribute (or one of its alternatives) from the event.
+#   Undef is a valid value.  If the attrib or none of its alternatives exist
+#   in the event, then this sub dies.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   event     - Event hashref
+#   attribute - Attribute name
+#
+# Optional Arguments:
+#   alternates - Arrayref of alternate attribute names
+#
+# Returns:
+#   Value of attribute in the event, possibly undef
+sub _get_value {
+   my ( $self, %args ) = @_;
+   my ($event, $attrib, $alts) = @args{qw(event attribute alternates)};
+   return unless $event && $attrib;
+
+   my $value;
+   if ( exists $event->{$attrib} ) {
+      $value = $event->{$attrib};
+   }
+   elsif ( $alts ) {
+      my $found_value = 0;
+      foreach my $alt_attrib( @$alts ) {
+         if ( exists $event->{$alt_attrib} ) {
+            $value       = $event->{$alt_attrib};
+            $found_value = 1;
+            last;
+         }
+      }
+      die "Event does not have attribute $attrib or any of its alternates"
+         unless $found_value;
+   }
+   else {
+      die "Event does not have attribute $attrib and there are no alterantes";
+   }
+
+   return $value;
 }
 
 sub _d {
