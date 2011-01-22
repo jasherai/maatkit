@@ -1,4 +1,4 @@
-# This program is copyright 2008-2010 Percona Inc.
+# This program is copyright 2008-2011 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -44,28 +44,40 @@ use constant MIN_BUCK     => .000001;
 # Used in buckets_of() to map buckets of log10 to log1.05 buckets.
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
-# The best way to see how to use this is to look at the .t file.
+# Sub: new
 #
-# %args is a hash containing:
-# groupby      The name of the property to group/aggregate by.
-# attributes   An optional hashref.  Each key is the name of an element to
-#              aggregate.  And the values of those elements are arrayrefs of the
-#              values to pull from the hashref, with any second or subsequent
-#              values being fallbacks for the first in case it's not defined.
-#              If no attributes are given, then all attributes in events will
-#              be aggregated.
-# ignore_attributes  An option arrayref.  These attributes are ignored only if
-#                    they are auto-detected.  This list does not apply to
-#                    explicitly given attributes.
-# worst        The name of an element which defines the "worst" hashref in its
-#              class.  If this is Query_time, then each class will contain
-#              a sample that holds the event with the largest Query_time.
-# unroll_limit If this many events have been processed and some handlers haven't
-#              been generated yet (due to lack of sample data) unroll the loop
-#              anyway.  Defaults to 1000.
-# attrib_limit Sanity limit for attribute values.  If the value exceeds the
-#              limit, use the last-seen for this class; if none, then 0.
-# type_for     A hashref of attribute names and types.
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   groupby - Attribute to group/aggregate classes by.
+#   worst   - Attribute which defines the worst event in a class.
+#             Samples of the worst attribute are saved.
+#
+# Optional Arguments:
+#   attributes        - Hashref of attributes to aggregate.  Keys are attribute
+#                       names used in the EventAggregator object and values are
+#                       attribute names used to get values from events.
+#                       Multiple attrib names in the arrayref specify alternate
+#                       attrib names in the event.  Example:
+#                       Fruit => ['apple', 'orange'].  An attrib called "Fruit"
+#                       will be created using the event's "apple" value or,
+#                       if that attrib doesn't exist, its "orange" value.
+#                       If this option isn't specified, then then all attributes#                       are auto-detected and aggregated.
+#   ignore_attributes - Arrayref of auto-detected attributes to ignore. 
+#                       This does not apply to the attributes specified
+#                       with the optional attributes option above.
+#   unroll_limit      - If this many events have been processed and some
+#                       handlers haven't been generated yet (due to lack
+#                       of sample data), unroll the loop anyway. (default 1000)
+#   attrib_limit      - Sanity limit for attribute values.  If the value
+#                       exceeds the limit, use the last-seen for this class;
+#                       if none, then 0.
+#   type_for          - Hashref of attribute=>type pairs.  Types are: num, bool,
+#                       string (see $type in <make_handler()>).
+#
+# Returns:
+#   EventAggregator object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(groupby worst) ) {
