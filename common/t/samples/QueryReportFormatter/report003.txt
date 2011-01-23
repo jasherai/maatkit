@@ -28,6 +28,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `foodb` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `foodb`.`tbl`\G
+# CRC: 1531805926
 # EXPLAIN /*!50100 PARTITIONS*/
 select col from tbl where id=42\G
 

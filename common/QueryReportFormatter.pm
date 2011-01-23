@@ -36,6 +36,7 @@ use POSIX qw(floor);
 
 Transformers->import(qw(
    shorten micro_t parse_timestamp unix_timestamp make_checksum percentage_of
+   crc32
 ));
 
 use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
@@ -428,6 +429,10 @@ sub query_report {
          # Print tables used by query.
          $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
+
+         # Print sample (worst) query's CRC.
+         $report.= "# CRC: " . crc32($samp_query) . "\n"
+            if $samp_query;
 
          my $log_type = $args{log_type} || '';
          my $mark     = $log_type eq 'memcached'
