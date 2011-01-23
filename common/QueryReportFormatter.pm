@@ -431,7 +431,7 @@ sub query_report {
             if $o->get('for-explain');
 
          # Print sample (worst) query's CRC.
-         $report.= "# CRC: " . crc32($samp_query) . "\n"
+         $report.= "# CRC " . (crc32($samp_query) || "") . "\n"
             if $samp_query;
 
          my $log_type = $args{log_type} || '';
