@@ -73,7 +73,7 @@ ok(
       sub { mk_query_digest::main(@args, '--execute', $cnf,
          "$trunk/common/t/samples/slow018.txt") },
       'mk-query-digest/t/samples/slow018_execute_report_2.txt',
-      trf => 'tail -n 26',
+      trf => 'tail -n 27',
    ),
    '--execute with default database'
 );

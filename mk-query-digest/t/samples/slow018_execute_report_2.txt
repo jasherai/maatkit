@@ -1,3 +1,4 @@
+# Exec orig ti 100      2s      2s      2s      2s      2s       0      2s
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent    100       1       1       1       1       1       0       1
 # Rows examine   0       0       0       0       0       0       0       0
