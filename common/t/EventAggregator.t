@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 78;
+use Test::More tests => 81;
 
 use QueryRewriter;
 use EventAggregator;
@@ -1866,6 +1866,44 @@ is(
    $apdex,
    '0.00',
    "Apdex score 0.00"
+);
+
+
+
+# #############################################################################
+# Test MAX_UNQ_STRINGS, which defaults to 1_000 so hold on...
+# #############################################################################
+$ea = new EventAggregator(
+   groupby           => 'arg',
+   worst             => 'Query_time',
+);
+# Perl says "1000" is less than "999" so we count in the 1k range.
+for my $i ( 1001..2002 ) {
+   $ea->aggregate(
+      { arg        => 'foo',
+        Query_time => 1,
+        sz         => "str $i",
+      }
+   );
+}
+
+my $sz = $ea->results->{classes}->{foo}->{sz};
+is(
+   $sz->{cnt},
+   1002,
+   "Got 1_002 strings"
+);
+
+is(
+   $sz->{max},
+   "str 2002",
+   "Saved max str"
+);
+
+is(
+   scalar keys %{$sz->{unq}},
+   1000,
+   "Saved only MAX_UNQ_STRINGS (1_000) string"
 );
 
 # #############################################################################

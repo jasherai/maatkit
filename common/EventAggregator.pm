@@ -34,13 +34,13 @@ $Data::Dumper::Quotekeys = 0;
 # and just incrementing the bucket each time works, although it is imprecise.
 # See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
 # ###########################################################################
-use constant MKDEBUG        => $ENV{MKDEBUG} || 0;
-use constant BUCK_SIZE      => 1.05;
-use constant BASE_LOG       => log(BUCK_SIZE);
-use constant BASE_OFFSET    => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
-use constant NUM_BUCK       => 1000;
-use constant MIN_BUCK       => .000001;
-use constant MAX_VARIATIONS => 1_000;
+use constant MKDEBUG         => $ENV{MKDEBUG} || 0;
+use constant BUCK_SIZE       => 1.05;
+use constant BASE_LOG        => log(BUCK_SIZE);
+use constant BASE_OFFSET     => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
+use constant NUM_BUCK        => 1000;
+use constant MIN_BUCK        => .000001;
+use constant MAX_UNQ_STRINGS => 1_000;
 
 # Used in buckets_of() to map buckets of log10 to log1.05 buckets.
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
@@ -439,7 +439,11 @@ sub make_handler {
 
    # We only save unique and worst values for the class, not globally.
    if ( $track{unq} ) {
-      push @lines, '++$class->{unq}->{$val};';
+      push @lines, (
+         'if (scalar keys %{$class->{unq}} < ' . MAX_UNQ_STRINGS . ') {',
+            '++$class->{unq}->{$val}',
+         '}',
+      )
    }
 
    if ( $args{worst} ) {
