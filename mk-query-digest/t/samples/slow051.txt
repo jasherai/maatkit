@@ -26,6 +26,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `db` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `db`.`tbl`\G
+# CRC 131844405
 LOAD DATA INFILE '/tmp/bar.txt' INTO db.tbl\G
 
 # Profile

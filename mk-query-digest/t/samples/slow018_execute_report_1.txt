@@ -29,6 +29,7 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'foo'\G
 #    SHOW CREATE TABLE `foo`\G
+# CRC 3988884827
 INSERT INTO `foo` VALUES (1, 2, 3) /*... omitted ...*/\G
 
 # Statistic           Value

@@ -27,6 +27,7 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'unsteady_table'\G
 #    SHOW CREATE TABLE `unsteady_table`\G
+# CRC 3446182094
 # EXPLAIN /*!50100 PARTITIONS*/
 select very_variable_column from unsteady_table\G
 
@@ -58,6 +59,7 @@ select very_variable_column from unsteady_table\G
 # Tables
 #    SHOW TABLE STATUS LIKE 'steady_table'\G
 #    SHOW CREATE TABLE `steady_table`\G
+# CRC 3098859879
 # EXPLAIN /*!50100 PARTITIONS*/
 select less_variable_column from steady_table\G
 

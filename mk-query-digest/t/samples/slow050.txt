@@ -28,6 +28,7 @@
 #    SHOW CREATE TABLE `mybbl_MBMessage`\G
 #    SHOW TABLE STATUS LIKE 'Group_'\G
 #    SHOW CREATE TABLE `Group_`\G
+# CRC 2895284445
 UPDATE mybbl_MBMessage SET groupId = (select groupId from Group_ where name = 'Guest')\G
 
 # Profile

@@ -36,6 +36,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `foo` LIKE 'foo_tbl'\G
 #    SHOW CREATE TABLE `foo`.`foo_tbl`\G
+# CRC 2413386996
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT col FROM foo_tbl\G
 
@@ -76,5 +77,6 @@ SELECT col FROM foo_tbl\G
 # Tables
 #    SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
 #    SHOW CREATE TABLE `bar`.`bar_tbl`\G
+# CRC 3656141476
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT col FROM bar_tbl\G

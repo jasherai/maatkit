@@ -31,6 +31,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `food` LIKE 'trees'\G
 #    SHOW CREATE TABLE `food`.`trees`\G
+# CRC 3466212800
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT fruit FROM trees\G
 # *************************** 1. row ***************************

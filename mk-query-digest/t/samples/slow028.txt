@@ -28,5 +28,6 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'a'\G
 #    SHOW CREATE TABLE `a`\G
+# CRC 99128427
 # EXPLAIN /*!50100 PARTITIONS*/
 select * from a, a, a\G

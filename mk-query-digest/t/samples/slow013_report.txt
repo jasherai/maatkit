@@ -26,6 +26,7 @@
 # 100ms  ################################################################
 #    1s
 #  10s+
+# CRC 2902016305
 SHOW STATUS\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x3AEAAD0E15D725B5 at byte 600 ______
@@ -55,6 +56,7 @@ SHOW STATUS\G
 # 100ms
 #    1s
 #  10s+
+# CRC 2529197116
 SET autocommit=0\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0x813031B8BBC3B329 at byte 782 ______
@@ -84,6 +86,7 @@ SET autocommit=0\G
 # 100ms
 #    1s
 #  10s+
+# CRC 1322528429
 commit\G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0xAA353644DE4C4CB4 at byte 385 ______
@@ -113,4 +116,5 @@ commit\G
 # 100ms
 #    1s
 #  10s+
+# CRC 3954282531
 administrator command: Quit\G
