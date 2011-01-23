@@ -13,6 +13,7 @@
 # Rows examine 100     226     226     226     226     226       0     226
 # Query size    14      11      11      11      11      11       0      11
 # String:
+# arg CRC      2902016305
 # Databases    test
 # Hosts
 # Users        mytopuser

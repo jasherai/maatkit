@@ -17,6 +17,7 @@
 # Rows examine 100     226       0     226     113     226  159.81     113
 # Query size    50      38      11      27      19      27   11.31      19
 # String:
+# arg CRC      2902016305 (1/50%), 3954282531 (1/50%)
 # Databases    test
 # Hosts
 # Query_time distribution
@@ -44,6 +45,7 @@ mytopuser
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    50      38       6      16   12.67   15.25    4.48   15.25
 # String:
+# arg CRC      1322528429 (1/33%), 2529197116 (1/33%)... 1 more
 # Databases    abc
 # Hosts
 # Query_time distribution

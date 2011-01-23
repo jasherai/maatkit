@@ -17,6 +17,7 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size   100      49      22      27   24.50      27    3.54   24.50
 # String:
+# arg CRC      1142521805 (1/50%), 3895703743 (1/50%)
 # Databases    sakila (1/50%), test (1/50%)
 # Hosts        localhost
 # Users        root

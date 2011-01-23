@@ -17,6 +17,7 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    44      22      22      22      22      22       0      22
 # String:
+# arg CRC      3895703743
 # Databases    test
 # Hosts        localhost
 # Users        root
@@ -45,6 +46,7 @@ SELECT n
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    55      27      27      27      27      27       0      27
 # String:
+# arg CRC      1142521805
 # Databases    sakila
 # Hosts        localhost
 # Users        root

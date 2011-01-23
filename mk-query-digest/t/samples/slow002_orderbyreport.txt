@@ -21,6 +21,7 @@
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      874569052
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -60,6 +61,7 @@ select     biz = '91848182522' from foo.bar \G
 # Boolean:
 # Full scan    100% yes,   0% no
 # String:
+# arg CRC      632913816
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]

@@ -30,6 +30,8 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    19      60      30      30      30      30       0      30
+# String:
+# arg CRC      4114698846
 # Query_time distribution
 #   1us
 #  10us
@@ -58,6 +60,8 @@ SELECT two FROM two WHERE id=?\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    11      34      34      34      34      34       0      34
+# String:
+# arg CRC      391146178
 # Query_time distribution
 #   1us
 #  10us
@@ -86,6 +90,8 @@ SELECT three FROM three WHERE id=?\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    48     150      30      30      30      30       0      30
+# String:
+# arg CRC      3035295057
 # Query_time distribution
 #   1us
 #  10us

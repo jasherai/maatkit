@@ -22,6 +22,7 @@
 # Boolean:
 # Full join    100% yes,   0% no
 # String:
+# arg CRC      1229664523
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution

@@ -12,6 +12,7 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    51   4.59k      47      47      47      47       0      47
 # String:
+# arg CRC      3446182094
 # Hosts        localhost
 # Users        root
 # Query_time distribution
@@ -42,6 +43,7 @@ select very_variable_column from unsteady_table\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    48   4.39k      45      45      45      45       0      45
 # String:
+# arg CRC      3098859879
 # Hosts        localhost
 # Users        root
 # Query_time distribution

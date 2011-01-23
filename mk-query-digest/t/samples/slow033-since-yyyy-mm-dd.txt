@@ -13,6 +13,7 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size   100      17      17      17      17      17       0      17
 # String:
+# arg CRC      2074882202
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]

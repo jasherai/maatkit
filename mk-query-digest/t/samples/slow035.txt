@@ -39,6 +39,7 @@
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      1088441119
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution
@@ -70,6 +71,7 @@ INSERT INTO db.v (m, b) VALUES ('', 'Exact')\G
 # Query size    52      48      48      48      48      48       0      48
 # InnoDB:
 # String:
+# arg CRC      557219319
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution

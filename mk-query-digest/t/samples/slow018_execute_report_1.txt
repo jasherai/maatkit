@@ -14,6 +14,7 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size   100      44      44      44      44      44       0      44
 # String:
+# arg CRC      109652699
 # Hosts        localhost
 # Users        root
 # Query_time distribution
