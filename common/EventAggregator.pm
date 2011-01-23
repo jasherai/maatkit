@@ -76,7 +76,6 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #                       if none, then 0.
 #   type_for          - Hashref of attribute=>type pairs.  See $type in
 #                       <make_handler()> for the list of types.
-#   variations        - Arrayref of attributes to count variations of values.
 #
 # Returns:
 #   EventAggregator object
@@ -105,10 +104,9 @@ sub new {
          grep { $_ ne $args{groupby} }
          keys %$attributes
       },
-      worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 1000,
-      attrib_limit => $args{attrib_limit},
-      variations   => { map { $_ => 1 } @{$args{variations}} },
+      worst          => $args{worst},
+      unroll_limit   => $args{unroll_limit} || 1000,
+      attrib_limit   => $args{attrib_limit},
       result_classes => {},
       result_globals => {},
       result_samples => {},
@@ -193,7 +191,6 @@ sub aggregate {
                   attribute  => $attrib,
                   alternates => $self->{attributes}->{$attrib},
                   worst      => $self->{worst} eq $attrib,
-                  variations => $self->{variations}->{$attrib},
                );
                $self->{handlers}->{$attrib} = $handler;
             }
@@ -324,7 +321,6 @@ sub type_for {
 # Optional Arguments:
 #   alternates - Arrayref of alternate names for the attribute
 #   worst      - Keep a sample of the attribute's worst value (default no)
-#   variations - Count the variations of the attribute's value (default no)
 #
 # Returns:
 #   A subroutine that can aggregate the attribute.
@@ -344,18 +340,13 @@ sub make_handler {
    }
    return unless defined $val; # can't determine type if it's undef
 
-   # TODO: I think this is vestigial.  Afaik, no value is every an array
-   # of values.  EventAggregator.t passes when this is disabled.
-   my $is_array = 0;
-
    # Ripped off from Regexp::Common::number and modified.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
             : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d('Type for', $attrib, 'is', $type,
-      '(sample:', $val, '), is array:', $is_array);
+   MKDEBUG && _d('Type for', $attrib, 'is', $type, '(sample:', $val, ')');
    $self->{type_for}->{$attrib} = $type;
 
    # ########################################################################
