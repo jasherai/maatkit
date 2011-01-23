@@ -11700,7 +11700,7 @@ $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
 
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
-   any_unix_timestamp parse_timestamp unix_timestamp));
+   any_unix_timestamp parse_timestamp unix_timestamp crc32));
 
 use constant MKDEBUG        => $ENV{MKDEBUG}        || 0;
 use constant MKDEBUG_MEMORY => $ENV{MKDEBUG_MEMORY} || 0;
@@ -12268,6 +12268,21 @@ sub main {
       $callback_names{$callbacks[-1]} = 'inherit attributes';
    }
 
+   # Calculate checksum for variation attribs.
+   my @variations = @{$o->get('variations')};
+   if ( @variations ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         MKDEBUG && _d("callback: variations");
+         foreach my $attrib ( @variations ) {
+            my $checksum = crc32($event->{$attrib});
+            $event->{"${attrib}_CRC"} = $checksum if defined $checksum;
+         }
+         return $event;
+      };
+      $callback_names{$callbacks[-1]} = 'variations';
+   }
+
    if ( grep { $_ eq 'tables' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -12520,6 +12535,22 @@ sub main {
 
       # Create an EventAggregator for this groupby attrib and
       # add it to callbacks.
+      my $type_for = {
+         val          => 'string',
+         key_print    => 'string',
+         Status_code  => 'string',
+         Statement_id => 'string',
+         Error_no     => 'string',
+         Last_errno   => 'string',
+         Thread_id    => 'string',
+         Killed       => 'bool',
+      };
+      foreach my $attrib ( @variations ) {
+         # Make sure this generated attrib name matches whatever attrib
+         # name is generated in the variations pipeline proc.
+         $type_for->{"${attrib}_CRC"} = 'string';
+      }
+
       my $ea = new EventAggregator(
          groupby           => $groupby,
          attributes        => { %attributes },
@@ -12527,16 +12558,7 @@ sub main {
          attrib_limit      => $o->get('attribute-value-limit'),
          ignore_attributes => $o->get('ignore-attributes'),
          unroll_limit      => $o->get('check-attributes-limit'),
-         type_for => {
-            val          => 'string',
-            key_print    => 'string',
-            Status_code  => 'string',
-            Statement_id => 'string',
-            Error_no     => 'string',
-            Last_errno   => 'string',
-            Thread_id    => 'string',
-            Killed       => 'bool',
-         },
+         type_for          => $type_for,
       );
       push @ea, $ea;
       push @callbacks, sub {
@@ -15118,6 +15140,15 @@ Report the number of variations in these attributes' values.
 Variations show how many distinct values an attribute had within a class.
 The default value for this option, C<arg>, shows how many distinct queries
 were in the class.  This can be useful to determine a query's cacheability.
+
+Distinct values are determined by CRC32 checksums of the attributes' values.
+These checksums are reported in the query report for attributes specified by
+this option, like:
+
+  # arg CRC      1094834597 (1/25%), 144581416 (1/25%)... 2 more
+
+In that class there were 4 distinct queries.  The checksums of the first two
+variations are shown, and each one occurred once (or, 25% of the time).
 
 Only the first 1,000 variations are saved.
 
