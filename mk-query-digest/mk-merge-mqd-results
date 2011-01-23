@@ -1477,7 +1477,7 @@ sub join_quote {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 6387
+# Transformers package 7226
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -1510,6 +1510,7 @@ our @EXPORT_OK   = qw(
    unix_timestamp
    any_unix_timestamp
    make_checksum
+   crc32
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
@@ -1700,6 +1701,21 @@ sub make_checksum {
    my $checksum = uc substr(md5_hex($val), -16);
    MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
+}
+
+sub crc32 {
+   my ( $string ) = @_;
+   return unless $string;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub _d {
@@ -2087,7 +2103,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 7224
+# EventAggregator package 7228
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -2105,13 +2121,13 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG        => $ENV{MKDEBUG} || 0;
-use constant BUCK_SIZE      => 1.05;
-use constant BASE_LOG       => log(BUCK_SIZE);
-use constant BASE_OFFSET    => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
-use constant NUM_BUCK       => 1000;
-use constant MIN_BUCK       => .000001;
-use constant MAX_VARIATIONS => 1_000;
+use constant MKDEBUG         => $ENV{MKDEBUG} || 0;
+use constant BUCK_SIZE       => 1.05;
+use constant BASE_LOG        => log(BUCK_SIZE);
+use constant BASE_OFFSET     => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
+use constant NUM_BUCK        => 1000;
+use constant MIN_BUCK        => .000001;
+use constant MAX_UNQ_STRINGS => 1_000;
 
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
@@ -2140,10 +2156,9 @@ sub new {
          grep { $_ ne $args{groupby} }
          keys %$attributes
       },
-      worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 1000,
-      attrib_limit => $args{attrib_limit},
-      variations   => { map { $_ => 1 } @{$args{variations}} },
+      worst          => $args{worst},
+      unroll_limit   => $args{unroll_limit} || 1000,
+      attrib_limit   => $args{attrib_limit},
       result_classes => {},
       result_globals => {},
       result_samples => {},
@@ -2177,7 +2192,7 @@ sub aggregate {
    return unless defined $group_by;
 
    $self->{n_events}++;
-   MKDEBUG && _d('event', $self->{n_events});
+   MKDEBUG && _d('Event', $self->{n_events});
 
    return $self->{unrolled_loops}->($self, $event, $group_by)
       if $self->{unrolled_loops};
@@ -2208,7 +2223,6 @@ sub aggregate {
                   attribute  => $attrib,
                   alternates => $self->{attributes}->{$attrib},
                   worst      => $self->{worst} eq $attrib,
-                  variations => $self->{variations}->{$attrib},
                );
                $self->{handlers}->{$attrib} = $handler;
             }
@@ -2323,18 +2337,21 @@ sub make_handler {
    }
    return unless defined $val; # can't determine type if it's undef
 
-   my $is_array = 0;
-
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
             : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d('Type for', $attrib, 'is', $type,
-      '(sample:', $val, '), is array:', $is_array);
+   MKDEBUG && _d('Type for', $attrib, 'is', $type, '(sample:', $val, ')');
    $self->{type_for}->{$attrib} = $type;
 
    my @lines;
+
+   my %track = (
+      sum => $type =~ m/num|bool/    ? 1 : 0,  # sum of values
+      unq => $type =~ m/bool|string/ ? 1 : 0,  # count of unique values seen
+      all => $type eq 'num'          ? 1 : 0,  # all values in bucketed list
+   );
 
    my $trf = ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0}
            :                     undef;
@@ -2342,49 +2359,59 @@ sub make_handler {
       push @lines, q{$val = } . $trf . ';';
    }
 
-   my %track = ( # Set up defaults
-      glo => 1,                                # aggregate in global stats
-      cnt => 1,                                # count of all values seen
-      min => 1,                                # minimum value
-      max => 1,                                # maximum value
-      sum => $type =~ m/num|bool/    ? 1 : 0,  # sum of values
-      unq => $type =~ m/bool|string/ ? 1 : 0,  # count of unique values seen
-      all => $type eq 'num'          ? 1 : 0,  # all values in bucketed list
-   );
+   if ( $attrib eq 'Query_time' ) {
+      push @lines, (
+         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
+         '$event->{\''.$attrib.'\'} = $val;',
+      );
+   }
+
+   if ( $type eq 'num' && $self->{attrib_limit} ) {
+      push @lines, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{last} ||= 0;',
+         '}',
+         '$class->{last} = $val;',
+      );
+   }
+
+   my $lt = $type eq 'num' ? '<' : 'lt';
+   my $gt = $type eq 'num' ? '>' : 'gt';
    foreach my $place ( qw($class $global) ) {
-      my @tmp;
-      if ( $track{min} ) {
-         my $op   = $type eq 'num' ? '<' : 'lt';
-         push @tmp, (
-            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
-               . $op . ' PLACE->{min};',
-         );
-      }
-      if ( $track{max} ) {
-         my $op = ($type eq 'num') ? '>' : 'gt';
-         push @tmp, (
-            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
-               . $op . ' PLACE->{max};',
-         );
-      }
+      my @tmp;  # hold lines until PLACE placeholder is replaced
+
+      push @tmp, '++PLACE->{cnt};';  # count of all values seen
+
+      push @tmp, (
+         'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+            . $lt . ' PLACE->{min};',
+      );
+      push @tmp, (
+         'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+         . $gt . ' PLACE->{max};',
+      );
       if ( $track{sum} ) {
          push @tmp, 'PLACE->{sum} += $val;';
       }
-      if ( $track{cnt} ) {
-         push @tmp, '++PLACE->{cnt};';
-      }
+
       if ( $track{all} ) {
          push @tmp, (
             'exists PLACE->{all} or PLACE->{all} = {};',
             '++PLACE->{all}->{ EventAggregator::bucket_idx($val) };',
          );
       }
+
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
    if ( $track{unq} ) {
-      push @lines, '++$class->{unq}->{$val};';
+      push @lines, (
+         'if (scalar keys %{$class->{unq}} < ' . MAX_UNQ_STRINGS . ') {',
+            '++$class->{unq}->{$val}',
+         '}',
+      )
    }
+
    if ( $args{worst} ) {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
@@ -2394,56 +2421,36 @@ sub make_handler {
       );
    }
 
-   my @broken_query_time;
-   if ( $attrib eq 'Query_time' ) {
-      push @broken_query_time, (
-         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
-         '$event->{\''.$attrib.'\'} = $val;',
-      );
-   }
-
-   my @limit;
-   if ( $track{all} && $type eq 'num' && $self->{attrib_limit} ) {
-      push @limit, (
-         "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{last} ||= 0;',
-         '}',
-         '$class->{last} = $val;',
-      );
-   }
-
    my @unrolled = (
-      "\$val = \$event->{'$attrib'};",
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alternates}}),
+      "\$val = \$event->{'$attrib'};", 
+      
+      ( map  { "\$val = \$event->{'$_'} unless defined \$val;" }
+        grep { $_ ne $attrib } @{$args{alternates}}
+      ),
+      
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
+         @lines,
       '};',
-      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
-   unshift @lines, (
+   my @code = (
       'sub {',
-      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
-      'my ($val, $idx);', # NOTE: define all variables here
-      "\$val = \$event->{'$attrib'};",
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alternates}}),
-      'return unless defined $val;',
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      @broken_query_time,
-      @limit,
-      ($is_array ? ('}') : ()),
-   );
-   push @lines, '}';
-   my $code = join("\n", @lines);
-   $self->{code_for}->{$attrib} = $code;
+         'my ( $event, $class, $global, $samples, $group_by ) = @_;',
+         'my ($val, $idx);',
 
-   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
-   my $sub = eval join("\n", @lines);
-   die if $EVAL_ERROR;
+         $self->{unrolled_for}->{$attrib},
+
+         'return;',
+      '}',
+   );
+   $self->{code_for}->{$attrib} = join("\n", @code);
+   MKDEBUG && _d($attrib, 'handler code:', $self->{code_for}->{$attrib});
+   my $sub = eval $self->{code_for}->{$attrib};
+   if ( $EVAL_ERROR ) {
+      die "Failed to compile $attrib handler code: $EVAL_ERROR";
+   }
+
    return $sub;
 }
 
