@@ -12,6 +12,7 @@
 # Boolean:
 # Memc incr    100% yes,   0% no
 # String:
+# arg CRC      2845720735
 # Hosts        127.0.0.1
 # key print    key
 # Query_time distribution
@@ -38,6 +39,7 @@ incr key
 # Boolean:
 # Memc decr    100% yes,   0% no
 # String:
+# arg CRC      815530420
 # Hosts        127.0.0.1
 # key print    key
 # Query_time distribution

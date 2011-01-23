@@ -12,6 +12,7 @@
 # Query size    23      30      30      30      30      30       0      30
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      2151770939
 # Databases    mysql
 # Errors       none
 # Hosts        127.0.0.1
@@ -40,6 +41,7 @@ administrator command: Connect\G
 # Query size    24      32      32      32      32      32       0      32
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      4030577651
 # Databases    mysql
 # Errors       none
 # Hosts        127.0.0.1
@@ -69,6 +71,7 @@ select @@version_comment limit 1\G
 # Query size    31      41      41      41      41      41       0      41
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      3646712338
 # Databases    mysql
 # Errors       none
 # Hosts        127.0.0.1
@@ -98,6 +101,7 @@ select "paris in the the spring" as trick\G
 # Query size    20      27      27      27      27      27       0      27
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      3954282531
 # Databases    mysql
 # Errors       none
 # Hosts        127.0.0.1

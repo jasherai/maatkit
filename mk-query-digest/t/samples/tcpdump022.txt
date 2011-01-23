@@ -12,6 +12,7 @@
 # Query size    47      46      46      46      46      46       0      46
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      3586566062
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2
@@ -45,6 +46,7 @@ SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 # Query size    52      51      51      51      51      51       0      51
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      2578176264
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2

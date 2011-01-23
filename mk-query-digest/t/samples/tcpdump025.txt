@@ -12,6 +12,7 @@
 # Query size    50      42      42      42      42      42       0      42
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      4187330112
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2
@@ -47,6 +48,7 @@ SELECT * FROM d.t WHERE 1 LIMIT 1;\G
 # Boolean:
 # No index use 100% yes,   0% no
 # String:
+# arg CRC      1042553535
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2

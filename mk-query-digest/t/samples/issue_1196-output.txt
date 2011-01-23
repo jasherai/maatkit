@@ -19,6 +19,7 @@
 # Rows examine 100   1.96k   1.96k   1.96k   1.96k   1.96k       0   1.96k
 # Query size   100      82      82      82      82      82       0      82
 # String:
+# arg CRC      189776029
 # Databases    issue_1196
 # Hosts        localhost
 # Users        root

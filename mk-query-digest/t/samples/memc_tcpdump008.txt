@@ -13,6 +13,7 @@
 # Memc error    50% yes,  50% no
 # Memc get     100% yes,   0% no
 # String:
+# arg CRC      2281039383
 # Hosts        127.0.0.1
 # key print    my_key
 # Query_time distribution

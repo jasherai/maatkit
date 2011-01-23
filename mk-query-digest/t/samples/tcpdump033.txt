@@ -25,6 +25,7 @@
 # Boolean:
 # No index use 100% yes,   0% no
 # String:
+# arg CRC      3796682846 (3/42%), 678851840 (2/28%)... 2 more
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2 (3/42%), 3 (2/28%), 4 (1/14%), 5 (1/14%)
@@ -58,6 +59,7 @@ select * from d.t where name="adam"\G
 # Query size    37     217      42      45   43.40   44.60    1.31   42.48
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      2246842725 (1/20%), 3481900639 (1/20%)... 3 more
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2 (1/20%), 3 (1/20%), 4 (1/20%), 5 (1/20%)... 1 more
@@ -91,6 +93,7 @@ select * from d.t where name="daniel"\G
 # Query size    10      60      20      20      20      20       0      20
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
+# arg CRC      1466548625 (1/33%), 3188352164 (1/33%)... 1 more
 # Errors       none
 # Hosts        127.0.0.1
 # Query_time distribution

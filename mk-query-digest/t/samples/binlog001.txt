@@ -25,6 +25,7 @@
 # Query size    26     363     363     363     363     363       0     363
 # error code     0       0       0       0       0       0       0       0
 # String:
+# arg CRC      565410455
 # Databases    test1
 # Query_time distribution
 #   1us
@@ -62,6 +63,7 @@ replace into test4.tbl9(tbl5, day, todo, comment)
 # Query size    12     179     179     179     179     179       0     179
 # error code     0       0       0       0       0       0       0       0
 # String:
+# arg CRC      3388414816
 # Databases    test1
 # Query_time distribution
 #   1us
@@ -99,6 +101,7 @@ select  e.tblo = o.tblo,
 # Query size    12     170     170     170     170     170       0     170
 # error code     0       0       0       0       0       0       0       0
 # String:
+# arg CRC      3766054289
 # Databases    test1
 # Query_time distribution
 #   1us
@@ -144,6 +147,7 @@ select  o.tbl2 = e.tbl2,
 # error code     0       0       0       0       0       0       0       0
 # String:
 # @@session.ti 'system'
+# arg CRC      2379306917
 # Query_time distribution
 #   1us
 #  10us
@@ -166,6 +170,7 @@ BEGIN\G
 # Query size    16     228     228     228     228     228       0     228
 # error code     0       0       0       0       0       0       0       0
 # String:
+# arg CRC      2645266152
 # Databases    test1
 # Query_time distribution
 #   1us
@@ -201,6 +206,7 @@ select  last2metric1 = last1metric1, last2time = last1time,
 # Query size    24     341     341     341     341     341       0     341
 # error code     0       0       0       0       0       0       0       0
 # String:
+# arg CRC      1921065199
 # Databases    test1
 # Query_time distribution
 #   1us

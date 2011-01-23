@@ -6,15 +6,21 @@
 < # Scores: Apdex = 1.00 [1.0]*, V/M = 0.00
 ---
 > # Scores: Apdex = NS [0.0]*, V/M = 0.00
-67c67
+40d39
+< # arg CRC      632913816
+68c67
 < # Scores: Apdex = 1.00 [1.0]*, V/M = 0.00
 ---
 > # Scores: Apdex = NS [0.0]*, V/M = 0.00
-111c111
+88d86
+< # arg CRC      3615133974
+113c111
 < # Scores: Apdex = 1.00 [1.0]*, V/M = 0.00
 ---
 > # Scores: Apdex = NS [0.0]*, V/M = 0.00
-155,158c155,157
+133d130
+< # arg CRC      874569052
+158,161c155,157
 < #    1 0x66825DDC008FFA89  0.7261 95.3%     1 0.7261 1.00  0.00 UPDATE db?.tuningdetail_?_? db?.gonzo
 < #    2 0x0FFE94ABA6A2A9E8  0.0334  4.4%     1 0.0334 1.00  0.00 UPDATE db?.vab?concept?upload
 < #    3 0xB211BA2B8D6D065C  0.0011  0.1%     2 0.0005 1.00  0.00 UPDATE foo.bar

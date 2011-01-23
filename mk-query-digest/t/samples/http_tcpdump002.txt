@@ -10,6 +10,7 @@
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     1     414     414     414     414     414       0     414
 # String:
+# arg CRC      2955754961
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -35,6 +36,7 @@ get www.percona.com/images/menu_our-vision.gif
 # Transmit tim   0   720us   720us   720us   720us   720us       0   720us
 # Query size     9   3.74k   3.74k   3.74k   3.74k   3.74k       0   3.74k
 # String:
+# arg CRC      2296012293
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -60,6 +62,7 @@ get www.percona.com/about-us.html
 # Transmit tim  25    66ms    66ms    66ms    66ms    66ms       0    66ms
 # Query size    25   9.69k   9.69k   9.69k   9.69k   9.69k       0   9.69k
 # String:
+# arg CRC      1151918301
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -85,6 +88,7 @@ get www.percona.com/js/jquery.js
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     0     170     170     170     170     170       0     170
 # String:
+# arg CRC      1326913046
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -110,6 +114,7 @@ get www.percona.com/images/bg-gray-corner-top.gif
 # Transmit tim  51   135ms   135ms   135ms   135ms   135ms       0   135ms
 # Query size    50  19.55k  19.55k  19.55k  19.55k  19.55k       0  19.55k
 # String:
+# arg CRC      300666682
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -135,6 +140,7 @@ get www.percona.com/images/handshake.jpg
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     0     344     344     344     344     344       0     344
 # String:
+# arg CRC      151305786
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.percona.com
@@ -160,6 +166,7 @@ get www.percona.com/images/menu_team.gif
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     2     822     822     822     822     822       0     822
 # String:
+# arg CRC      1759475889
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host hit.clickaider.com
@@ -185,6 +192,7 @@ get hit.clickaider.com/s/forms.js
 # Transmit tim  22    60ms    60ms    60ms    60ms    60ms       0    60ms
 # Query size    10   3.92k   3.92k   3.92k   3.92k   3.92k       0   3.92k
 # String:
+# arg CRC      3572077934
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host hit.clickaider.com
@@ -210,6 +218,7 @@ get hit.clickaider.com/clickaider.js
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     0      43      43      43      43      43       0      43
 # String:
+# arg CRC      2627041600
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host hit.clickaider.com
@@ -235,6 +244,7 @@ get hit.clickaider.com/pv?lng=140&&lnks=&t=About%20Percona&c=73a41b95-2926&r=htt
 # Transmit tim   0       0       0       0       0       0       0       0
 # Query size     0      35      35      35      35      35       0      35
 # String:
+# arg CRC      3187189430
 # Hosts        10.112.2.144
 # Status code  200
 # Virtual host www.google-analytics.com
