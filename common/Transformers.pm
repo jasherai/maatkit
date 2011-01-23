@@ -44,6 +44,7 @@ our @EXPORT_OK   = qw(
    unix_timestamp
    any_unix_timestamp
    make_checksum
+   crc32
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
@@ -263,6 +264,24 @@ sub make_checksum {
    my $checksum = uc substr(md5_hex($val), -16);
    MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
+}
+
+# Perl implementation of CRC32, ripped off from Digest::Crc32.  The results
+# ought to match what you get from any standard CRC32 implementation, such as
+# that inside MySQL.
+sub crc32 {
+   my ( $string ) = @_;
+   return unless $string;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub _d {

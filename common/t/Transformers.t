@@ -12,14 +12,14 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 48;
+use Test::More tests => 49;
 
 use Transformers;
 use MaatkitTest;
 
 Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
    time_to_secs percentage_of unix_timestamp make_checksum any_unix_timestamp
-   ts) );
+   ts crc32) );
 
 # #############################################################################
 # micro_t() tests.
@@ -98,6 +98,19 @@ is(ts(1192412632.5, 1), '2007-10-15T01:43:52.500000', 'ts with microseconds');
 # make_checksum() tests.
 # #############################################################################
 is(make_checksum('hello world'), '93CB22BB8F5ACDC3', 'make_checksum');
+
+# #############################################################################
+# crc32() tests.
+# #############################################################################
+use Digest::Crc32;
+my $crc = new Digest::Crc32();
+
+# Our crc32 should match the one from which we copied it.
+is(
+   crc32('Hello world'),
+   $crc->strcrc32("Hello world"),
+   "crc32"
+);
 
 # #############################################################################
 # any_unix_timestamp() tests.

@@ -74,8 +74,8 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #   attrib_limit      - Sanity limit for attribute values.  If the value
 #                       exceeds the limit, use the last-seen for this class;
 #                       if none, then 0.
-#   type_for          - Hashref of attribute=>type pairs.  Types are: num, bool,
-#                       string (see $type in <make_handler()>).
+#   type_for          - Hashref of attribute=>type pairs.  See $type in
+#                       <make_handler()> for the list of types.
 #   variations        - Arrayref of attributes to count variations of values.
 #
 # Returns:
@@ -153,7 +153,7 @@ sub aggregate {
    return unless defined $group_by;
 
    $self->{n_events}++;
-   MKDEBUG && _d('event', $self->{n_events});
+   MKDEBUG && _d('Event', $self->{n_events});
 
    # Run only unrolled loops if available.
    return $self->{unrolled_loops}->($self, $event, $group_by)
@@ -363,6 +363,13 @@ sub make_handler {
    # ########################################################################
    my @lines;
 
+   # Some attrib types don't need us to track sum, unq or all--and some do.
+   my %track = (
+      sum => $type =~ m/num|bool/    ? 1 : 0,  # sum of values
+      unq => $type =~ m/bool|string/ ? 1 : 0,  # count of unique values seen
+      all => $type eq 'num'          ? 1 : 0,  # all values in bucketed list
+   );
+
    # First, do any transformations to the value if needed.  Right now,
    # it's just bool type attribs that need to be transformed.
    my $trf = ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0}
@@ -371,53 +378,70 @@ sub make_handler {
       push @lines, q{$val = } . $trf . ';';
    }
 
-   # Then keep track of the basic stuff: min/max values, etc.
-   my %track = ( # Set up defaults
-      glo => 1,                                # aggregate in global stats
-      cnt => 1,                                # count of all values seen
-      min => 1,                                # minimum value
-      max => 1,                                # maximum value
-      sum => $type =~ m/num|bool/    ? 1 : 0,  # sum of values
-      unq => $type =~ m/bool|string/ ? 1 : 0,  # count of unique values seen
-      all => $type eq 'num'          ? 1 : 0,  # all values in bucketed list
-   );
+   # Handle broken Query_time like 123.124345.8382 (issue 234).
+   if ( $attrib eq 'Query_time' ) {
+      push @lines, (
+         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
+         '$event->{\''.$attrib.'\'} = $val;',
+      );
+   }
+
+   # Make sure the value is constrained to legal limits.  If it's out of
+   # bounds, just use the last-seen value for it.
+   if ( $type eq 'num' && $self->{attrib_limit} ) {
+      push @lines, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{last} ||= 0;',
+         '}',
+         '$class->{last} = $val;',
+      );
+   }
+
+   # Update values for this attrib in the class and global stores.  We write
+   # code for each store.  The placeholder word PLACE is replaced with either
+   # $class or $global at the end of the loop.
+   my $lt = $type eq 'num' ? '<' : 'lt';
+   my $gt = $type eq 'num' ? '>' : 'gt';
    foreach my $place ( qw($class $global) ) {
-      my @tmp;
-      if ( $track{min} ) {
-         my $op   = $type eq 'num' ? '<' : 'lt';
-         push @tmp, (
-            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
-               . $op . ' PLACE->{min};',
-         );
-      }
-      if ( $track{max} ) {
-         my $op = ($type eq 'num') ? '>' : 'gt';
-         push @tmp, (
-            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
-               . $op . ' PLACE->{max};',
-         );
-      }
+      my @tmp;  # hold lines until PLACE placeholder is replaced
+
+      # Track count of any and all values seen for this attribute.
+      # This is mostly used for class->Query_time->cnt which represents
+      # the number of queries in the class because all queries (should)
+      # have a Query_time attribute.
+      push @tmp, '++PLACE->{cnt};';  # count of all values seen
+
+      # Track min, max and sum of values.  Min and max for strings is
+      # mostly used for timestamps; min ts is earliest and max ts is latest.
+      push @tmp, (
+         'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+            . $lt . ' PLACE->{min};',
+      );
+      push @tmp, (
+         'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+         . $gt . ' PLACE->{max};',
+      );
       if ( $track{sum} ) {
          push @tmp, 'PLACE->{sum} += $val;';
       }
-      if ( $track{cnt} ) {
-         push @tmp, '++PLACE->{cnt};';
-      }
+
+      # Save all values in a bucketed list.  See bucket_idx() below.
       if ( $track{all} ) {
-         # Values are saved in a bucketed list.  See bucket_idx() for how
-         # these work.
          push @tmp, (
             'exists PLACE->{all} or PLACE->{all} = {};',
             '++PLACE->{all}->{ EventAggregator::bucket_idx($val) };',
          );
       }
+
+      # Replace PLACE with current variable, $class or $global.
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
-   # We only save unique/worst values for the class, not globally.
+   # We only save unique and worst values for the class, not globally.
    if ( $track{unq} ) {
       push @lines, '++$class->{unq}->{$val};';
    }
+
    if ( $args{worst} ) {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
@@ -427,62 +451,45 @@ sub make_handler {
       );
    }
 
-   # Handle broken Query_time like 123.124345.8382 (issue 234).
-   my @broken_query_time;
-   if ( $attrib eq 'Query_time' ) {
-      push @broken_query_time, (
-         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
-         '$event->{\''.$attrib.'\'} = $val;',
-      );
-   }
-
-   # Make sure the value is constrained to legal limits.  If it's out of bounds,
-   # just use the last-seen value for it.
-   my @limit;
-   if ( $track{all} && $type eq 'num' && $self->{attrib_limit} ) {
-      push @limit, (
-         "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{last} ||= 0;',
-         '}',
-         '$class->{last} = $val;',
-      );
-   }
-
-   # Save the code for later, as part of an "unrolled" subroutine.
+   # Make the core code.  This part is saved for later, as part of an
+   # "unrolled" subroutine.
    my @unrolled = (
-      "\$val = \$event->{'$attrib'};",
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alternates}}),
+      # Get $val from primary attrib name.
+      "\$val = \$event->{'$attrib'};", 
+      
+      # Get $val from alternate attrib names.
+      ( map  { "\$val = \$event->{'$_'} unless defined \$val;" }
+        grep { $_ ne $attrib } @{$args{alternates}}
+      ),
+      
+      # Execute the code lines, if $val is defined.
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
+         @lines,
       '};',
-      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
-   # Finally, complete the subroutine by wrapping the code lines inside
+   # Finally, make a complete subroutine by wrapping the core code inside
    # a "sub { ... }" template.
-   unshift @lines, (
+   my @code = (
       'sub {',
-      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
-      'my ($val, $idx);', # NOTE: define all variables here
-      "\$val = \$event->{'$attrib'};",
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alternates}}),
-      'return unless defined $val;',
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      @broken_query_time,
-      @limit,
-      ($is_array ? ('}') : ()),
-   );
-   push @lines, '}';
-   my $code = join("\n", @lines);
-   $self->{code_for}->{$attrib} = $code;
+         # Get args and define all variables.
+         'my ( $event, $class, $global, $samples, $group_by ) = @_;',
+         'my ($val, $idx);',
 
-   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
-   my $sub = eval join("\n", @lines);
-   die if $EVAL_ERROR;
+         # Core code from above.
+         $self->{unrolled_for}->{$attrib},
+
+         'return;',
+      '}',
+   );
+   $self->{code_for}->{$attrib} = join("\n", @code);
+   MKDEBUG && _d($attrib, 'handler code:', $self->{code_for}->{$attrib});
+   my $sub = eval $self->{code_for}->{$attrib};
+   if ( $EVAL_ERROR ) {
+      die "Failed to compile $attrib handler code: $EVAL_ERROR";
+   }
+
    return $sub;
 }
 

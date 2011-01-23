@@ -1869,25 +1869,6 @@ is(
 );
 
 # #############################################################################
-# Issue 511: Make mk-query-digest report number of query variations
-# #############################################################################
-$events = [
-   { arg        => "select c from t where id=1",
-     Query_time => '0.001002',
-   }
-];
-
-$ea = new EventAggregator(
-   groupby    => 'arg',
-   worst      => 'Query_time',
-   variations => [qw(arg)],
-);
-foreach my $event (@$events) {
-   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
-   $ea->aggregate($event);
-}
-
-# #############################################################################
 # Done.
 # #############################################################################
 my $output = '';
