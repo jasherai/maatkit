@@ -3405,7 +3405,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7138
+# QueryReportFormatter package 7235
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -3422,6 +3422,7 @@ use POSIX qw(floor);
 
 Transformers->import(qw(
    shorten micro_t parse_timestamp unix_timestamp make_checksum percentage_of
+   crc32
 ));
 
 use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
@@ -3724,6 +3725,9 @@ sub query_report {
 
          $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
+
+         $report.= "# CRC " . (crc32($samp_query) || "") . "\n"
+            if $samp_query;
 
          my $log_type = $args{log_type} || '';
          my $mark     = $log_type eq 'memcached'

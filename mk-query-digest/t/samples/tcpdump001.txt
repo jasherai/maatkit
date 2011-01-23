@@ -24,5 +24,6 @@
 # 100ms
 #    1s
 #  10s+
+# CRC 1829528396
 # EXPLAIN /*!50100 PARTITIONS*/
 select "hello world" as greeting\G
