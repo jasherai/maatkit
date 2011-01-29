@@ -3077,6 +3077,11 @@ sub main {
                if ( $sql ) {
                   my $sets = $sql->{set};
 
+                  # TODO: Handle multi-table DELETEs so we won't die here.
+                  # For now, --continue-on-error will keep us going.
+                  die "Non-SELECT statement with multiple tables "
+                     . "but no SET clause" unless $sets;
+
                   # If a tbl appears in the SET, then it's being written to.
                   # Often times tables are aliased, so we need to look for
                   # alias and real name.
