@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 use MaatkitTest;
 shift @INC;  # our unshift (above)
@@ -27,6 +27,14 @@ ok(
       "$out/slow001.txt",
    ),
    'Analysis for slow001.txt'
+);
+
+ok(
+   no_diff(
+      sub { mk_table_access::main(@args, "$in/slow002.txt") },
+      "$out/slow002.txt",
+   ),
+   'Analysis for slow002.txt (issue 1237)'
 );
 
 # #############################################################################
