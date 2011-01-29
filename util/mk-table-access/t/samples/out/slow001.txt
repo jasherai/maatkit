@@ -1,0 +1,16 @@
+# Query_id: 1
+r t
+# Query_id: 2
+r t1
+r t2
+r t3
+r z
+# Query_id: 3
+w t
+# Query_id: 4
+w t
+# Query_id: 5
+r a
+r b
+# Query_id: 6
+w t
