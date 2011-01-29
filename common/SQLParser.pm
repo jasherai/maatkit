@@ -907,6 +907,39 @@ sub parse_values {
    return \@vals;
 }
 
+sub parse_set {
+   my ( $self, $set ) = @_;
+   MKDEBUG && _d("Parse SET", $set);
+   return unless $set;
+   my $vals = $self->parse_csv($set);
+   return unless $vals && @$vals;
+
+   my @set;
+   foreach my $col_val ( @$vals ) {
+      my ($tbl_col, $val)  = $col_val =~ m/^([^=]+)\s*=\s*(.+)/;
+
+      # Remove quotes around value.
+      my ($c) = $val =~ m/^(['"])/;
+      if ( $c ) {
+         $val =~ s/^$c//;
+         $val =~ s/$c$//;
+      }
+
+      # Parser db.tbl.col.
+      my ($col, $tbl, $db) = reverse split(/\./, $tbl_col);
+
+      my $set_struct = {
+         column => $col,
+         value  => $val,
+      };
+      $set_struct->{table}    = $tbl if $tbl;
+      $set_struct->{database} = $db  if $db;
+      MKDEBUG && _d("SET:", Dumper($set_struct));
+      push @set, $set_struct;
+   }
+   return \@set;
+}
+
 # Split any comma-separated list of values, removing leading
 # and trailing spaces.
 sub parse_csv {
@@ -917,7 +950,6 @@ sub parse_csv {
 }
 {
    no warnings;  # Why? See same line above.
-   *parse_set          = \&parse_csv;
    *parse_on_duplicate = \&parse_csv;
 }
 

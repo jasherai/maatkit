@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 107;
+use Test::More tests => 109;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -933,6 +933,32 @@ test_parse_table_reference('db.* foo',
 );
 
 # #############################################################################
+# parse_set()
+# #############################################################################
+sub test_parse_set {
+   my ( $set, $struct ) = @_;
+   my $got = $sp->parse_set($set);
+   is_deeply(
+      $got,
+      $struct,
+      "parse_set($set)"
+   ) or print Dumper($got);
+}
+
+test_parse_set(
+   "col='val'",
+   [{column=>"col", value=>"val"}],
+);
+
+test_parse_set(
+   'a.foo="bar", b.foo="bat"',
+   [
+      {table=>"a", column=>"foo", value=>"bar"},
+      {table=>"b", column=>"foo", value=>"bat"},
+   ],
+);
+
+# #############################################################################
 # Subqueries.
 # #############################################################################
 
@@ -1302,7 +1328,10 @@ my @cases = (
             set  => 'id=1, foo=NULL',
          },
          into    => [ { name => 'tbl', } ],
-         set     => ['id=1', 'foo=NULL',],
+         set     => [
+            { column => 'id',  value => '1',    },
+            { column => 'foo', value => 'NULL', },
+         ],
          unknown => undef,
       },
    },
@@ -1316,7 +1345,7 @@ my @cases = (
             on_duplicate => 'col1=9',
          },
          into         => [ { name => 'tbl', } ],
-         set          => ['i=3',],
+         set          => [{column=>'i', value=>'3'}],
          on_duplicate => ['col1=9',],
          unknown      => undef,
       },
@@ -1907,7 +1936,7 @@ my @cases = (
             set    => 'col=1',
          },
          tables  => [ { name => 'tbl', } ],
-         set     => ['col=1'],
+         set     => [ { column =>'col', value => '1' } ],
          unknown => undef,
       },
    },
@@ -1923,7 +1952,7 @@ my @cases = (
             limit    => '10',
          },
          tables   => [ { name => 'tbl', alias => 't', explicit_alias => 1, } ],
-         set      => ['foo=NULL'],
+         set      => [ { column => 'foo', value => 'NULL' } ],
          where    => [
             {
                predicate => undef,
