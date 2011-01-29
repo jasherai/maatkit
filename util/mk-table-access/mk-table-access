@@ -25,20 +25,25 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 6850
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
 
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   return bless {}, $class;
 }
 
 sub quote {
@@ -50,18 +55,14 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val ) = @_;
+
+   return 'NULL' unless defined $val;          # undef = NULL
+   return "''" if $val eq '';                  # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]+$/;  # hex data
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -75,6 +76,26 @@ sub split_unquote {
    return ($db, $tbl);
 }
 
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
+}
+
+sub join_quote {
+   my ( $self, $default_db, $db_tbl ) = @_;
+   return unless $db_tbl;
+   my ($db, $tbl) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   $db  = "`$db`"  if $db  && $db  !~ m/^`/;
+   $tbl = "`$tbl`" if $tbl && $tbl !~ m/^`/;
+   return $db ? "$db.$tbl" : $tbl;
+}
+
 1;
 
 # ###########################################################################
@@ -82,73 +103,152 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4489
+# OptionParser package 7102
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package OptionParser;
 
 use strict;
 use warnings FATAL => 'all';
-
-use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use Getopt::Long;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-my %attributes = (
-   'type'       => 1,
-   'short form' => 1,
-   'group'      => 1,
-   'default'    => 1,
-   'cumulative' => 1,
-   'negatable'  => 1,
-);
-
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(description) ) {
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
    my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
 
+   my %attributes = (
+      'type'       => 1,
+      'short form' => 1,
+      'group'      => 1,
+      'default'    => 1,
+      'cumulative' => 1,
+      'negatable'  => 1,
+   );
+
    my $self = {
-      description    => $args{description},
-      prompt         => $args{prompt} || '<options>',
-      strict         => (exists $args{strict} ? $args{strict} : 1),
-      dp             => $args{dp}     || undef,
-      program_name   => $program_name,
-      opts           => {},
-      got_opts       => 0,
-      short_opts     => {},
-      defaults       => {},
-      groups         => {},
-      allowed_groups => {},
-      errors         => [],
-      rules          => [],  # desc of rules for --help
-      mutex          => [],  # rule: opts are mutually exclusive
-      atleast1       => [],  # rule: at least one opt is required
-      disables       => {},  # rule: opt disables other opts 
-      defaults_to    => {},  # rule: opt defaults to value of other opt
-      default_files  => [
+      head1             => 'OPTIONS',        # These args are used internally
+      skip_rules        => 0,                # to instantiate another Option-
+      item              => '--(.*)',         # Parser obj that parses the
+      attributes        => \%attributes,     # DSN OPTIONS section.  Tools
+      parse_attributes  => \&_parse_attribs, # don't tinker with these args.
+
+      %args,
+
+      strict            => 1,  # disabled by a special rule
+      program_name      => $program_name,
+      opts              => {},
+      got_opts          => 0,
+      short_opts        => {},
+      defaults          => {},
+      groups            => {},
+      allowed_groups    => {},
+      errors            => [],
+      rules             => [],  # desc of rules for --help
+      mutex             => [],  # rule: opts are mutually exclusive
+      atleast1          => [],  # rule: at least one opt is required
+      disables          => {},  # rule: opt disables other opts 
+      defaults_to       => {},  # rule: opt defaults to value of other opt
+      DSNParser         => undef,
+      default_files     => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$home/.maatkit.conf",
          "$home/.$program_name.conf",
       ],
+      types             => {
+         string => 's', # standard Getopt type
+         int    => 'i', # standard Getopt type
+         float  => 'f', # standard Getopt type
+         Hash   => 'H', # hash, formed from a comma-separated list
+         hash   => 'h', # hash as above, but only if a value is given
+         Array  => 'A', # array, similar to Hash
+         array  => 'a', # array, similar to hash
+         DSN    => 'd', # DSN
+         size   => 'z', # size with kMG suffix (powers of 2^10)
+         time   => 'm', # time, with an optional suffix of s/h/m/d
+      },
    };
+
    return bless $self, $class;
 }
 
 sub get_specs {
    my ( $self, $file ) = @_;
+   $file ||= $self->{file} || __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
+
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
+      MKDEBUG && _d('Parsing DSN OPTIONS');
+      my $dsn_attribs = {
+         dsn  => 1,
+         copy => 1,
+      };
+      my $parse_dsn_attribs = sub {
+         my ( $self, $option, $attribs ) = @_;
+         map {
+            my $val = $attribs->{$_};
+            if ( $val ) {
+               $val    = $val eq 'yes' ? 1
+                       : $val eq 'no'  ? 0
+                       :                 $val;
+               $attribs->{$_} = $val;
+            }
+         } keys %$attribs;
+         return {
+            key => $option,
+            %$attribs,
+         };
+      };
+      my $dsn_o = new OptionParser(
+         description       => 'DSN OPTIONS',
+         head1             => 'DSN OPTIONS',
+         dsn               => 0,         # XXX don't infinitely recurse!
+         item              => '\* (.)',  # key opts are a single character
+         skip_rules        => 1,         # no rules before opts
+         attributes        => $dsn_attribs,
+         parse_attributes  => $parse_dsn_attribs,
+      );
+      my @dsn_opts = map {
+         my $opts = {
+            key  => $_->{spec}->{key},
+            dsn  => $_->{spec}->{dsn},
+            copy => $_->{spec}->{copy},
+            desc => $_->{desc},
+         };
+         $opts;
+      } $dsn_o->_pod_to_specs($file);
+      $self->{DSNParser} = DSNParser->new(opts => \@dsn_opts);
+   }
+
    return;
 }
+
+sub DSNParser {
+   my ( $self ) = @_;
+   return $self->{DSNParser};
+};
 
 sub get_defaults_files {
    my ( $self ) = @_;
@@ -157,33 +257,22 @@ sub get_defaults_files {
 
 sub _pod_to_specs {
    my ( $self, $file ) = @_;
-   $file ||= __FILE__;
+   $file ||= $self->{file} || __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
-   my %types = (
-      string => 's', # standard Getopt type
-      'int'  => 'i', # standard Getopt type
-      float  => 'f', # standard Getopt type
-      Hash   => 'H', # hash, formed from a comma-separated list
-      hash   => 'h', # hash as above, but only if a value is given
-      Array  => 'A', # array, similar to Hash
-      array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
-      size   => 'z', # size with kMG suffix (powers of 2^10)
-      'time' => 'm', # time, with an optional suffix of s/h/m/d
-   );
    my @specs = ();
    my @rules = ();
    my $para;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
+      next unless $para =~ m/^=head1 $self->{head1}/;
       last;
    }
 
    while ( $para = <$fh> ) {
       last if $para =~ m/^=over/;
+      next if $self->{skip_rules};
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
@@ -191,10 +280,10 @@ sub _pod_to_specs {
       push @rules, $para;
    }
 
-   die 'POD has no OPTIONS section' unless $para;
+   die "POD has no $self->{head1} section" unless $para;
 
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item $self->{item}/ ) {
          chomp $para;
          MKDEBUG && _d($para);
          my %attribs;
@@ -206,7 +295,7 @@ sub _pod_to_specs {
             %attribs = map {
                   my ( $attrib, $val) = split(/: /, $_);
                   die "Unrecognized attribute for --$option: $attrib"
-                     unless $attributes{$attrib};
+                     unless $self->{attributes}->{$attrib};
                   ($attrib, $val);
                } split(/; /, $para);
             if ( $attribs{'short form'} ) {
@@ -233,29 +322,23 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec  => $option
-               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
-               . ($attribs{'negatable'}  ? '!'                          : '' )
-               . ($attribs{'cumulative'} ? '+'                          : '' )
-               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
-               . ($attribs{default} ? " (default $attribs{default})" : ''),
+               . (defined $attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
-
-
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
          }
-         last if $para =~ m/^=item --/;
+         last if $para =~ m/^=item /;
       }
    } while ( $para );
 
-   die 'No valid specs in POD OPTIONS' unless @specs;
+   die "No valid specs in $self->{head1}" unless @specs;
 
    close $fh;
    return @specs, @rules;
@@ -308,10 +391,6 @@ sub _parse_specs {
          $opt->{type} = $type;
          MKDEBUG && _d($long, 'type:', $type);
 
-         if ( $type && $type eq 'd' && !$self->{dp} ) {
-            die "$opt->{long} is type DSN (d) but no dp argument "
-               . "was given when this OptionParser object was created";
-         }
 
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
@@ -360,6 +439,11 @@ sub _parse_specs {
                s/\s+//;
                $_ => 1;
             } @groups;
+         }
+         if( $opt =~ m/accepts additional command-line arguments/ ) {
+            $rule_ok = 1;
+            $self->{strict} = 0;
+            MKDEBUG && _d("Strict mode disabled by rule");
          }
 
          die "Unrecognized option rule: $opt" unless $rule_ok;
@@ -460,7 +544,7 @@ sub get_opts {
       my @extra_args;
       foreach my $filename ( split(',', $self->get('config')) ) {
          eval {
-            push @ARGV, $self->_read_config_file($filename);
+            push @extra_args, $self->_read_config_file($filename);
          };
          if ( $EVAL_ERROR ) {
             if ( $self->got('config') ) {
@@ -513,71 +597,98 @@ sub get_opts {
       }
    }
 
-   foreach my $long ( keys %{$self->{opts}} ) {
-      my $opt = $self->{opts}->{$long};
-      if ( $opt->{got} ) {
-         if ( exists $self->{disables}->{$long} ) {
-            my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
-            MKDEBUG && _d('Unset options', @disable_opts,
-               'because', $long,'disables them');
-         }
+   $self->_check_opts( keys %{$self->{opts}} );
+   $self->{got_opts} = 1;
+   return;
+}
 
-         if ( exists $self->{allowed_groups}->{$long} ) {
+sub _check_opts {
+   my ( $self, @long ) = @_;
+   my $long_last = scalar @long;
+   while ( @long ) {
+      foreach my $i ( 0..$#long ) {
+         my $long = $long[$i];
+         next unless $long;
+         my $opt  = $self->{opts}->{$long};
+         if ( $opt->{got} ) {
+            if ( exists $self->{disables}->{$long} ) {
+               my @disable_opts = @{$self->{disables}->{$long}};
+               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+               MKDEBUG && _d('Unset options', @disable_opts,
+                  'because', $long,'disables them');
+            }
 
-            my @restricted_groups = grep {
-               !exists $self->{allowed_groups}->{$long}->{$_}
-            } keys %{$self->{groups}};
+            if ( exists $self->{allowed_groups}->{$long} ) {
 
-            my @restricted_opts;
-            foreach my $restricted_group ( @restricted_groups ) {
-               RESTRICTED_OPT:
-               foreach my $restricted_opt (
-                  keys %{$self->{groups}->{$restricted_group}} )
-               {
-                  next RESTRICTED_OPT if $restricted_opt eq $long;
-                  push @restricted_opts, $restricted_opt
-                     if $self->{opts}->{$restricted_opt}->{got};
+               my @restricted_groups = grep {
+                  !exists $self->{allowed_groups}->{$long}->{$_}
+               } keys %{$self->{groups}};
+
+               my @restricted_opts;
+               foreach my $restricted_group ( @restricted_groups ) {
+                  RESTRICTED_OPT:
+                  foreach my $restricted_opt (
+                     keys %{$self->{groups}->{$restricted_group}} )
+                  {
+                     next RESTRICTED_OPT if $restricted_opt eq $long;
+                     push @restricted_opts, $restricted_opt
+                        if $self->{opts}->{$restricted_opt}->{got};
+                  }
+               }
+
+               if ( @restricted_opts ) {
+                  my $err;
+                  if ( @restricted_opts == 1 ) {
+                     $err = "--$restricted_opts[0]";
+                  }
+                  else {
+                     $err = join(', ',
+                               map { "--$self->{opts}->{$_}->{long}" }
+                               grep { $_ } 
+                               @restricted_opts[0..scalar(@restricted_opts) - 2]
+                            )
+                          . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+                  }
+                  $self->save_error("--$long is not allowed with $err");
                }
             }
 
-            if ( @restricted_opts ) {
-               my $err;
-               if ( @restricted_opts == 1 ) {
-                  $err = "--$restricted_opts[0]";
-               }
-               else {
-                  $err = join(', ',
-                            map { "--$self->{opts}->{$_}->{long}" }
-                            grep { $_ } 
-                            @restricted_opts[0..scalar(@restricted_opts) - 2]
-                         )
-                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
-               }
-               $self->save_error("--$long is not allowed with $err");
-            }
+         }
+         elsif ( $opt->{is_required} ) { 
+            $self->save_error("Required option --$long must be specified");
          }
 
-      }
-      elsif ( $opt->{is_required} ) { 
-         $self->save_error("Required option --$long must be specified");
+         $self->_validate_type($opt);
+         if ( $opt->{parsed} ) {
+            delete $long[$i];
+         }
+         else {
+            MKDEBUG && _d('Temporarily failed to parse', $long);
+         }
       }
 
-      $self->_validate_type($opt);
+      die "Failed to parse options, possibly due to circular dependencies"
+         if @long == $long_last;
+      $long_last = @long;
    }
 
-   $self->{got_opts} = 1;
    return;
 }
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt;
+
+   if ( !$opt->{type} ) {
+      $opt->{parsed} = 1;
+      return;
+   }
+
    my $val = $opt->{value};
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
-      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
       if ( !$suffix ) {
          my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
          $suffix = $s || 's';
@@ -589,7 +700,7 @@ sub _validate_type {
               : $suffix eq 'm' ? $num * 60       # Minutes
               : $suffix eq 'h' ? $num * 3600     # Hours
               :                  $num * 86400;   # Days
-         $opt->{value} = $val;
+         $opt->{value} = ($prefix || '') . $val;
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
@@ -602,38 +713,34 @@ sub _validate_type {
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $prev = $self->{opts}->{$from_key}->{value};
+         if ( $self->{opts}->{$from_key}->{parsed} ) {
+            $prev = $self->{opts}->{$from_key}->{value};
+         }
+         else {
+            MKDEBUG && _d('Cannot parse', $opt->{long}, 'until',
+               $from_key, 'parsed');
+            return;
+         }
       }
-      my $defaults = $self->{dp}->parse_options($self);
-      $opt->{value} = $self->{dp}->parse($val, $prev, $defaults);
+      my $defaults = $self->{DSNParser}->parse_options($self);
+      $opt->{value} = $self->{DSNParser}->parse($val, $prev, $defaults);
    }
    elsif ( $val && $opt->{type} eq 'z' ) {  # type size
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
-      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-      if ( defined $num ) {
-         if ( $factor ) {
-            $num *= $factor_for{$factor};
-            MKDEBUG && _d('Setting option', $opt->{y},
-               'to num', $num, '* factor', $factor);
-         }
-         $opt->{value} = ($pre || '') . $num;
-      }
-      else {
-         $self->save_error("Invalid size for --$opt->{long}");
-      }
+      $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
-      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+      $opt->{value} = { map { $_ => 1 } split(/(?<!\\),\s*/, ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
          $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
+   $opt->{parsed} = 1;
    return;
 }
 
@@ -671,6 +778,7 @@ sub set {
 sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
+   return;
 }
 
 sub errors {
@@ -678,38 +786,53 @@ sub errors {
    return $self->{errors};
 }
 
-sub prompt {
+sub usage {
    my ( $self ) = @_;
-   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
+   warn "No usage string is set" unless $self->{usage}; # XXX
+   return "Usage: " . ($self->{usage} || '') . "\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+   warn "No description string is set" unless $self->{description}; # XXX
+   my $descr  = ($self->{description} || $self->{program_name} || '')
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }
 
 sub usage_or_errors {
-   my ( $self ) = @_;
+   my ( $self, $file, $return ) = @_;
+   $file ||= $self->{file} || __FILE__;
+
+   if ( !$self->{description} || !$self->{usage} ) {
+      MKDEBUG && _d("Getting description and usage from SYNOPSIS in", $file);
+      my %synop = $self->_parse_synopsis($file);
+      $self->{description} ||= $synop{description};
+      $self->{usage}       ||= $synop{usage};
+      MKDEBUG && _d("Description:", $self->{description},
+         "\nUsage:", $self->{usage});
+   }
+
    if ( $self->{opts}->{help}->{got} ) {
       print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
-      exit 0;
+      exit 0 unless $return;
    }
    elsif ( scalar @{$self->{errors}} ) {
       print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
-      exit 0;
+      exit 0 unless $return;
    }
+
    return;
 }
 
 sub print_errors {
    my ( $self ) = @_;
-   my $usage = $self->prompt() . "\n";
+   my $usage = $self->usage() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
       $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
               . "\n";
@@ -723,11 +846,19 @@ sub print_usage {
    my @opts = values %{$self->{opts}};
 
    my $maxl = max(
-      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      map {
+         length($_->{long})               # option long name
+         + ($_->{is_negatable} ? 4 : 0)   # "[no]" if opt is negatable
+         + ($_->{type} ? 2 : 0)           # "=x" where x is the opt type
+      }
       @opts);
 
    my $maxs = max(0,
-      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      map {
+         length($_)
+         + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0)
+         + ($self->{opts}->{$_}->{type} ? 2 : 0)
+      }
       values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
@@ -736,7 +867,7 @@ sub print_usage {
 
    $maxs = max($lcol - 3, $maxs);
 
-   my $usage = $self->descr() . "\n" . $self->prompt();
+   my $usage = $self->descr() . "\n" . $self->usage();
 
    my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
    push @groups, 'default';
@@ -751,6 +882,9 @@ sub print_usage {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
          my $short = $opt->{short};
          my $desc  = $opt->{desc};
+
+         $long .= $opt->{type} ? "=$opt->{type}" : "";
+
          if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
@@ -769,24 +903,26 @@ sub print_usage {
       }
    }
 
+   $usage .= "\nOption types: s=string, i=integer, f=float, h/H/a/A=comma-separated list, d=DSN, z=size, m=time\n";
+
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dp} ) {
-      $usage .= "\n" . $self->{dp}->usage();
+   if ( $self->{DSNParser} ) {
+      $usage .= "\n" . $self->{DSNParser}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
       my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
-      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
-                : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dp}->as_string($val)
-                : $type =~ m/H|h/           ? join(',', sort keys %$val)
-                : $type =~ m/A|a/           ? join(',', @$val)
-                :                             $val;
+      $val      = $bool              ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val      ? '(No value)'
+                : $type eq 'd'       ? $self->{DSNParser}->as_string($val)
+                : $type =~ m/H|h/    ? join(',', sort keys %$val)
+                : $type =~ m/A|a/    ? join(',', @$val)
+                :                    $val;
       $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
@@ -903,6 +1039,76 @@ sub clone {
    return bless \%clone;     
 }
 
+sub _parse_size {
+   my ( $self, $opt, $val ) = @_;
+
+   if ( lc($val || '') eq 'null' ) {
+      MKDEBUG && _d('NULL size for', $opt->{long});
+      $opt->{value} = 'null';
+      return;
+   }
+
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+   if ( defined $num ) {
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+         MKDEBUG && _d('Setting option', $opt->{y},
+            'to num', $num, '* factor', $factor);
+      }
+      $opt->{value} = ($pre || '') . $num;
+   }
+   else {
+      $self->save_error("Invalid size for --$opt->{long}");
+   }
+   return;
+}
+
+sub _parse_attribs {
+   my ( $self, $option, $attribs ) = @_;
+   my $types = $self->{types};
+   return $option
+      . ($attribs->{'short form'} ? '|' . $attribs->{'short form'}   : '' )
+      . ($attribs->{'negatable'}  ? '!'                              : '' )
+      . ($attribs->{'cumulative'} ? '+'                              : '' )
+      . ($attribs->{'type'}       ? '=' . $types->{$attribs->{type}} : '' );
+}
+
+sub _parse_synopsis {
+   my ( $self, $file ) = @_;
+   $file ||= $self->{file} || __FILE__;
+   MKDEBUG && _d("Parsing SYNOPSIS in", $file);
+
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $para;
+   1 while defined($para = <$fh>) && $para !~ m/^=head1 SYNOPSIS/;
+   die "$file does not contain a SYNOPSIS section" unless $para;
+   my @synop;
+   for ( 1..2 ) {  # 1 for the usage, 2 for the description
+      my $para = <$fh>;
+      push @synop, $para;
+   }
+   close $fh;
+   MKDEBUG && _d("Raw SYNOPSIS text:", @synop);
+   my ($usage, $desc) = @synop;
+   die "The SYNOPSIS section in $file is not formatted properly"
+      unless $usage && $desc;
+
+   $usage =~ s/^\s*Usage:\s+(.+)/$1/;
+   chomp $usage;
+
+   $desc =~ s/\n/ /g;
+   $desc =~ s/\s{2,}/ /g;
+   $desc =~ s/\. ([A-Z][a-z])/.  $1/g;
+   $desc =~ s/\s+$//;
+
+   return (
+      description => $desc,
+      usage       => $usage,
+   );
+};
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -918,7 +1124,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4569
+# QueryRewriter package 6861
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -927,7 +1138,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
@@ -945,6 +1156,9 @@ $bal         = qr/
 
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
+
 
 sub new {
    my ( $class, %args ) = @_;
@@ -954,8 +1168,12 @@ sub new {
 
 sub strip_comments {
    my ( $self, $query ) = @_;
+   return unless $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
+   if ( $query =~ m/$vlc_rf/i ) { # contains show + version
+      $query =~ s/$vlc_re//go;
+   }
    return $query;
 }
 
@@ -972,34 +1190,37 @@ sub shorten {
 
    return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
 
-   if ( $length && length($query) > $length ) {
-      my ($left, $mid, $right) = $query =~ m{
-         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
-         ([^\)]+)             # Contents of the list
-         (\).*\Z)             # The rest of the query
-      }xsi;
-      if ( $left ) {
-         my $targ = $length - length($left) - length($right);
-         my @vals = split(/,/, $mid);
-         my @left = shift @vals;
-         my @right;
-         my $len  = length($left[0]);
-         while ( @vals && $len < $targ / 2 ) {
-            $len += length($vals[0]) + 1;
-            push @left, shift @vals;
-         }
-         while ( @vals && $len < $targ ) {
-            $len += length($vals[-1]) + 1;
-            unshift @right, pop @vals;
-         }
-         $query = $left . join(',', @left)
-                . (@right ? ',' : '')
-                . " /*... omitted " . scalar(@vals) . " items ...*/ "
-                . join(',', @right) . $right;
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
       }
+      {
+         $1 . __shorten($2)
+      }gexsi;
    }
 
    return $query;
+}
+
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
 }
 
 sub fingerprint {
@@ -1009,14 +1230,14 @@ sub fingerprint {
       && return 'mysqldump';
    $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
-   $query =~ m/\A# administrator command: /
+   $query =~ m/\Aadministrator command: /
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
-
+  
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -1041,35 +1262,56 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+
+   if ( $query =~ m/\bORDER BY /gi ) {  # Find, anchor on ORDER BY clause
+      1 while $query =~ s/\G(.+?)\s+ASC/$1/gi && pos $query;
+   }
+
    return $query;
 }
 
-sub distill {
-   my ( $self, $query, %args ) = @_;
-   my $qp = $args{qp} || $self->{QueryParser};
-   die "I need a qp argument" unless $qp;
+sub distill_verbs {
+   my ( $self, $query ) = @_;
 
-   $query =~ m/\A\s*call\s+(\S+)\(/i
-      && return "CALL $1"; # Warning! $1 used, be careful.
-   $query =~ m/\A# administrator/
-      && return "ADMIN";
-   $query =~ m/\A\s*use\s+/
-      && return "USE";
-   $query =~ m/\A\s*UNLOCK TABLES/i
-      && return "UNLOCK";
+   $query =~ m/\A\s*call\s+(\S+)\(/i && return "CALL $1";
+   $query =~ m/\A\s*use\s+/          && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
+
+   if ( $query =~ m/\Aadministrator command:/ ) {
+      $query =~ s/administrator command:/ADMIN/;
+      $query = uc $query;
+      return $query;
+   }
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      MKDEBUG && _d($query);
+
+      $query = uc $query;
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /g;
+      $query =~ s/\s+COUNT[^)]+\)//g;
+
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//ms;
+
+      $query =~ s/\A(SHOW(?:\s+\S+){1,2}).*\Z/$1/s;
+      $query =~ s/\s+/ /g;
+      MKDEBUG && _d($query);
+      return $query;
+   }
 
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
    my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
-   if ( $dds ) {
+   if ( $dds) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
-      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
       my ($db_or_tbl)
          = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches db or table:', $db_or_tbl);
-      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
-      return uc($dds) . ($obj ? " $obj" : '');
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
    }
 
    my @verbs = $query =~ m/\b($verbs)\b/gio;
@@ -1077,30 +1319,75 @@ sub distill {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
+
+   return $verb_str;
+}
+
+sub __distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
 
    my @tables = map {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
-   } $qp->get_tables($query);
+   } grep { defined $_ } $qp->get_tables($query);
+
+   push @tables, $table if $table;
 
    @tables = do {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
    };
 
-   $query = join(q{ }, $verbs, @tables);
+   return @tables;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   if ( $args{generic} ) {
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      my ($verbs, $table)  = $self->distill_verbs($query, %args);
+
+      if ( $verbs && $verbs =~ m/^SHOW/ ) {
+         my %alias_for = qw(
+            SCHEMA   DATABASE
+            KEYS     INDEX
+            INDEXES  INDEX
+         );
+         map { $verbs =~ s/$_/$alias_for{$_}/ } keys %alias_for;
+         $query = $verbs;
+      }
+      else {
+         my @tables = $self->__distill_tables($query, $table, %args);
+         $query     = join(q{ }, $verbs, @tables); 
+      } 
+   }
+
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
    return $query;
 }
 
 sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
+
+   return if $query =~ m/=\s*\(\s*SELECT /i;
+
    $query =~ s{
                  \A.*?
-                 update\s+(.*?)
+                 update(?:\s+(?:low_priority|ignore))?\s+(.*?)
                  \s+set\b(.*?)
                  (?:\s*where\b(.*?))?
                  (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
@@ -1109,13 +1396,22 @@ sub convert_to_select {
               {__update_to_select($1, $2, $3, $4)}exsi
       || $query =~ s{
                     \A.*?
-                    (?:insert|replace)\s+
+                    (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    (?:.*?\binto)\b(.*?)\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select_with_set($1, $2)}exsi
       || $query =~ s{
                     \A.*?
                     delete\s+(.*?)
@@ -1162,6 +1458,12 @@ sub __insert_to_select {
    }
 }
 
+sub __insert_to_select_with_set {
+   my ( $from, $set ) = @_;
+   $set =~ s/,/ and /g;
+   return "select * from $from where $set ";
+}
+
 sub __update_to_select {
    my ( $from, $set, $where, $limit ) = @_;
    return "select $set from $from "
@@ -1192,7 +1494,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 4462
+# SlowLogParser package 7096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SlowLogParser.pm
+#   trunk/common/t/SlowLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SlowLogParser;
 
@@ -1201,11 +1508,14 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -1221,29 +1531,33 @@ my $slow_log_hd_line = qr{
    }xm;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(next_event tell);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($next_event, $tell) = @args{@required_args};
 
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while (
+         defined($stmt = shift @$pending)
+      or defined($stmt = $next_event->())
+   ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -1286,6 +1600,7 @@ sub parse_event {
 
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                MKDEBUG && _d("Got admin command");
+               $line =~ s/^#\s+//;  # string leading "# ".
                push @properties, 'cmd', 'Admin', 'arg', $line;
                push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
@@ -1294,6 +1609,13 @@ sub parse_event {
 
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
+
+               if ( $line =~ m/Schema:\s+\w+: / ) {
+                  MKDEBUG && _d('Removing empty Schema attrib');
+                  $line =~ s/Schema:\s+//;
+                  MKDEBUG && _d($line);
+               }
+
                my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
@@ -1313,10 +1635,11 @@ sub parse_event {
             if ( !$found_arg && $pos == $len ) {
                MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( defined(my $l = <$fh>) ) {
+               if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
+                  $l =~ s/^\s+//;
                   MKDEBUG && _d("Found admin statement", $l);
-                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'cmd', 'Admin', 'arg', $l;
                   push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
@@ -1330,10 +1653,10 @@ sub parse_event {
             MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -1341,13 +1664,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
-   }
-   return $num_events;
+      return $event;
+   } # EVENT
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -1365,7 +1687,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4569
+# QueryParser package 6262
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryParser.pm
+#   trunk/common/t/QueryParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryParser;
 
@@ -1373,11 +1700,12 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
+         \(?                                   # Optional paren around tables
          ($tbl_ident
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
@@ -1389,6 +1717,8 @@ our $has_derived = qr{
 
 our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
 
+our $data_manip_stmts = qr/(?:INSERT|UPDATE|DELETE|REPLACE)/i;
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -1399,7 +1729,7 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
+   my ( $ddl_stmt ) = $query =~ m/^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
@@ -1408,7 +1738,7 @@ sub get_tables {
          return ();
       }
       if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
-         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         my ($select) = $query =~ m/\b(SELECT\b.+)/is;
          MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
          return $self->get_tables($select);
       }
@@ -1434,6 +1764,9 @@ sub get_tables {
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
+
+      next if $tbls =~ m/\ASELECT\b/i;
+
       foreach my $tbl ( split(',', $tbls) ) {
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
 
@@ -1456,14 +1789,19 @@ sub has_derived_table {
 }
 
 sub get_aliases {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   my $aliases;
+   my ( $self, $query, $list ) = @_;
+
+   my $result = {
+      DATABASE => {},
+      TABLE    => {},
+   };
+   return $result unless $query;
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
+   my @tbl_refs;
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -1473,46 +1811,61 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   die "Failed to parse table references from $query"
-      unless $tbl_refs && $from;
+   if ( $tbl_refs ) {
 
-   MKDEBUG && _d('tbl refs:', $tbl_refs);
-
-   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
-
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
-
-   $tbl_refs =~ s/ = /=/g;
-
-   while (
-      $tbl_refs =~ m{
-         $before_tbl\b\s*
-            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
-         \s*$after_tbl
-      }xgio )
-   {
-      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d('Match table:', $tbl_ref);
-
-      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef;
-         next;
+      if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+         $tbl_refs =~ s/\([^\)]+\)\s*//;
       }
 
-      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-      $aliases->{$alias || $tbl} = $tbl;
-      $aliases->{DATABASE}->{$tbl} = $db if $db;
+      MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+      my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+      my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+      $tbl_refs =~ s/ = /=/g;
+
+      while (
+         $tbl_refs =~ m{
+            $before_tbl\b\s*
+               ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+            \s*$after_tbl
+         }xgio )
+      {
+         my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+         MKDEBUG && _d('Match table:', $tbl_ref);
+         push @tbl_refs, $tbl_ref;
+         $alias = $self->trim_identifier($alias);
+
+         if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+            MKDEBUG && _d('Subquery', $tbl_ref);
+            $result->{TABLE}->{$alias} = undef;
+            next;
+         }
+
+         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+         $db  = $self->trim_identifier($db);
+         $tbl = $self->trim_identifier($tbl);
+         $result->{TABLE}->{$alias || $tbl} = $tbl;
+         $result->{DATABASE}->{$tbl}        = $db if $db;
+      }
    }
-   return $aliases;
+   else {
+      MKDEBUG && _d("No tables ref in", $query);
+   }
+
+   if ( $list ) {
+      return \@tbl_refs;
+   }
+   else {
+      return $result;
+   }
 }
 
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = remove_comments($query);
-   $query =~ s/^\s+//;      # Remove leading spaces.
-   $query =~ s/\s{2,}/ /g;  # Remove extra spaces.
+   $query = $self->clean_query($query);
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -1526,6 +1879,10 @@ sub split {
    else {
       for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
          push @statements, $split_statements[$i].$split_statements[$i+1];
+
+         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/i ) {
+            $statements[-2] .= pop @statements;
+         }
       }
    }
 
@@ -1533,11 +1890,189 @@ sub split {
    return @statements;
 }
 
-sub remove_comments {
-   my ( $query ) = @_;
+sub clean_query {
+   my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s!/\*.*?\*/! !g;
+   $query =~ s!/\*.*?\*/! !g;  # Remove /* comment blocks */
+   $query =~ s/^\s+//;         # Remove leading spaces
+   $query =~ s/\s+$//;         # Remove trailing spaces
+   $query =~ s/\s{2,}/ /g;     # Remove extra spaces
    return $query;
+}
+
+sub split_subquery {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query = $self->clean_query($query);
+   $query =~ s/;$//;
+
+   my @subqueries;
+   my $sqno = 0;  # subquery number
+   my $pos  = 0;
+   while ( $query =~ m/(\S+)(?:\s+|\Z)/g ) {
+      $pos = pos($query);
+      my $word = $1;
+      MKDEBUG && _d($word, $sqno);
+      if ( $word =~ m/^\(?SELECT\b/i ) {
+         my $start_pos = $pos - length($word) - 1;
+         if ( $start_pos ) {
+            $sqno++;
+            MKDEBUG && _d('Subquery', $sqno, 'starts at', $start_pos);
+            $subqueries[$sqno] = {
+               start_pos => $start_pos,
+               end_pos   => 0,
+               len       => 0,
+               words     => [$word],
+               lp        => 1, # left parentheses
+               rp        => 0, # right parentheses
+               done      => 0,
+            };
+         }
+         else {
+            MKDEBUG && _d('Main SELECT at pos 0');
+         }
+      }
+      else {
+         next unless $sqno;  # next unless we're in a subquery
+         MKDEBUG && _d('In subquery', $sqno);
+         my $sq = $subqueries[$sqno];
+         if ( $sq->{done} ) {
+            MKDEBUG && _d('This subquery is done; SQL is for',
+               ($sqno - 1 ? "subquery $sqno" : "the main SELECT"));
+            next;
+         }
+         push @{$sq->{words}}, $word;
+         my $lp = ($word =~ tr/\(//) || 0;
+         my $rp = ($word =~ tr/\)//) || 0;
+         MKDEBUG && _d('parentheses left', $lp, 'right', $rp);
+         if ( ($sq->{lp} + $lp) - ($sq->{rp} + $rp) == 0 ) {
+            my $end_pos = $pos - 1;
+            MKDEBUG && _d('Subquery', $sqno, 'ends at', $end_pos);
+            $sq->{end_pos} = $end_pos;
+            $sq->{len}     = $end_pos - $sq->{start_pos};
+         }
+      }
+   }
+
+   for my $i ( 1..$#subqueries ) {
+      my $sq = $subqueries[$i];
+      next unless $sq;
+      $sq->{sql} = join(' ', @{$sq->{words}});
+      substr $query,
+         $sq->{start_pos} + 1,  # +1 for (
+         $sq->{len} - 1,        # -1 for )
+         "__subquery_$i";
+   }
+
+   return $query, map { $_->{sql} } grep { defined $_ } @subqueries;
+}
+
+sub query_type {
+   my ( $self, $query, $qr ) = @_;
+   my ($type, undef) = $qr->distill_verbs($query);
+   my $rw;
+   if ( $type =~ m/^SELECT\b/ ) {
+      $rw = 'read';
+   }
+   elsif ( $type =~ m/^$data_manip_stmts\b/
+           || $type =~ m/^$data_def_stmts\b/  ) {
+      $rw = 'write'
+   }
+
+   return {
+      type => $type,
+      rw   => $rw,
+   }
+}
+
+sub get_columns {
+   my ( $self, $query ) = @_;
+   my $cols = [];
+   return $cols unless $query;
+   my $cols_def;
+
+   if ( $query =~ m/^SELECT/i ) {
+      $query =~ s/
+         ^SELECT\s+
+           (?:ALL
+              |DISTINCT
+              |DISTINCTROW
+              |HIGH_PRIORITY
+              |STRAIGHT_JOIN
+              |SQL_SMALL_RESULT
+              |SQL_BIG_RESULT
+              |SQL_BUFFER_RESULT
+              |SQL_CACHE
+              |SQL_NO_CACHE
+              |SQL_CALC_FOUND_ROWS
+           )\s+
+      /SELECT /xgi;
+      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/i;
+   }
+   elsif ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      ($cols_def) = $query =~ m/\(([^\)]+)\)\s*VALUE/i;
+   }
+
+   MKDEBUG && _d('Columns:', $cols_def);
+   if ( $cols_def ) {
+      @$cols = split(',', $cols_def);
+      map {
+         my $col = $_;
+         $col = s/^\s+//g;
+         $col = s/\s+$//g;
+         $col;
+      } @$cols;
+   }
+
+   return $cols;
+}
+
+sub parse {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $parsed = {};
+
+   $query =~ s/\n/ /g;
+   $query = $self->clean_query($query);
+
+   $parsed->{query}   = $query,
+   $parsed->{tables}  = $self->get_aliases($query, 1);
+   $parsed->{columns} = $self->get_columns($query);
+
+   my ($type) = $query =~ m/^(\w+)/;
+   $parsed->{type} = lc $type;
+
+
+   $parsed->{sub_queries} = [];
+
+   return $parsed;
+}
+
+sub extract_tables {
+   my ( $self, %args ) = @_;
+   my $query      = $args{query};
+   my $default_db = $args{default_db};
+   my $q          = $self->{Quoter} || $args{Quoter};
+   return unless $query;
+   MKDEBUG && _d('Extracting tables');
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $self->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
+sub trim_identifier {
+   my ($self, $str) = @_;
+   return unless defined $str;
+   $str =~ s/`//g;
+   $str =~ s/^\s+//;
+   $str =~ s/\s+$//;
+   return $str;
 }
 
 sub _d {
@@ -1552,6 +2087,90 @@ sub _d {
 
 # ###########################################################################
 # End QueryParser package
+# ###########################################################################
+
+# ###########################################################################
+# FileIterator package 7096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/FileIterator.pm
+#   trunk/common/t/FileIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package FileIterator;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub get_file_itr {
+   my ( $self, @filenames ) = @_;
+
+   my @final_filenames;
+   FILENAME:
+   foreach my $fn ( @filenames ) {
+      if ( !defined $fn ) {
+         warn "Skipping undefined filename";
+         next FILENAME;
+      }
+      if ( $fn ne '-' ) {
+         if ( !-e $fn || !-r $fn ) {
+            warn "$fn does not exist or is not readable";
+            next FILENAME;
+         }
+      }
+      push @final_filenames, $fn;
+   }
+
+   if ( !@filenames ) {
+      push @final_filenames, '-';
+      MKDEBUG && _d('Auto-adding "-" to the list of filenames');
+   }
+
+   MKDEBUG && _d('Final filenames:', @final_filenames);
+   return sub {
+      while ( @final_filenames ) {
+         my $fn = shift @final_filenames;
+         MKDEBUG && _d('Filename:', $fn);
+         if ( $fn eq '-' ) { # Magical STDIN filename.
+            return (*STDIN, undef, undef);
+         }
+         open my $fh, '<', $fn or warn "Cannot open $fn: $OS_ERROR";
+         if ( $fh ) {
+            return ( $fh, $fn, -s $fn );
+         }
+      }
+      return (); # Avoids $f being set to 0 in list context.
+   };
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End FileIterator package
 # ###########################################################################
 
 # ###########################################################################
@@ -1579,12 +2198,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my $o = new OptionParser(
-      strict      => 0,
-      prompt      => '[OPTION...] FILE',
-      description => q{parses and analyzes psuedo slow log files to determine }
-                   . q{which tables each query reads from and writes to. }
-   );
+   my $o = new OptionParser();
    $o->get_specs();
    $o->get_opts();
 
@@ -1602,9 +2216,18 @@ sub main {
    # ########################################################################
    my @callbacks;
 
+   # Read an event (query/statement) from the input.
+   my $parser = new SlowLogParser();
+   push @callbacks, sub {
+      my ( $event, %args ) = @_;
+      MKDEBUG && _d('callback: parse log file');
+      return $parser->parse_event(%args);
+   };
+
    # Split the statement into its sub-statements.
    push @callbacks, sub {
       my ( $event ) = @_;
+      MKDEBUG && _d('callback: split query');
       my $arg = $event->{arg};
       return unless defined $arg;
       $event->{statements}  = [ $qp->split($arg) ];
@@ -1615,6 +2238,7 @@ sub main {
    # table is read (SELECT) or written to (anything not-SELECT).
    push @callbacks, sub {
       my ( $event ) = @_;
+      MKDEBUG && _d('callback: get tables');
       my $statements = $event->{statements};
       return unless $statements;
 
@@ -1641,61 +2265,71 @@ sub main {
    };
 
    # ########################################################################
-   # Create the run_func.
-   # ########################################################################
-   if ( @ARGV == 0 ) {
-      push @ARGV, '-'; # Magical STDIN filename.
-   }
-
-   # Set up the parser and miscellaneous options to it.
-   my $misc   = { oktorun => \$oktorun };
-   my $parser = new SlowLogParser();
-
-   # TODO: carry the last db and ts values forward if they're undefined
-   # now.  Do that by unshifting a new callback onto the front of @callbacks.
-   my $fh;
-   my $run_func = sub {
-      if ( !$fh ) {
-         my $file = shift @ARGV or return;
-         if ( $file eq '-' ) {
-            $fh = *STDIN;
-         }
-         else {
-            open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
-         }
-      }
-
-      my $events;
-      $events = $parser->parse_event($fh, $misc, @callbacks);
-      if ( !$events ) {
-         close $fh;
-         $fh = undef;
-      }
-      return $events;
-   };
-
-   # ########################################################################
    # Parse the input.
    # ########################################################################
+   my $fi        = new FileIterator();
+   my $next_file = $fi->get_file_itr(@ARGV);
+   my @read_files;
+   my ($fh, $filename, $filesize) = $next_file->();
+   MKDEBUG && _d('Reading', $filename);
+   push @read_files, $filename || "STDIN" if $fh;
+
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
+   INPUT:
+   while ( 
+      $oktorun
+      && ($start == $end || $now < $end)
+      && defined $fh
+   ) {
+      # Create callback to read next event.  Some inputs, like
+      # Processlist, may use something else but most next_event.
+      my $next_event = sub { return <$fh>; };
+      my $tell       = sub { return tell $fh; };
 
-   EVENT:
-   while ( $oktorun && ($start == $end || $now < $end) ) {
-      my $result;
-      eval {
-         $result = $run_func->();
-      };
-      if ( $EVAL_ERROR ) {
-         _d($EVAL_ERROR);
-         last EVENT unless $o->get('continue-on-error');
-      }
-      else {
-         $now = time();
-         last EVENT unless defined $result;
-      }
-   }
+      # Parse and process the events in this input.
+      my $event       = {};
+      my $more_events = 1;
+      my $oktorun_sub = sub { $more_events = $_[0]; };
+      EVENT:
+      while (
+         $oktorun
+         && ($start == $end || $now < $end)
+         && $more_events
+      ) {
+         eval {
+            PIPELINE_PROCESS:
+            foreach my $callback ( @callbacks ) {
+               last unless $oktorun;  # the global oktorun var
+               $event = $callback->(
+                  $event,                # for backwards compatibility
+                  event      => $event,  # new interface
+                  next_event => $next_event,
+                  tell       => $tell,
+                  oktorun    => $oktorun_sub,
+               );
+               last PIPELINE_PROCESS unless $event;
+            }
+            if ( !$more_events ) {
+               MKDEBUG && _d('No more events');
+               close $fh if $fh;
+               $fh = undef; 
+               ($fh, $filename, $filesize) = $next_file->();
+               MKDEBUG && _d('Reading', $filename);
+               if ( $fh ) {
+                  push @read_files, $filename || "STDIN";
+                  $more_events = 1 if $fh;  # more events if more input
+               }
+            }
+         };
+         if ( $EVAL_ERROR ) {
+            _d($EVAL_ERROR);
+            last INPUT unless $o->get('continue-on-error');
+         }
+         $now = time;
+      }  # EVENT
+   } # INPUT
 
    return 0;
 } # End main().
@@ -1742,7 +2376,9 @@ mk-table-access - Parse slow query logs and print tables accessed by queries.
 
 =head1 SYNOPSIS
 
-  mk-table-access FILE
+Usage: mk-table-access [OPTION...] [FILE]
+
+mk-table-access parses slow query logs and print tables accessed by queries.
 
 =head1 RISKS
 
@@ -1757,6 +2393,9 @@ See also L<"BUGS">.
 TODO
 
 =head1 OPTIONS
+
+This tool accepts additional command-line arguments.  Refer to the
+L<"SYNOPSIS"> and usage information for details.
 
 =over
 
