@@ -5453,7 +5453,7 @@ The database to use for the connection.
 
 short form: -d; type: hash
 
-Only get tables and indexes from this comma-separted list of databases.
+Only get tables and indexes from this comma-separated list of databases.
 
 =item --databases-regex
 
@@ -5471,7 +5471,7 @@ Only read mysql options from the given file.  You must give an absolute pathname
 
 type: Hash; default: non-unique
 
-Suggest dropping only these types of unusued indexes.
+Suggest dropping only these types of unused indexes.
 
 By default mk-index-usage will only suggest to drop unused secondary indexes,
 not primary or unique indexes.  You can specify which types of unused indexes
@@ -5688,7 +5688,7 @@ superfluous?  MAGIC_view_unused_index_alternates:
     alt.alternative_to, alt.queries, alt.cnt
  FROM indexes AS i
     INNER JOIN (
-       SELECT db, tbl, alt_idx, GROUP_CONCAT(idx) AS alternative_to,
+       SELECT db, tbl, alt_idx, GROUP_CONCAT(DISTINCT idx) AS alternative_to,
           GROUP_CONCAT(DISTINCT query_id) AS queries, SUM(cnt) AS cnt
        FROM index_alternatives
        GROUP BY db, tbl, alt_idx
@@ -5753,7 +5753,7 @@ Socket file to use for connection.
 
 short form: -t; type: hash
 
-Only get indexes from this comma-separted list of tables.
+Only get indexes from this comma-separated list of tables.
 
 =item --tables-regex
 
