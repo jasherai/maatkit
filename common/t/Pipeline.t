@@ -30,6 +30,7 @@ $pipeline->add(
    process => sub {
       my ( %args ) = @_;
       print "proc1";
+      $oktorun = 0;
       return 0;
    },
 );
@@ -49,7 +50,7 @@ is_deeply(
    {
       process_name => 'proc1',
       exit_status  => 0,
-      oktorun      => 1,
+      oktorun      => 0,
       eval_error   => '',
    },
    "Pipeline terminate as expected"
@@ -110,6 +111,7 @@ $pipeline->add(
    process => sub {
       my ( %args ) = @_;
       print "proc2";
+      $oktorun = 0;
       return 2;
    },
 );
@@ -130,7 +132,7 @@ is_deeply(
       process_name => "proc2",
       exit_status  => 2,
       eval_error   => '',
-      oktorun      => 1,
+      oktorun      => 0,
    },
    "Pipeline terminated after proc2"
 );
@@ -151,7 +153,7 @@ $pipeline->add(
 $pipeline->add(
    name    => 'proc2',
    process => sub {
-      return 2;
+      $oktorun = 0;
    },
 );
 
@@ -180,7 +182,7 @@ $pipeline->add(
       my ($pipeline, $proc_name) = @args{qw(Pipeline process_name)};
       $pipeline->incr_stat(%args, stat=>'foo');
       $pipeline->incr_stat(%args, stat=>'foo');
-      return 1;
+      $oktorun = 0;
    },
 );
 $pipeline->execute(\$oktorun);

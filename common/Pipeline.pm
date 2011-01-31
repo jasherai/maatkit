@@ -71,20 +71,36 @@ sub add {
    return;
 }
 
+# Sub: execute
+#   Execute all pipeline processes until not oktorun.  The oktorun arg
+#   must be a reference.  The pipeline will run until oktorun is false.
+#   The oktorun ref is passed to every pipeline proc so they can completely
+#   terminate pipeline execution.  A proc signals that it wants to restart
+#   execution of the pipeline from the first proc by returning any defined
+#   value.  If a proc both sets oktorun to false and returns a defined
+#   value, this sub will return the proc's retval and other information
+#   to the caller.
+#
+# Parameters:
+#   $oktorun - Scalar ref that indicates it's ok to run when true.
+#   %args    - Arguments passed to each pipeline process.
+#
+# Returns:
+#   Hashref with information about where and why the pipeline terminated.
 sub execute {
    my ( $self, $oktorun, %args ) = @_;
 
    die "Cannot execute pipeline because no process have been added"
       unless scalar @{$self->{procs}};
 
-   die '$oktorun argument must be a reference'
-      if defined $oktorun && !ref $oktorun;
+   die "I need an oktorun argument" unless $oktorun;
+   die '$oktorun argument must be a reference' unless ref $oktorun;
 
    MKDEBUG && _d("Pipeline starting at", time);
    my $instrument  = $self->{instrument};
    my $last_proc   = scalar @{$self->{procs}} - 1;
-   my $exit_status;
-   my $proc_name;
+   my $exit_status;  # exit pipeline early and restart if oktorun is true
+   my $proc_name;    # current/last proc name executed
    EVENT:
    while ( $$oktorun ) {
       eval {
@@ -105,8 +121,10 @@ sub execute {
                $self->{instrument}->{$proc_name}->{time} += $call_t;
                $self->{instrument}->{$proc_name}->{count}++;
             }
-            # Cannot exit eval with last.
-            last PIPELINE_PROCESS if defined $exit_status;
+            if ( defined $exit_status ) {
+               MKDEBUG && _d("Pipeline exiting early after", $proc_name);
+               last PIPELINE_PROCESS;
+            }
          }
       };
       if ( $EVAL_ERROR ) {
@@ -114,7 +132,6 @@ sub execute {
          $self->{stats}->{$proc_name}->{error}++;
          last EVENT unless $self->{contine_on_error};
       }
-      last EVENT if defined $exit_status;
    }
 
    my $retval = {
