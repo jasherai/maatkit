@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Officially deprecated this tool and noted that in the documentation.
+
 2011-01-06: version 1.0.27
 
    * Made performance_schema an always ignored database (issue 1193).

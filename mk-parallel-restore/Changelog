@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Officially deprecated this tool and noted that in the documentation.
+
 2010-06-08: version 1.0.23
 
    * Connections did not preserve server SQL modes (issue 801).

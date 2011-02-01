@@ -3351,9 +3351,14 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-parallel-restore - Load files into MySQL in parallel.
+mk-parallel-restore - (DEPRECATED) Load files into MySQL in parallel.
 
 =head1 SYNOPSIS
+
+This tool is deprecated because after several complete redesigns, we concluded
+that Perl is the wrong technology for this task.  Read L<"RISKS"> before you use
+it, please.  It remains useful for some people who we know aren't depending on
+it in production, and therefore we are not removing it from the distribution.
 
 Usage: mk-parallel-restore [OPTION...] [DSN] PATH [PATH...]
 
