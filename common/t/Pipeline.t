@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 12;
 
 use Time::HiRes qw(usleep);
 
@@ -19,6 +19,9 @@ use Pipeline;
 my $output  = '';
 my $oktorun = 1;
 my $retval;
+my %args = (
+   oktorun => \$oktorun,
+);
 
 # #############################################################################
 # A simple run stopped by a proc returning and exit status.
@@ -28,15 +31,14 @@ my $pipeline = new Pipeline();
 $pipeline->add(
    name    => 'proc1',
    process => sub {
-      my ( %args ) = @_;
       print "proc1";
       $oktorun = 0;
-      return 0;
+      return;
    },
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(\$oktorun); },
+   sub { $retval = $pipeline->execute(%args); },
 );
 
 is(
@@ -49,7 +51,6 @@ is_deeply(
    $retval,
    {
       process_name => 'proc1',
-      exit_status  => 0,
       oktorun      => 0,
       eval_error   => '',
    },
@@ -61,13 +62,12 @@ is_deeply(
 # #############################################################################
 
 $oktorun = 1;
-my @exit = (1, undef);
+my @exit = (undef, 1);
 
 $pipeline = new Pipeline();
 $pipeline->add(
    name    => 'proc1',
    process => sub {
-      my ( %args ) = @_;
       print "proc1";
       return shift @exit;
    },
@@ -75,15 +75,14 @@ $pipeline->add(
 $pipeline->add(
    name    => 'proc2',
    process => sub {
-      my ( %args ) = @_;
       print "proc2";
       $oktorun = 0;
-      return 0;
+      return;
    },
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(\$oktorun); },
+   sub { $retval = $pipeline->execute(%args); },
 );
 
 is(
@@ -101,14 +100,13 @@ $pipeline = new Pipeline();
 $pipeline->add(
    name    => 'proc1',
    process => sub {
-      my ( %args ) = @_;
       print "proc1";
       return 0;
    },
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(\$oktorun); },
+   sub { $retval = $pipeline->execute(%args); },
 );
 
 is(
@@ -121,7 +119,6 @@ is_deeply(
    $retval,
    {
       process_name => undef,
-      exit_status  => undef,
       eval_error   => '',
       oktorun      => 0,
    },
@@ -132,27 +129,33 @@ is_deeply(
 # Run multiple procs.
 # #############################################################################
 
-$oktorun = 1;
+my $pargs = {};
+$args{pipeline_data} = $pargs;
+
+$oktorun  = 1;
 $pipeline = new Pipeline();
 $pipeline->add(
    name    => 'proc1',
    process => sub {
+      my ( $args ) = @_;
+      $args->{foo} .= "foo";
       print "proc1";
-      return;
+      return $args;
    },
 );
 $pipeline->add(
    name    => 'proc2',
    process => sub {
-      my ( %args ) = @_;
+      my ( $args ) = @_;
+      $args->{foo} .= "bar";
       print "proc2";
       $oktorun = 0;
-      return 2;
+      return;
    },
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(\$oktorun); },
+   sub { $retval = $pipeline->execute(%args); },
 );
 
 is(
@@ -165,13 +168,17 @@ is_deeply(
    $retval,
    {
       process_name => "proc2",
-      exit_status  => 2,
       eval_error   => '',
       oktorun      => 0,
    },
    "Pipeline terminated after proc2"
 );
 
+is(
+   $pargs->{foo},
+   "foobar",
+   "Pipeline passed data hashref around"
+);
 
 # #############################################################################
 # Instrumentation.
@@ -182,7 +189,7 @@ $pipeline->add(
    name    => 'proc1',
    process => sub {
       usleep(500000);
-      return;
+      return 1;
    },
 );
 $pipeline->add(
@@ -192,7 +199,7 @@ $pipeline->add(
    },
 );
 
-$pipeline->execute(\$oktorun);
+$pipeline->execute(%args);
 
 my $inst = $pipeline->instrumentation();
 ok(
@@ -206,42 +213,10 @@ ok(
 );
 
 # #############################################################################
-# Procs should be able to incr stats.
-# #############################################################################
-$oktorun = 1;
-$pipeline = new Pipeline(instrument => 1);
-$pipeline->add(
-   name    => 'proc1',
-   process => sub {
-      my ( %args ) = @_;
-      my ($pipeline, $proc_name) = @args{qw(Pipeline process_name)};
-      $pipeline->incr_stat(%args, stat=>'foo');
-      $pipeline->incr_stat(%args, stat=>'foo');
-      $oktorun = 0;
-   },
-);
-$pipeline->execute(\$oktorun);
-
-my $stats = $pipeline->stats();
-
-is(
-   $stats->{proc1}->{foo},
-   2,
-   "Proc can increment stats"
-);
-
-
-# #############################################################################
 # Reset the previous ^ pipeline.
 # #############################################################################
 $pipeline->reset();
 $inst  = $pipeline->instrumentation();
-$stats = $pipeline->stats();
-is(
-   $stats->{proc1}->{foo},
-   undef,
-   "Reset stats"
-);
 is(
    $inst->{proc1}->{calls},
    0,

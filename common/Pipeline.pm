@@ -80,91 +80,74 @@ sub add {
 #   must be a reference.  The pipeline will run until oktorun is false.
 #   The oktorun ref is passed to every pipeline proc so they can completely
 #   terminate pipeline execution.  A proc signals that it wants to restart
-#   execution of the pipeline from the first proc by returning any defined
-#   value.  If a proc both sets oktorun to false and returns a defined
-#   value, this sub will return the proc's retval and other information
-#   to the caller.
+#   execution of the pipeline from the first proc by returning undef.
+#   If a proc both sets oktorun to false and returns undef, this sub will
+#   return with some info about where the pipeline stopped.
 #
 # Parameters:
-#   $oktorun - Scalar ref that indicates it's ok to run when true.
 #   %args    - Arguments passed to each pipeline process.
+#
+# Required Arguments:
+#   oktorun - Scalar ref that indicates it's ok to run when true.
+#
+# Optional Arguments:
+#   pipeline_data - Hashref passed through all processes.
 #
 # Returns:
 #   Hashref with information about where and why the pipeline terminated.
 sub execute {
-   my ( $self, $oktorun, %args ) = @_;
+   my ( $self, %args ) = @_;
 
    die "Cannot execute pipeline because no process have been added"
       unless scalar @{$self->{procs}};
 
+   my $oktorun = $args{oktorun};
    die "I need an oktorun argument" unless $oktorun;
    die '$oktorun argument must be a reference' unless ref $oktorun;
+
+   my $pipeline_data = $args{pipeline_data} || {};
+   $pipeline_data->{oktorun} = $oktorun;
 
    MKDEBUG && _d("Pipeline starting at", time);
    my $instrument  = $self->{instrument};
    my $last_proc   = scalar @{$self->{procs}} - 1;
-   my $exit_status;  # exit pipeline early and restart if oktorun is true
    my $proc_name;    # current/last proc name executed
    EVENT:
    while ( $$oktorun ) {
       eval {
          PIPELINE_PROCESS:
          for my $procno ( 0..$last_proc ) {
-            # last PIPELINE_PROCESS unless $$oktorun;
-            my $call_start = $instrument ? time : 0;
             $proc_name     = $self->{names}->[$procno];
-            $exit_status   = $self->{procs}->[$procno]->(
-               %args,
-               Pipeline     => $self,
-               process_name => $proc_name,
-               oktorun      => $oktorun,
-            );
+            my $call_start = $instrument ? time : 0;
+
+            # Execute this pipeline process.
+            $pipeline_data  = $self->{procs}->[$procno]->($pipeline_data);
+
             if ( $instrument ) {
                my $call_end = time;
                my $call_t   = $call_end - $call_start;
                $self->{instrument}->{$proc_name}->{time} += $call_t;
                $self->{instrument}->{$proc_name}->{count}++;
             }
-            if ( defined $exit_status ) {
-               MKDEBUG && _d("Pipeline exiting early after", $proc_name);
+            if ( !$pipeline_data ) {
+               MKDEBUG && _d("Pipeline restarting early after", $proc_name);
                last PIPELINE_PROCESS;
             }
          }
       };
       if ( $EVAL_ERROR ) {
          warn "Pipeline process $proc_name caused an error: $EVAL_ERROR";
-         $self->{stats}->{$proc_name}->{error}++;
          last EVENT unless $self->{contine_on_error};
       }
    }
 
    my $retval = {
       process_name => $proc_name,
-      exit_status  => $exit_status,
       eval_error   => $EVAL_ERROR,
       oktorun      => $$oktorun,
    };
    MKDEBUG && _d("Pipeline stopped at", time, Dumper($retval));
    return $retval;
-}
-
-sub incr_stat {
-   my ( $self, %args ) = @_;
-   my @required_args = qw(process_name stat);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless defined $args{$arg};
-   }
-   my ($proc_name, $stat) = @args{@required_args};
-   my $amount             = $args{amount} || 1;
-
-   $self->{stats}->{$proc_name}->{$stat} += $amount;
-
-   return;
-}
-
-sub stats {
-   my ( $self ) = @_;
-   return $self->{stats};
 }
 
 sub instrumentation {
@@ -175,9 +158,6 @@ sub instrumentation {
 sub reset {
    my ( $self ) = @_;
    foreach my $proc_name ( @{$self->{names}} ) {
-      if ( exists $self->{stats}->{$proc_name} ) {
-         $self->{stats}->{$proc_name} = {};
-      }
       if ( exists $self->{instrument}->{$proc_name} ) {
          $self->{instrument}->{$proc_name}->{calls} = 0;
          $self->{instrument}->{$proc_name}->{time}  = 0;
