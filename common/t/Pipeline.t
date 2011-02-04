@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 use Time::HiRes qw(usleep);
 
@@ -56,6 +56,41 @@ is_deeply(
    "Pipeline terminate as expected"
 );
 
+# #############################################################################
+# Restarting the pipeline.
+# #############################################################################
+
+$oktorun = 1;
+my @exit = (1, undef);
+
+$pipeline = new Pipeline();
+$pipeline->add(
+   name    => 'proc1',
+   process => sub {
+      my ( %args ) = @_;
+      print "proc1";
+      return shift @exit;
+   },
+);
+$pipeline->add(
+   name    => 'proc2',
+   process => sub {
+      my ( %args ) = @_;
+      print "proc2";
+      $oktorun = 0;
+      return 0;
+   },
+);
+
+$output = output(
+   sub { $retval = $pipeline->execute(\$oktorun); },
+);
+
+is(
+   $output,
+   "proc1proc1proc2",
+   "Pipeline restarted"
+);
 
 # #############################################################################
 # oktorun to control the loop.
