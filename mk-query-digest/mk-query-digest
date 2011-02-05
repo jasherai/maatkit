@@ -4800,7 +4800,7 @@ sub aggregate {
    return unless defined $group_by;
 
    $self->{n_events}++;
-   MKDEBUG && _d('Event', $self->{n_events}, $event->{ts});
+   MKDEBUG && _d('Event', $self->{n_events});
 
    return $self->{unrolled_loops}->($self, $event, $group_by)
       if $self->{unrolled_loops};
