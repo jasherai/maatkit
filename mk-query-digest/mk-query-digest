@@ -4800,7 +4800,7 @@ sub aggregate {
    return unless defined $group_by;
 
    $self->{n_events}++;
-   MKDEBUG && _d('Event', $self->{n_events});
+   MKDEBUG && _d('Event', $self->{n_events}, $event->{ts});
 
    return $self->{unrolled_loops}->($self, $event, $group_by)
       if $self->{unrolled_loops};
@@ -11967,10 +11967,13 @@ sub main {
       $orderby[$i] ||= $default_orderby;
    }
    $o->set('order-by', \@orderby);
-      
+
+
+   my $run_time_mode = lc $o->get('run-time-mode');
+   my $run_time_interval; 
    eval {
-      verify_run_time(
-         run_mode => $o->get('run-time-mode'),
+      $run_time_interval = verify_run_time(
+         run_mode => $run_time_mode,
          run_time => $o->get('run-time'),
       );
    };
@@ -12406,7 +12409,6 @@ sub main {
 
    { # runtime
       my $now_callback;
-      my $run_time_mode = lc $o->get('run-time-mode');
       if ( $run_time_mode eq 'clock' ) {
          $now_callback = sub { return time; };
       }
@@ -12419,6 +12421,9 @@ sub main {
             return unix_timestamp(parse_timestamp($event->{ts}));
          };
       }
+      else {
+         $now_callback = sub { return; };
+      }
       $runtime = new Runtime(
          now     => $now_callback,
          runtime => $o->get('run-time'),
@@ -12428,7 +12433,56 @@ sub main {
          name    => 'runtime',
          process => sub {
             my ( $args ) = @_;
-            $args->{time_left} = $runtime->time_left(event => $args->{event});
+            if ( $run_time_mode eq 'interval' ) {
+               my $event = $args->{event};
+               return $args unless $event && $event->{ts};
+
+               my $ts = $args->{unix_ts}
+                  = unix_timestamp(parse_timestamp($event->{ts}));
+
+               if ( !$args->{next_ts_interval} ) {
+                  # We need to figure out what interval we're in and what
+                  # interval is next.  So first we need to parse the ts.
+                  if ( my($y, $m, $d, $h, $i, $s)
+                        = $args->{event}->{ts} =~ m/^$mysql_ts$/ ) {
+                     my $rt = $o->get('run-time');
+                     if ( $run_time_interval == 60 ) {
+                        MKDEBUG && _d("Run-time interval in seconds");
+                        my $this_minute = unix_timestamp(parse_timestamp(
+                           "$y$m$d $h:$i:00"));
+                        do { $this_minute += $rt } until $this_minute > $ts;
+                        $args->{next_ts_interval} = $this_minute;
+                     }
+                     elsif ( $run_time_interval == 3600 ) {
+                        MKDEBUG && _d("Run-time interval in minutes");
+                        my $this_hour = unix_timestamp(parse_timestamp(
+                           "$y$m$d $h:00:00"));
+                        do { $this_hour += $rt } until $this_hour > $ts;
+                        $args->{next_ts_interval} = $this_hour;
+                     }
+                     elsif ( $run_time_interval == 86400 ) {
+                        MKDEBUG && _d("Run-time interval in days");
+                        my $this_day = unix_timestamp(parse_timestamp(
+                           "$y$m$d 00:00:00"));
+                        $args->{next_ts_interval} = $this_day + $rt;
+                     }
+                     else {
+                        die "Invalid run-time interval: $run_time_interval";
+                     }
+                     MKDEBUG && _d("First ts interval:",
+                        $args->{next_ts_interval});
+                  }
+                  else {
+                     MKDEBUG && _d("Failed to parse MySQL ts:",
+                        $args->{event}->{ts});
+                  }
+               }
+            }
+            else {
+               # Clock and event run-time modes need to check the time.
+               $args->{time_left} = $runtime->time_left(event=>$args->{event});
+            }
+
             return $args;
          },
       );
@@ -12528,11 +12582,27 @@ sub main {
                $args->{iters_left} = $max_iters - $args->{iter} if $max_iters;
             }
 
-            # A report is triggered by either 1) elapsed runtime (per-iter)
-            # or 2) no more events (per-input).
+            my $report    = 0;
             my $time_left = $args->{time_left};
-            if ( (defined $time_left && $time_left <= 0)
-                 || !$args->{more_events} ) {
+            if ( !$args->{more_events}
+                 || defined $time_left && $time_left <= 0 ) {
+               MKDEBUG && _d("Runtime elapsed or no more events, reporting");
+               $report = 1;
+            }
+            elsif ( $run_time_mode eq 'interval'
+                    && $args->{next_ts_interval}
+                    && $args->{unix_ts} >= $args->{next_ts_interval} ) {
+               MKDEBUG && _d("Event is in the next interval, reporting");
+
+               my $rt = $o->get('run-time');
+               do {
+                  $args->{next_ts_interval} += $rt;
+               } until $args->{next_ts_interval} >= $args->{unix_ts};
+
+               $report = 1;
+            }
+
+            if ( $report ) {
                MKDEBUG && _d("Iteration", $iter, "stopped, reporting");
 
                # TODO: If reporting is slow (>1s) then we could fork
@@ -15092,6 +15162,16 @@ latter case, mk-query-digest will run forever, producing reports every
 STDIN and the processlist.  For fixed inputs, like log files, the latter
 example produces multiple reports by dividing the log into 30 minutes
 intervals based on timestamps.
+
+Intervals are calculated from the first timestamp seen in the log.
+For example, if the first timestamp is C<12:10:30> and the interval is
+30 minutes, then the first interval ends at C<12:29:59>.  Therefore,
+the interval is C<12:00:00> to C<12:29:59>, so the first event at
+C<12:10:30> is included in the first interval.  When a new timestamp
+exceeds the interval, a report is printed, and the next interval
+is calculated based on the log timestamp that ended the interval.
+If, to extend the example, the new timestamp is C<15:00:09>, the next
+interval ends at C<15:29:59>.
 
 =back
 

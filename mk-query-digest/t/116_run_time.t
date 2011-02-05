@@ -26,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 6;
+   plan tests => 9;
 }
 
 my @args;
@@ -55,10 +55,10 @@ diag(`rm -rf /tmp/mk-query-digest.log`);
 # #############################################################################
 # Issue 1150: Make mk-query-digest --run-time behavior more flexible
 # #############################################################################
+@args = ('--report-format', 'query_report,profile', '--limit', '10');
 
 # --run-time-mode event without a --run-time should result in the same output
 # as --run-time-mode clock because the log ts will be effectively ignored.
-
 my $before = output(
    sub { mk_query_digest::main("$trunk/common/t/samples/slow033.txt",
       '--report-format', 'query_report,profile')
@@ -107,6 +107,41 @@ ok(
       "mk-query-digest/t/samples/slow033-rtm-event-25h.txt"
    ),
    "Run-time mode event 25h"
+);
+
+# Run-time interval.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode interval --run-time 1d)) },
+      "mk-query-digest/t/samples/slow033-rtm-interval-1d.txt"
+   ),
+   "Run-time mode interval 1d"
+);
+
+# This correctly splits these two events:
+#   Time: 090727 11:19:30 # User@Host: [SQL_SLAVE] @  []
+#   Time: 090727 11:19:31 # User@Host: [SQL_SLAVE] @  []
+# The first belongs to the 0-29s interval, the second to the
+# 30-60s interval.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode interval --run-time 30)) },
+      "mk-query-digest/t/samples/slow033-rtm-interval-30s.txt"
+   ),
+   "Run-time mode interval 30s"
+);
+
+# No, contrary to the above, those two events are together because they're
+# within the same 30m interval.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode interval --run-time 30m)) },
+      "mk-query-digest/t/samples/slow033-rtm-interval-30m.txt",
+   ),
+   "Run-time mode interval 30m"
 );
 
 # #############################################################################
