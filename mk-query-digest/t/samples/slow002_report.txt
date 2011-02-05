@@ -16,7 +16,6 @@
 # Boolean:
 # Full scan    100% yes,   0% no
 # String:
-# arg CRC      632913816
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -64,7 +63,6 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      3615133974
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -109,7 +107,6 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      874569052
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -153,7 +150,6 @@ select     biz = '91848182522' from foo.bar \G
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      207465226
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -198,7 +194,6 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      1651704533
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -239,7 +234,6 @@ VALUES ('211', '18')\G
 # queue wait     0       0       0       0       0       0       0       0
 # rec lock wai   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      1229664523
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -274,7 +268,6 @@ VALUES ('', 'Exact')\G
 # Query size     0       5       5       5       5       5       0       5
 # InnoDB:
 # String:
-# arg CRC      2379306917
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution

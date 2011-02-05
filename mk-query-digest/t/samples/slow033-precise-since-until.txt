@@ -13,7 +13,6 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    66      34      17      17      17      17       0      17
 # String:
-# arg CRC      2166413585
 # Databases    db2
 # Hosts
 # Users        [SQL_SLAVE]
@@ -47,7 +46,6 @@ SELECT * FROM bar\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    33      17      17      17      17      17       0      17
 # String:
-# arg CRC      2074882202
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution

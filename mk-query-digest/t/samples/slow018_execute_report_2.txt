@@ -5,7 +5,6 @@
 # Query size   100      44      44      44      44      44       0      44
 # Exec diff ti 100       0       0       0       0       0       0       0
 # String:
-# arg CRC      109652699
 # Hosts        localhost
 # Users        root
 # Query_time distribution

@@ -13,7 +13,6 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    66      68      17      17      17      17       0      17
 # String:
-# arg CRC      2074882202
 # Databases    db1
 # Hosts
 # Users        [SQL_SLAVE]
@@ -47,7 +46,6 @@ SELECT * FROM foo\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    33      34      17      17      17      17       0      17
 # String:
-# arg CRC      2166413585
 # Databases    db1 (1/50%), db2 (1/50%)
 # Hosts
 # Users        [SQL_SLAVE]

@@ -14,7 +14,6 @@
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size   100       5       5       5       5       5       0       5
 # String:
-# arg CRC      2379306917
 # Hosts
 # Users        [SQL_SLAVE]
 # Query_time distribution

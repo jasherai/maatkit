@@ -15,7 +15,6 @@
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size    50      69      23      23      23      23       0      23
 # String:
-# arg CRC      3656141476
 # Databases    bar
 # Hosts
 # Users        [SQL_SLAVE]

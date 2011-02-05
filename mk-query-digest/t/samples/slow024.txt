@@ -13,7 +13,6 @@
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    50 334.70k 167.33k 167.37k 167.35k 167.37k   31.11 167.35k
 # String:
-# arg CRC      2363546562 (1/50%), 4211569854 (1/50%)
 # Hosts        localhost
 # Users        root
 # Query_time distribution
@@ -45,7 +44,6 @@ INSERT INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted ...*/O
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    24 167.33k 167.33k 167.33k 167.33k 167.33k       0 167.33k
 # String:
-# arg CRC      1948135069
 # Hosts        localhost
 # Users        root
 # Query_time distribution
@@ -77,7 +75,6 @@ INSERT IGNORE INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    24 167.33k 167.33k 167.33k 167.33k 167.33k       0 167.33k
 # String:
-# arg CRC      282283960
 # Hosts        localhost
 # Users        root
 # Query_time distribution

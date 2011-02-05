@@ -19,7 +19,6 @@
 # Full scan    100% yes,   0% no
 # Tmp table    100% yes,   0% no
 # String:
-# arg CRC      909752712
 # Databases    db3
 # Query_time distribution
 #   1us
@@ -56,7 +55,6 @@ select * from  forest WHERE animal = 'dead'\G
 # Full scan    100% yes,   0% no
 # QC Hit        25% yes,  75% no
 # String:
-# arg CRC      2074882202
 # Databases    db1 (2/50%), db3 (2/50%)
 # Query_time distribution
 #   1us
@@ -90,7 +88,6 @@ SELECT * FROM foo\G
 # Boolean:
 # Full scan    100% yes,   0% no
 # String:
-# arg CRC      1693623582 (1/50%), 576380625 (1/50%)
 # Databases    db2
 # Query_time distribution
 #   1us
@@ -121,7 +118,6 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 # Merge passes   0       0       0       0       0       0       0       0
 # Query size    12      31      31      31      31      31       0      31
 # String:
-# arg CRC      1866105484
 # Databases    db1
 # Query_time distribution
 #   1us
@@ -157,7 +153,6 @@ SELECT id FROM tbl WHERE id = 1\G
 # Full scan    100% yes,   0% no
 # Tmp table    100% yes,   0% no
 # String:
-# arg CRC      251595775
 # Databases    db1
 # Query_time distribution
 #   1us

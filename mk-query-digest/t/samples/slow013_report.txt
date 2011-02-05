@@ -13,7 +13,6 @@
 # Rows examine 100     226     226     226     226     226       0     226
 # Query size    14      11      11      11      11      11       0      11
 # String:
-# arg CRC      2902016305
 # Databases    test
 # Hosts
 # Users        mytopuser
@@ -43,7 +42,6 @@ SHOW STATUS\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    42      32      16      16      16      16       0      16
 # String:
-# arg CRC      2529197116 (1/50%), 3787934890 (1/50%)
 # Databases    abc
 # Hosts
 # Users        foo_app
@@ -73,7 +71,6 @@ SET autocommit=0\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size     7       6       6       6       6       6       0       6
 # String:
-# arg CRC      1322528429
 # Databases    abc
 # Hosts
 # Users        foo_app
@@ -103,7 +100,6 @@ commit\G
 # Rows examine   0       0       0       0       0       0       0       0
 # Query size    35      27      27      27      27      27       0      27
 # String:
-# arg CRC      3954282531
 # Databases    test
 # Hosts
 # Users        mytopuser
