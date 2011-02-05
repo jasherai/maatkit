@@ -26,8 +26,10 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 3;
+   plan tests => 6;
 }
+
+my @args;
 
 # #############################################################################
 # Issue 361: Add a --runfor (or something) option to mk-query-digest
@@ -50,7 +52,6 @@ ok(
 
 diag(`rm -rf /tmp/mk-query-digest.log`);
 
-
 # #############################################################################
 # Issue 1150: Make mk-query-digest --run-time behavior more flexible
 # #############################################################################
@@ -64,9 +65,10 @@ my $before = output(
    },
 );
 
+@args = ('--report-format', 'query_report,profile', '--limit', '10');
+
 my $after = output(
-   sub { mk_query_digest::main("$trunk/common/t/samples/slow033.txt",
-      '--report-format', 'query_report,profile',
+   sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
       qw(--run-time-mode event))
    },
 );
@@ -75,6 +77,36 @@ is(
    $before,
    $after,
    "Event run time mode doesn't change analysis"
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode event --run-time 1h)) },
+      "mk-query-digest/t/samples/slow033-rtm-event-1h.txt"
+   ),
+   "Run-time mode event 1h"
+);
+
+# This is correct because the next event is 1d and 1m after the first.
+# So runtime 1d should not include it.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode event --run-time 1d)) },
+      "mk-query-digest/t/samples/slow033-rtm-event-1h.txt"
+   ),
+   "Run-time mode event 1d"
+);
+
+# Now we'll get the 2nd event but not the 3rd.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode event --run-time 25h)) },
+      "mk-query-digest/t/samples/slow033-rtm-event-25h.txt"
+   ),
+   "Run-time mode event 25h"
 );
 
 # #############################################################################
