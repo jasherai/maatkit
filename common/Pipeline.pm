@@ -51,8 +51,12 @@ sub new {
       # private/internal vars
       procs      => [],  # coderefs for pipeline processes
       names      => [],  # names for each ^ pipeline proc
-      instrument => {},  # instrumenation values, keyed on proc index in procs
-      stats      => {},  # stats procs may save, keyed on proc name
+      instrument => {    # instrumenation values, keyed on proc index in procs
+         Pipeline => {
+            time  => 0,
+            calls => 0,
+         },
+      },
    };
    return bless $self, $class;
 }
@@ -73,6 +77,11 @@ sub add {
    MKDEBUG && _d("Added pipeline process", $name);
 
    return;
+}
+
+sub processes {
+   my ( $self ) = @_;
+   return @{$self->{names}};
 }
 
 # Sub: execute
@@ -128,6 +137,8 @@ sub execute {
                my $call_t   = $call_end - $call_start;
                $self->{instrument}->{$proc_name}->{time} += $call_t;
                $self->{instrument}->{$proc_name}->{count}++;
+               $self->{instrument}->{Pipeline}->{time} += $call_t;
+               $self->{instrument}->{Pipeline}->{count}++;
             }
             if ( !$pipeline_data ) {
                MKDEBUG && _d("Pipeline restarting early after", $proc_name);
@@ -163,6 +174,8 @@ sub reset {
          $self->{instrument}->{$proc_name}->{time}  = 0;
       }
    }
+   $self->{instrument}->{Pipeline}->{calls} = 0;
+   $self->{instrument}->{Pipeline}->{time}  = 0;
    return;
 }
 
