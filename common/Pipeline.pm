@@ -49,9 +49,9 @@ sub new {
       %args,
 
       # private/internal vars
-      procs      => [],  # coderefs for pipeline processes
-      names      => [],  # names for each ^ pipeline proc
-      instrument => {    # instrumenation values, keyed on proc index in procs
+      procs           => [],  # coderefs for pipeline processes
+      names           => [],  # names for each ^ pipeline proc
+      instrumentation => {    # keyed on proc index in procs
          Pipeline => {
             time  => 0,
             calls => 0,
@@ -72,7 +72,7 @@ sub add {
    push @{$self->{procs}}, $process;
    push @{$self->{names}}, $name;
    if ( $self->{instrument} ) {
-      $self->{instrument}->{$name} = { time => 0, calls => 0 };
+      $self->{instrumentation}->{$name} = { time => 0, calls => 0 };
    }
    MKDEBUG && _d("Added pipeline process", $name);
 
@@ -136,10 +136,10 @@ sub execute {
             if ( $instrument ) {
                my $call_end = time;
                my $call_t   = $call_end - $call_start;
-               $self->{instrument}->{$proc_name}->{time} += $call_t;
-               $self->{instrument}->{$proc_name}->{count}++;
-               $self->{instrument}->{Pipeline}->{time} += $call_t;
-               $self->{instrument}->{Pipeline}->{count}++;
+               $self->{instrumentation}->{$proc_name}->{time} += $call_t;
+               $self->{instrumentation}->{$proc_name}->{count}++;
+               $self->{instrumentation}->{Pipeline}->{time} += $call_t;
+               $self->{instrumentation}->{Pipeline}->{count}++;
             }
             if ( !$output ) {
                MKDEBUG && _d("Pipeline restarting early after", $proc_name);
@@ -164,19 +164,19 @@ sub execute {
 
 sub instrumentation {
    my ( $self ) = @_;
-   return $self->{instrument};
+   return $self->{instrumentation};
 }
 
 sub reset {
    my ( $self ) = @_;
    foreach my $proc_name ( @{$self->{names}} ) {
-      if ( exists $self->{instrument}->{$proc_name} ) {
-         $self->{instrument}->{$proc_name}->{calls} = 0;
-         $self->{instrument}->{$proc_name}->{time}  = 0;
+      if ( exists $self->{instrumentation}->{$proc_name} ) {
+         $self->{instrumentation}->{$proc_name}->{calls} = 0;
+         $self->{instrumentation}->{$proc_name}->{time}  = 0;
       }
    }
-   $self->{instrument}->{Pipeline}->{calls} = 0;
-   $self->{instrument}->{Pipeline}->{time}  = 0;
+   $self->{instrumentation}->{Pipeline}->{calls} = 0;
+   $self->{instrumentation}->{Pipeline}->{time}  = 0;
    return;
 }
 
