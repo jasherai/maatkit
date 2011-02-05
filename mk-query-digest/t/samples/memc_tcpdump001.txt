@@ -12,7 +12,6 @@
 # Boolean:
 # Memc set     100% yes,   0% no
 # String:
-# arg CRC      2846934917
 # Hosts        127.0.0.1
 # key print    my_key
 # Query_time distribution

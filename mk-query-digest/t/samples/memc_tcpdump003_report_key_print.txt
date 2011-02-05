@@ -17,7 +17,6 @@
 # Memc decr     50% yes,  50% no
 # Memc incr     50% yes,  50% no
 # String:
-# arg CRC      2845720735 (1/50%), 815530420 (1/50%)
 # Hosts        127.0.0.1
 # Query_time distribution
 #   1us

@@ -16,7 +16,6 @@
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    19      60      30      30      30      30       0      30
 # String:
-# arg CRC      2151770939
 # Databases    db1
 # Hosts        localhost
 # Users        root
@@ -42,7 +41,6 @@ administrator command: Connect\G
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    17      54      27      27      27      27       0      27
 # String:
-# arg CRC      3954282531
 # Databases    db1 (1/50%), my_webstat... (1/50%)
 # Query_time distribution
 #   1us
@@ -66,7 +64,6 @@ administrator command: Quit\G
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    14      47      47      47      47      47       0      47
 # String:
-# arg CRC      3419461366
 # Databases    my_webstats
 # Query_time distribution
 #   1us
@@ -94,7 +91,6 @@ SELECT DISTINCT col FROM tbl WHERE foo=20061219\G
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    39     124     124     124     124     124       0     124
 # String:
-# arg CRC      2515375876
 # Databases    db1
 # Query_time distribution
 #   1us
@@ -125,7 +121,6 @@ SELECT foo
 # Exec time      0       0       0       0       0       0       0       0
 # Query size     9      30      30      30      30      30       0      30
 # String:
-# arg CRC      29877484
 # Databases    my_webstats
 # Query_time distribution
 #   1us

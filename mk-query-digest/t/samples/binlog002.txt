@@ -32,8 +32,6 @@
 # @@session.sq   0       0       0       0       0       0       0       0
 # @@session.un 100       1       1       1       1       1       0       1
 # error code     0       0       0       0       0       0       0       0
-# String:
-# arg CRC      41017991
 # Query_time distribution
 #   1us
 #  10us
@@ -58,7 +56,6 @@ create database d\G
 # Query size    14      24      24      24      24      24       0      24
 # error code     0       0       0       0       0       0       0       0
 # String:
-# arg CRC      2398972914
 # Databases    d
 # Query_time distribution
 #   1us
@@ -87,7 +84,6 @@ create table foo (i int)\G
 # Query size    15      25      25      25      25      25       0      25
 # error code     0       0       0       0       0       0       0       0
 # String:
-# arg CRC      1210348776
 # Databases    d
 # Query_time distribution
 #   1us

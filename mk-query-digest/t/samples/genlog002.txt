@@ -16,8 +16,6 @@
 # Count         50       1
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    10     106     106     106     106     106       0     106
-# String:
-# arg CRC      3181383162
 # Query_time distribution
 #   1us
 #  10us
@@ -46,8 +44,6 @@ SELECT category_id
 # Count         50       1
 # Exec time      0       0       0       0       0       0       0       0
 # Query size    89     858     858     858     858     858       0     858
-# String:
-# arg CRC      2567603525
 # Query_time distribution
 #   1us
 #  10us

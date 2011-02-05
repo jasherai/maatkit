@@ -13,7 +13,6 @@
 # Memc get     100% yes,   0% no
 # Memc miss    100% yes,   0% no
 # String:
-# arg CRC      755502058
 # Hosts        127.0.0.1
 # key print    comment_v?_?
 # Query_time distribution
