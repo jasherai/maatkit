@@ -130,7 +130,8 @@ sub execute {
             my $call_start = $instrument ? time : 0;
 
             # Execute this pipeline process.
-            $pipeline_data  = $self->{procs}->[$procno]->($pipeline_data);
+            MKDEBUG && _d("Pipeline process", $proc_name);
+            my $output = $self->{procs}->[$procno]->($pipeline_data);
 
             if ( $instrument ) {
                my $call_end = time;
@@ -140,7 +141,7 @@ sub execute {
                $self->{instrument}->{Pipeline}->{time} += $call_t;
                $self->{instrument}->{Pipeline}->{count}++;
             }
-            if ( !$pipeline_data ) {
+            if ( !$output ) {
                MKDEBUG && _d("Pipeline restarting early after", $proc_name);
                last PIPELINE_PROCESS;
             }
