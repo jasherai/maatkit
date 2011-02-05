@@ -11685,7 +11685,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Pipeline package 7254
+# Pipeline package 7262
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Pipeline.pm
@@ -11719,9 +11719,9 @@ sub new {
 
       %args,
 
-      procs      => [],  # coderefs for pipeline processes
-      names      => [],  # names for each ^ pipeline proc
-      instrument => {    # instrumenation values, keyed on proc index in procs
+      procs           => [],  # coderefs for pipeline processes
+      names           => [],  # names for each ^ pipeline proc
+      instrumentation => {    # keyed on proc index in procs
          Pipeline => {
             time  => 0,
             calls => 0,
@@ -11742,7 +11742,7 @@ sub add {
    push @{$self->{procs}}, $process;
    push @{$self->{names}}, $name;
    if ( $self->{instrument} ) {
-      $self->{instrument}->{$name} = { time => 0, calls => 0 };
+      $self->{instrumentation}->{$name} = { time => 0, calls => 0 };
    }
    MKDEBUG && _d("Added pipeline process", $name);
 
@@ -11768,64 +11768,63 @@ sub execute {
    $pipeline_data->{oktorun} = $oktorun;
 
    MKDEBUG && _d("Pipeline starting at", time);
-   my $instrument  = $self->{instrument};
-   my $last_proc   = scalar @{$self->{procs}} - 1;
-   my $proc_name;    # current/last proc name executed
+   my $instrument = $self->{instrument};
+   my $last_proc  = scalar @{$self->{procs}} - 1;
+   my $processes  = $self->{procs};
+   my $procno     = 0;  # so we can see which proc if one causes an error
+   my $output;
    EVENT:
    while ( $$oktorun ) {
       eval {
          PIPELINE_PROCESS:
-         for my $procno ( 0..$last_proc ) {
-            $proc_name     = $self->{names}->[$procno];
+         for ( 0..$last_proc ) {
+            $procno = $_;  # XXX
             my $call_start = $instrument ? time : 0;
 
-            MKDEBUG && _d("Pipeline process", $proc_name);
-            my $output = $self->{procs}->[$procno]->($pipeline_data);
+            MKDEBUG && _d("Pipeline process", $self->{names}->[$procno]);
+            $output = $processes->[$procno]->($pipeline_data);
 
             if ( $instrument ) {
                my $call_end = time;
                my $call_t   = $call_end - $call_start;
-               $self->{instrument}->{$proc_name}->{time} += $call_t;
-               $self->{instrument}->{$proc_name}->{count}++;
-               $self->{instrument}->{Pipeline}->{time} += $call_t;
-               $self->{instrument}->{Pipeline}->{count}++;
+               $self->{instrumentation}->{$self->{names}->[$procno]}->{time} += $call_t;
+               $self->{instrumentation}->{$self->{names}->[$procno]}->{count}++;
+               $self->{instrumentation}->{Pipeline}->{time} += $call_t;
+               $self->{instrumentation}->{Pipeline}->{count}++;
             }
             if ( !$output ) {
-               MKDEBUG && _d("Pipeline restarting early after", $proc_name);
+               MKDEBUG && _d("Pipeline restarting early after",
+                  $self->{names}->[$procno]);
                last PIPELINE_PROCESS;
             }
          }
       };
       if ( $EVAL_ERROR ) {
-         warn "Pipeline process $proc_name caused an error: $EVAL_ERROR";
-         last EVENT unless $self->{continue_on_error};
+         warn "Pipeline process " . ($self->{names}->[$procno] || "")
+            . " caused an error: $EVAL_ERROR";
+         die $EVAL_ERROR unless $self->{continue_on_error};
       }
    }
 
-   my $retval = {
-      process_name => $proc_name,
-      eval_error   => $EVAL_ERROR,
-      oktorun      => $$oktorun,
-   };
-   MKDEBUG && _d("Pipeline stopped at", time, Dumper($retval));
-   return $retval;
+   MKDEBUG && _d("Pipeline stopped at", time);
+   return;
 }
 
 sub instrumentation {
    my ( $self ) = @_;
-   return $self->{instrument};
+   return $self->{instrumentation};
 }
 
 sub reset {
    my ( $self ) = @_;
    foreach my $proc_name ( @{$self->{names}} ) {
-      if ( exists $self->{instrument}->{$proc_name} ) {
-         $self->{instrument}->{$proc_name}->{calls} = 0;
-         $self->{instrument}->{$proc_name}->{time}  = 0;
+      if ( exists $self->{instrumentation}->{$proc_name} ) {
+         $self->{instrumentation}->{$proc_name}->{calls} = 0;
+         $self->{instrumentation}->{$proc_name}->{time}  = 0;
       }
    }
-   $self->{instrument}->{Pipeline}->{calls} = 0;
-   $self->{instrument}->{Pipeline}->{time}  = 0;
+   $self->{instrumentation}->{Pipeline}->{calls} = 0;
+   $self->{instrumentation}->{Pipeline}->{time}  = 0;
    return;
 }
 
