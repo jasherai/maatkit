@@ -149,7 +149,7 @@ sub execute {
       };
       if ( $EVAL_ERROR ) {
          warn "Pipeline process $proc_name caused an error: $EVAL_ERROR";
-         last EVENT unless $self->{contine_on_error};
+         last EVENT unless $self->{continue_on_error};
       }
    }
 

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 use Time::HiRes qw(usleep);
 
@@ -221,6 +221,42 @@ is(
    $inst->{proc1}->{calls},
    0,
    "Reset instrumentation"
+);
+
+
+# #############################################################################
+# Continue on error.
+# #############################################################################
+$oktorun  = 1;
+$pipeline = new Pipeline(continue_on_error=>1);
+
+my @die = qw(1 0);
+$pipeline->add(
+   name    => 'proc1',
+   process => sub {
+      my ( $args ) = @_;
+      die "I'm an error" if shift @die;
+      return $args;
+   },
+);
+$pipeline->add(
+   name    => 'proc2',
+   process => sub {
+      print "proc2";
+      $oktorun = 0;
+      return;
+   },
+);
+
+$output = output(
+   sub { $retval = $pipeline->execute(%args); },
+   stderr => 1,
+);
+
+like(
+   $output,
+   qr/proc1 caused an error.+proc2/s,
+   "Continues on error"
 );
 
 # #############################################################################
