@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 10;
 
 use Time::HiRes qw(usleep);
 
@@ -18,7 +18,6 @@ use Pipeline;
 
 my $output  = '';
 my $oktorun = 1;
-my $retval;
 my %args = (
    oktorun => \$oktorun,
 );
@@ -38,23 +37,13 @@ $pipeline->add(
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(%args); },
+   sub { $pipeline->execute(%args); },
 );
 
 is(
    $output,
    "proc1",
    "Pipeline ran"
-);
-
-is_deeply(
-   $retval,
-   {
-      process_name => 'proc1',
-      oktorun      => 0,
-      eval_error   => '',
-   },
-   "Pipeline terminate as expected"
 );
 
 # #############################################################################
@@ -82,7 +71,7 @@ $pipeline->add(
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(%args); },
+   sub { $pipeline->execute(%args); },
 );
 
 is(
@@ -106,23 +95,13 @@ $pipeline->add(
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(%args); },
+   sub { $pipeline->execute(%args); },
 );
 
 is(
    $output,
    "",
    "oktorun prevented pipeline from running"
-);
-
-is_deeply(
-   $retval,
-   {
-      process_name => undef,
-      eval_error   => '',
-      oktorun      => 0,
-   },
-   "Pipeline terminated because not oktorun"
 );
 
 # #############################################################################
@@ -155,23 +134,13 @@ $pipeline->add(
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(%args); },
+   sub { $pipeline->execute(%args); },
 );
 
 is(
    $output,
    "proc1proc2",
    "Multiple procs ran"
-);
-
-is_deeply(
-   $retval,
-   {
-      process_name => "proc2",
-      eval_error   => '',
-      oktorun      => 0,
-   },
-   "Pipeline terminated after proc2"
 );
 
 is(
@@ -249,7 +218,7 @@ $pipeline->add(
 );
 
 $output = output(
-   sub { $retval = $pipeline->execute(%args); },
+   sub { $pipeline->execute(%args); },
    stderr => 1,
 );
 
