@@ -12,7 +12,6 @@
 # Query size    42      50      50      50      50      50       0      50
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      478229000
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2
@@ -47,7 +46,6 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # Query size    57      69      69      69      69      69       0      69
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      3193395006
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2

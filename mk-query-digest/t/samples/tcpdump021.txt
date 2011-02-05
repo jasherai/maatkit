@@ -12,7 +12,6 @@
 # Query size    35      35      35      35      35      35       0      35
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      4166892348
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2
@@ -49,7 +48,6 @@ SELECT i FROM d.t WHERE i=?\G
 # Boolean:
 # No index use 100% yes,   0% no
 # String:
-# arg CRC      1438470990
 # Errors       none
 # Hosts        127.0.0.1
 # Statement id 2
@@ -84,7 +82,6 @@ SELECT i FROM d.t WHERE i="3"\G
 # Query size    27      27      27      27      27      27       0      27
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      3954282531
 # Errors       none
 # Hosts        127.0.0.1
 # Query_time distribution

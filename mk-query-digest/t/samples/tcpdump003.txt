@@ -12,7 +12,6 @@
 # Query size   100      30      30      30      30      30       0      30
 # Warning coun   0       0       0       0       0       0       0       0
 # String:
-# arg CRC      2151770939
 # Databases
 # Error msg    Access denied for user 'msandbox'@'localhost...
 # Errors       1045
