@@ -11685,6 +11685,165 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Pipeline package 7254
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Pipeline.pm
+#   trunk/common/t/Pipeline.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Pipeline;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+use Time::HiRes qw(time usleep);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   my $self = {
+      instrument        => 0,
+      continue_on_error => 0,
+
+      %args,
+
+      procs      => [],  # coderefs for pipeline processes
+      names      => [],  # names for each ^ pipeline proc
+      instrument => {    # instrumenation values, keyed on proc index in procs
+         Pipeline => {
+            time  => 0,
+            calls => 0,
+         },
+      },
+   };
+   return bless $self, $class;
+}
+
+sub add {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(process name);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($process, $name) = @args{@required_args};
+
+   push @{$self->{procs}}, $process;
+   push @{$self->{names}}, $name;
+   if ( $self->{instrument} ) {
+      $self->{instrument}->{$name} = { time => 0, calls => 0 };
+   }
+   MKDEBUG && _d("Added pipeline process", $name);
+
+   return;
+}
+
+sub processes {
+   my ( $self ) = @_;
+   return @{$self->{names}};
+}
+
+sub execute {
+   my ( $self, %args ) = @_;
+
+   die "Cannot execute pipeline because no process have been added"
+      unless scalar @{$self->{procs}};
+
+   my $oktorun = $args{oktorun};
+   die "I need an oktorun argument" unless $oktorun;
+   die '$oktorun argument must be a reference' unless ref $oktorun;
+
+   my $pipeline_data = $args{pipeline_data} || {};
+   $pipeline_data->{oktorun} = $oktorun;
+
+   MKDEBUG && _d("Pipeline starting at", time);
+   my $instrument  = $self->{instrument};
+   my $last_proc   = scalar @{$self->{procs}} - 1;
+   my $proc_name;    # current/last proc name executed
+   EVENT:
+   while ( $$oktorun ) {
+      eval {
+         PIPELINE_PROCESS:
+         for my $procno ( 0..$last_proc ) {
+            $proc_name     = $self->{names}->[$procno];
+            my $call_start = $instrument ? time : 0;
+
+            MKDEBUG && _d("Pipeline process", $proc_name);
+            my $output = $self->{procs}->[$procno]->($pipeline_data);
+
+            if ( $instrument ) {
+               my $call_end = time;
+               my $call_t   = $call_end - $call_start;
+               $self->{instrument}->{$proc_name}->{time} += $call_t;
+               $self->{instrument}->{$proc_name}->{count}++;
+               $self->{instrument}->{Pipeline}->{time} += $call_t;
+               $self->{instrument}->{Pipeline}->{count}++;
+            }
+            if ( !$output ) {
+               MKDEBUG && _d("Pipeline restarting early after", $proc_name);
+               last PIPELINE_PROCESS;
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Pipeline process $proc_name caused an error: $EVAL_ERROR";
+         last EVENT unless $self->{continue_on_error};
+      }
+   }
+
+   my $retval = {
+      process_name => $proc_name,
+      eval_error   => $EVAL_ERROR,
+      oktorun      => $$oktorun,
+   };
+   MKDEBUG && _d("Pipeline stopped at", time, Dumper($retval));
+   return $retval;
+}
+
+sub instrumentation {
+   my ( $self ) = @_;
+   return $self->{instrument};
+}
+
+sub reset {
+   my ( $self ) = @_;
+   foreach my $proc_name ( @{$self->{names}} ) {
+      if ( exists $self->{instrument}->{$proc_name} ) {
+         $self->{instrument}->{$proc_name}->{calls} = 0;
+         $self->{instrument}->{$proc_name}->{time}  = 0;
+      }
+   }
+   $self->{instrument}->{Pipeline}->{calls} = 0;
+   $self->{instrument}->{Pipeline}->{time}  = 0;
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Pipeline package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -11719,7 +11878,8 @@ my $ps_dbh;  # For Processlist
 my $aux_dbh; # For --aux-dsn (--since/--until "MySQL expression")
 
 sub main {
-   @ARGV = @_;  # set global ARGV for this package
+   @ARGV    = @_;  # set global ARGV for this package
+   $oktorun = 1;   # reset between tests else pipeline won't run
 
    # ##########################################################################
    # Get configuration information.
@@ -11980,181 +12140,302 @@ sub main {
    }
    
    # ########################################################################
-   # Set up an array of callbacks to filter and transform events.  The first
-   # one should add the fingerprint to the event (except if we're parsing
-   # tcpdump output; see below).  After that, callbacks can do anything, as
-   # long as they return the event (failing to return the event terminates
-   # the chain).
+   # Create all the pipeline processes that do all the work: get input,
+   # parse events, manage runtime, switch iterations, aggregate, etc.
    # ########################################################################
-   my @callbacks;
-   my %callback_names;
-   my %prof;  # pipeline profile
-   my %stats; # general stats
-   my $misc = {};
-   if ( my $ps_dsn = $o->get('processlist') ) {
-      my $ms = new MasterSlave();
-      my $pl = new Processlist(MasterSlave => $ms);
-      my ( $sth, $cxn );
-      my $cur_server = 'processlist';
-      my $cur_time   = 0;
 
-      if ( $o->get('ask-pass') ) {
-         $ps_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
-            . "--processlist: ");
-         $o->get('processlist', $ps_dsn);
-      }
+   # These four vars are passed to print_reports().
+   my @ea;         # EventAggregator objs
+   my @tl;         # EventTimeline obj
+   my @read_files; # file names that have been parsed
+   my %stats;      # various stats/counters used in some procs
 
-      $misc = {
-         time  => 0,
-         etime => 0,
-         code  => sub {
-            my $time = $misc->{time} = time();
-            my $err;
-            do {
-               eval { $sth->execute; };
-               $err = $EVAL_ERROR;
-               if ( $err ) { # Try to reconnect when there's an error.
-                  @{$misc}{qw(time etime)} = (0, 0);
-                  eval {
-                     ($cur_server, $ps_dbh) = find_role(
-                        OptionParser => $o,
-                        DSNParser    => $dp,
-                        dbh          => $ps_dbh,
-                        current      => $cur_server,
-                        read_only    => 0,
-                        comment      => 'for --processlist'
+   # The terminator proc uses the Runtime obj and max iters to determine
+   # when/if to terminate the pipeline.
+   my $runtime;
+   my $max_iters = $o->get('iterations');
+
+   # The pipeline data hashref is passed to each proc.  Procs use this to
+   # pass data through the pipeline.  The most importat data is the event.
+   # Other data includes in the next_event callback, time and iters left,
+   # etc.
+   my $pipeline_data = { iter => 1 };
+
+   # Enable timings to instrument code for either of these two opts.
+   # Else, don't instrument to avoid cost of measurement.
+   my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
+   MKDEBUG && _d('Instrument:', $instrument);
+
+   my $pipeline = new Pipeline(
+      instrument        => $instrument,
+      continue_on_error => $o->get('continue-on-error'),
+   );
+
+   # ########################################################################
+   # Procs before the terminator are, in general, responsible for getting
+   # and event that procs after the terminator process before aggregation
+   # at the end of the pipeline.  Therefore, these pre-terminator procs
+   # should not assume an event exists.  If one does, they should let the
+   # pipeline continue.  Only the terminator proc terminates the pipeline.
+   # ########################################################################
+
+   { # prep
+      $pipeline->add(
+         name    => 'prep',
+         process => sub {
+            my ( $args ) = @_;
+            # Stuff you'd like to do to make sure pipeline data is prepped
+            # and ready to go...
+
+            $args->{event} = undef;  # remove event from previous pass
+
+            return $args;
+         },
+      );
+   } # prep
+
+   { # input
+      my $fi        = new FileIterator();
+      my $next_file = $fi->get_file_itr(@ARGV);
+      my $input_fh; # the current input fh
+      my $pr;       # Progress obj for ^
+
+      $pipeline->add(
+         name    => 'input',
+         process => sub {
+            my ( $args ) = @_;
+            # Only get the next file when there's no fh or no more events in
+            # the current fh.  This allows us to do collect-and-report cycles
+            # (i.e. iterations) on huge files.  This doesn't apply to infinite
+            # inputs because they don't set more_events false.
+            if ( !$args->{input_fh} || !$args->{more_events} ) {
+               close $args->{input_fh} if $args->{input_fh};
+               my ($fh, $filename, $filesize) = $next_file->();
+               if ( $fh ) {
+                  MKDEBUG && _d('Reading', $filename);
+                  push @read_files, $filename || "STDIN";
+
+                  # Create callback to read next event.  Some inputs, like
+                  # Processlist, may use something else but most next_event.
+                  if ( my $read_time = $o->get('read-timeout') ) {
+                     $args->{next_event}
+                        = sub { return read_timeout($fh, $read_time); };
+                  }
+                  else {
+                     $args->{next_event} = sub { return <$fh>; };
+                  }
+                  $args->{input_fh}    = $fh;
+                  $args->{tell}        = sub { return tell $fh; };
+                  $args->{more_events} = 1;
+
+                  # Reset in case we read two logs out of order by time.
+                  $args->{past_since} = 0 if $o->get('since');
+                  $args->{at_until}   = 0 if $o->get('until');
+
+                  # Make a progress reporter, one per file.
+                  if ( $o->get('progress') && $filename && -e $filename ) {
+                     $pr = new Progress(
+                        jobsize => $filesize,
+                        spec    => $o->get('progress'),
+                        name    => $filename,
                      );
-                     $cur_time = time();
-                     $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
-                     $cxn      = $ps_dbh->{mysql_thread_id};
-                     $sth->execute();
-                  };
-                  $err = $EVAL_ERROR;
-                  if ( $err ) {
-                     print STDERR $err;
-                     sleep 1;
                   }
                }
-            } until ( $sth && !$err );
-            if ( $o->get('mirror')
-                 && time() - $cur_time > $o->get('mirror')) {
-               ($cur_server, $ps_dbh) = find_role(
-                  OptionParser => $o,
-                  DSNParser    => $dp,
-                  dbh          => $ps_dbh,
-                  current      => $cur_server,
-                  read_only    => 0,
-                  comment      => 'for --processlist'
-               );
-               $cur_time = time();
+               else {
+                  MKDEBUG && _d("No more input");
+                  # This will cause terminator proc to terminate the pipeline.
+                  $args->{input_fh}    = undef;
+                  $args->{more_events} = 0;
+               }
             }
-            $misc->{etime} = time() - $time;
-            [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
+            $pr->update($args->{tell}) if $pr;
+            return $args;
          },
-      };
-
-      my $interval_sleep = $o->get('interval') * 1_000_000;
-      my $pollno         = 0;
-      push @callbacks, sub {
-         my ( $event, %args ) = @_;
-         MKDEBUG && _d('callback: poll processlist');
-         usleep($interval_sleep) if $pollno++;
-         return $pl->parse_event(%args);
-      };
-      $callback_names{$callbacks[-1]} = ref $pl;
-      MKDEBUG && _d('Added Processlist module to callbacks');
-   }  # get events from processlist
-   else {
-      my %alias_for = (
-         slowlog   => ['SlowLogParser'],
-         binlog    => ['BinaryLogParser'],
-         genlog    => ['GeneralLogParser'],
-         tcpdump   => ['TcpdumpParser','MySQLProtocolParser'],
-         memcached => ['TcpdumpParser','MemcachedProtocolParser',
-                       'MemcachedEvent'],
-         http      => ['TcpdumpParser','HTTPProtocolParser'],
-         pglog     => ['PgLogParser'],
       );
-      my $type = $o->get('type');
-      $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
+   } # input
 
-      my ($server, $port);
-      if ( my $watch_server = $o->get('watch-server') ) {
-         # This should match all combinations of HOST and PORT except
-         # "host-name.port" because "host.mysql" could be either
-         # host "host" and port "mysql" or just host "host.mysql"
-         # (e.g. if someone added "127.1 host.mysql" to etc/hosts).
-         # So host-name* requires a colon between it and a port.
-         ($server, $port) = $watch_server
-               =~ m/^((?:\d+\.\d+\.\d+\.\d+|[\w\.\-]+\w))(?:[\:\.](\S+))?/;
-         MKDEBUG && _d('Watch server', $server, 'port', $port);
-      }
+   { # event
+      my $misc;
+      if ( my $ps_dsn = $o->get('processlist') ) {
+         my $ms = new MasterSlave();
+         my $pl = new Processlist(MasterSlave => $ms);
+         my ( $sth, $cxn );
+         my $cur_server = 'processlist';
+         my $cur_time   = 0;
 
-      foreach my $module ( @$type ) {
-         my $parser;
-         eval {
-            $parser = $module->new(
-               server => $server,
-               port   => $port,
-               o      => $o,
+         if ( $o->get('ask-pass') ) {
+            $ps_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
+               . "--processlist: ");
+            $o->get('processlist', $ps_dsn);
+         }
+
+         $misc = {
+            time  => 0,
+            etime => 0,
+            code  => sub {
+               my $time = $misc->{time} = time();
+               my $err;
+               do {
+                  eval { $sth->execute; };
+                  $err = $EVAL_ERROR;
+                  if ( $err ) { # Try to reconnect when there's an error.
+                     @{$misc}{qw(time etime)} = (0, 0);
+                     eval {
+                        ($cur_server, $ps_dbh) = find_role(
+                           OptionParser => $o,
+                           DSNParser    => $dp,
+                           dbh          => $ps_dbh,
+                           current      => $cur_server,
+                           read_only    => 0,
+                           comment      => 'for --processlist'
+                        );
+                        $cur_time = time();
+                        $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
+                        $cxn      = $ps_dbh->{mysql_thread_id};
+                        $sth->execute();
+                     };
+                     $err = $EVAL_ERROR;
+                     if ( $err ) {
+                        print STDERR $err;
+                        sleep 1;
+                     }
+                  }
+               } until ( $sth && !$err );
+               if ( $o->get('mirror')
+                    && time() - $cur_time > $o->get('mirror')) {
+                  ($cur_server, $ps_dbh) = find_role(
+                     OptionParser => $o,
+                     DSNParser    => $dp,
+                     dbh          => $ps_dbh,
+                     current      => $cur_server,
+                     read_only    => 0,
+                     comment      => 'for --processlist'
+                  );
+                  $cur_time = time();
+               }
+               $misc->{etime} = time() - $time;
+               [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
+            },
+         };
+
+         my $interval_sleep = $o->get('interval') * 1_000_000;
+         my $pollno         = 0;
+         $pipeline->add(
+            name    => ref $pl,
+            process => sub {
+               my ( $args ) = @_;
+               usleep($interval_sleep) if $pollno++;
+               my $event = $pl->parse_event(misc => $misc);
+               $args->{event} = $event if $event;
+               return $args;
+            },
+         );
+      }  # get events from processlist
+      else {
+         my %alias_for = (
+            slowlog   => ['SlowLogParser'],
+            binlog    => ['BinaryLogParser'],
+            genlog    => ['GeneralLogParser'],
+            tcpdump   => ['TcpdumpParser','MySQLProtocolParser'],
+            memcached => ['TcpdumpParser','MemcachedProtocolParser',
+                          'MemcachedEvent'],
+            http      => ['TcpdumpParser','HTTPProtocolParser'],
+            pglog     => ['PgLogParser'],
+         );
+         my $type = $o->get('type');
+         $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
+
+         my ($server, $port);
+         if ( my $watch_server = $o->get('watch-server') ) {
+            # This should match all combinations of HOST and PORT except
+            # "host-name.port" because "host.mysql" could be either
+            # host "host" and port "mysql" or just host "host.mysql"
+            # (e.g. if someone added "127.1 host.mysql" to etc/hosts).
+            # So host-name* requires a colon between it and a port.
+            ($server, $port) = $watch_server
+                  =~ m/^((?:\d+\.\d+\.\d+\.\d+|[\w\.\-]+\w))(?:[\:\.](\S+))?/;
+            MKDEBUG && _d('Watch server', $server, 'port', $port);
+         }
+
+         foreach my $module ( @$type ) {
+            my $parser;
+            eval {
+               $parser = $module->new(
+                  server => $server,
+                  port   => $port,
+                  o      => $o,
+               );
+            };
+            if ( $EVAL_ERROR ) {
+               die "Failed to load $module module: $EVAL_ERROR";
+            }
+            
+            $pipeline->add(
+               name    => ref $parser,
+               process => sub {
+                  my ( $args ) = @_;
+                  if ( $args->{input_fh} ) {
+                     my $event = $parser->parse_event(
+                        event       => $args->{event},
+                        next_event  => $args->{next_event},
+                        tell        => $args->{tell},
+                        misc        => $args->{misc},
+                        oktorun     => sub { $args->{more_events} = $_[0]; },
+                     );
+                     if ( $event ) {
+                        $args->{event} = $event;
+                        return $args;
+                     }
+                     MKDEBUG && _d("No more events, input EOF");
+                     return;  # next input
+                  }
+                  # No input, let pipeline run so the last report is printed.
+                  return $args;
+               },
             );
-         };
-         if ( $EVAL_ERROR ) {
-            die "Failed to load $module module: $EVAL_ERROR";
          }
-         push @callbacks, sub {
-            my ( $event, %args ) = @_;
-            MKDEBUG && _d('callback: parse log file');
-            return $parser->parse_event(%args);
+      }  # get events from log file
+
+      if ( my $patterns = $o->get('embedded-attributes') ) {
+         $misc->{embed}   = qr/$patterns->[0]/o;
+         $misc->{capture} = qr/$patterns->[1]/o;
+         MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
+               $misc->{capture});
+      }
+      $pipeline_data->{misc} = $misc;
+   } # event
+
+   { # runtime
+      my $now_callback;
+      my $run_time_mode = lc $o->get('run-time-mode');
+      if ( $run_time_mode eq 'clock' ) {
+         $now_callback = sub { return time; };
+      }
+      elsif ( $run_time_mode eq 'event' ) {
+         $now_callback = sub {
+            my ( %args ) = @_;
+            my $event = $args{event};
+            return unless $event && $event->{ts};
+            MKDEBUG && _d("Log time:", $event->{ts});
+            return unix_timestamp(parse_timestamp($event->{ts}));
          };
-         $callback_names{$callbacks[-1]} = ref $parser;
-         MKDEBUG && _d('Added', $module, 'module to callbacks');
       }
-   }  # get events from log file
+      $runtime = new Runtime(
+         now     => $now_callback,
+         runtime => $o->get('run-time'),
+      );
 
-   # Setup a Runtime object.
-   my $now_callback;
-   my $run_time_mode = lc $o->get('run-time-mode');
-   if ( $run_time_mode eq 'clock' ) {
-      $now_callback = sub { return time; };
-   }
-   elsif ( $run_time_mode eq 'event' ) {
-      $now_callback = sub {
-         my ( %args ) = @_;
-         my $event = $args{event};
-         return unless $event && $event->{ts};
-         MKDEBUG && _d("Log time:", $event->{ts});
-         return unix_timestamp(parse_timestamp($event->{ts}));
-      };
-   }
-   my $runtime = new Runtime(
-      now     => $now_callback,
-      runtime => $o->get('run-time'),
-   );
-   push @callbacks, sub {
-      my ( $event, %args ) = @_;
-      MKDEBUG && _d("callback: runtime");
-
-      if ( $run_time_mode eq 'event' ) {
-         if ( !$runtime->have_time(event=>$event) ) {
-            # This event exceeds runtime so we need to terminate the pipeline
-            # (the return) and then stop the EVENT loop (stop()), else this
-            # event will be processed and the report will include one event
-            # that it shouldn't.
-            # TODO: ultimately we'll need to push this even to an event queue.
-            MKDEBUG && _d("Event log time exceeds runtime");
-            $runtime->stop();
-            return;
-         }
-      }
-
-      return $event;
-   };
-   $callback_names{$callbacks[-1]} = "runtime";
+      $pipeline->add(
+         name    => 'runtime',
+         process => sub {
+            my ( $args ) = @_;
+            $args->{time_left} = $runtime->time_left(event => $args->{event});
+            return $args;
+         },
+      );
+   } # runtime
 
    # Filter early for --since and --until.
-   my $past_since;
-   my $at_until;
    # If --since or --until is a MySQL expression, then any_unix_timestamp()
    # will need this callback to execute the expression.  We don't know what
    # type of time value the user gave, so we'll create the callback in any case.
@@ -12171,169 +12452,311 @@ sub main {
       }
       $aux_dbh ||= $qv_dbh || $qv_dbh2 || $ex_dbh || $ps_dbh || $ep_dbh;
       MKDEBUG && _d('aux dbh:', $aux_dbh);
-   }
-   my $time_callback = sub {
-      my ( $exp ) = @_;
-      return unless $aux_dbh;
-      my $sql = "SELECT UNIX_TIMESTAMP($exp)";
-      MKDEBUG && _d($sql);
-      return $aux_dbh->selectall_arrayref($sql)->[0]->[0];
-   };
-   if ( $o->get('since') ) {
-      my $since = any_unix_timestamp($o->get('since'), $time_callback);
-      die "Invalid --since value" unless $since;
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: --since');
-         if ( $past_since ) {
-            MKDEBUG && _d('Already past --since');
-            return $event;
-         }
-         if ( $event->{ts} ) {
-            my $ts = any_unix_timestamp($event->{ts}, $time_callback);
-            if ( ($ts || 0) >= $since ) {
-               MKDEBUG && _d('Event is at or past --since');
-               $past_since = 1;
-               return $event;
+
+      my $time_callback = sub {
+         my ( $exp ) = @_;
+         return unless $aux_dbh;
+         my $sql = "SELECT UNIX_TIMESTAMP($exp)";
+         MKDEBUG && _d($sql);
+         return $aux_dbh->selectall_arrayref($sql)->[0]->[0];
+      };
+      if ( $o->get('since') ) {
+         my $since = any_unix_timestamp($o->get('since'), $time_callback);
+         die "Invalid --since value" unless $since;
+
+         $pipeline->add(
+            name    => 'since',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               return $args unless $event;
+               if ( $args->{past_since} ) {
+                  MKDEBUG && _d('Already past --since');
+                  return $args;
+               }
+               if ( $event->{ts} ) {
+                  my $ts = any_unix_timestamp($event->{ts}, $time_callback);
+                  if ( ($ts || 0) >= $since ) {
+                     MKDEBUG && _d('Event is at or past --since');
+                     $args->{past_since} = 1;
+                     return $args;
+                  }
+               }
+               MKDEBUG && _d('Event is before --since (or ts unknown)');
+               return;  # next event
+            },
+         );
+      }
+      if ( $o->get('until') ) {
+         my $until = any_unix_timestamp($o->get('until'), $time_callback);
+         die "Invalid --until value" unless $until;
+         $pipeline->add(
+            name    => 'until',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               return $args unless $event;
+               if ( $args->{at_until} ) {
+                  MKDEBUG && _d('Already past --until');
+                  return;
+               }
+               if ( $event->{ts} ) {
+                  my $ts = any_unix_timestamp($event->{ts}, $time_callback);
+                  if ( ($ts || 0) >= $until ) {
+                     MKDEBUG && _d('Event at or after --until');
+                     $args->{at_until} = 1;
+                     return;
+                  }
+               }
+               MKDEBUG && _d('Event is before --until (or ts unknown)');
+               return $args;
+            },
+         );
+      }
+   } # since/until
+
+   { # iteration
+      $pipeline->add(
+         name    => 'iteration',
+         process => sub {
+            my ( $args ) = @_;
+            my $iter = $args->{iter};
+            if ( !$args->{iter_start} ) {
+               my $iter_start = $args->{iter_start} = time;
+               MKDEBUG && _d('Iteration', $iter, 'started at', ts($iter_start));
+               print "\n# Iteration $iter started at ", ts($iter_start), "\n"
+                  if $o->get('print-iterations');
+               $args->{iters_left} = $max_iters - $args->{iter} if $max_iters;
+            }
+
+            # A report is triggered by either 1) elapsed runtime (per-iter)
+            # or 2) no more events (per-input).
+            my $time_left = $args->{time_left};
+            if ( (defined $time_left && $time_left <= 0)
+                 || !$args->{more_events} ) {
+               MKDEBUG && _d("Iteration", $iter, "stopped, reporting");
+
+               # TODO: If reporting is slow (>1s) then we could fork
+               # and report to let the pipeline continue.
+               if ( $ea[0]->events_processed() ) {
+                  print_reports(
+                     eas             => \@ea,
+                     tls             => \@tl,
+                     groupby         => \@groupby,
+                     orderby         => \@orderby,
+                     files           => \@read_files,
+                     stats           => \%stats,
+                     Pipeline        => $pipeline,
+                     QueryReview     => $qv,
+                     ExplainAnalyzer => $exa,
+                     %common_modules,
+                  );
+               }
+               else {
+                  print "\n# No events processed.\n";
+               }
+
+               $args->{iter}++;
+               $args->{iter_start} = undef;
+            }
+
+            return $args;
+         },
+      );
+   } # iteration
+
+   { # terminator
+      $pipeline->add(
+         name    => 'terminator',
+         process => sub {
+            my ( $args ) = @_;
+
+            if ( !$args->{input_fh} ) {
+               MKDEBUG && _d("No more input, terminating pipeline");
+
+               # This shouldn't happen, but I want to know if it does.
+               warn "There's an event in the pipeline but no current input"
+                  if $args->{event};
+
+               $oktorun = 0;  # 2. terminate pipeline
+               return;        # 1. exit pipeline early
+            }
+
+            my $time_left  = $args->{time_left};
+            if ( defined $time_left && $time_left <= 0 ) {
+               # It's time to stop this iteration.  If this is the last iter,
+               # then we can disregard any event we may have--it either
+               # didn't get parsed in time to make it into this iter (clock
+               # time) or it would belong to the next iter (event time) if
+               # there were one.
+               my $iters_left = $args->{iters_left};
+               if ( defined $iters_left && !$iters_left ) {
+                  MKDEBUG && _d("No more time and no more iters",
+                     "terminating pipeline");
+                  $oktorun = 0;  # 2. terminate pipeline
+                  return;        # 1. exit pipeline early
+               }
+               else {
+                  MKDEBUG && _d("Resetting runtime for next iter");
+                  $runtime->reset();
+               }
+            }
+
+            # There's time or iters left so keep running.
+            if ( $args->{event} ) {
+               MKDEBUG && _d("Event in pipeline, first for this new iter");
+               return $args;
             }
             else {
-               MKDEBUG && _d('Event is before --since');
-            }
-         }
-         return;
-      };
-      $callback_names{$callbacks[-1]} = 'since';
-   }
-   if ( $o->get('until') ) {
-      my $until = any_unix_timestamp($o->get('until'), $time_callback);
-      die "Invalid --until value" unless $until;
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: --until');
-         if ( $at_until ) {
-            MKDEBUG && _d('Already past --until');
-            return;
-         }
-         if ( $event->{ts} ) {
-            my $ts = any_unix_timestamp($event->{ts}, $time_callback);
-            if ( ($ts || 0) >= $until ) {
-               MKDEBUG && _d('Event at or after --until');
-               $at_until = 1;
+               MKDEBUG && _d("No event in pipeline, get next event");
                return;
             }
-            else {
-               MKDEBUG && _d('Event is before --until');
-            }
-         }
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'until';
-   }
+         },
+      );
+   } # terminator
+
+   # ########################################################################
+   # All pipeline processes after the terminator expect an event
+   # (i.e. that $args->{event} exists and is a valid event).
+   # ########################################################################
 
    if ( grep { $_ eq 'fingerprint' } @groupby ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: fingerprint');
-         # Skip events which do not have the groupby attribute.
-         my $groupby_val = $event->{arg};
-         return unless $groupby_val;
-         $event->{fingerprint} = $qr->fingerprint($groupby_val);
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'fingerprint';
+      $pipeline->add(
+         name    => 'fingerprint',
+         process => sub {
+            my ( $args ) = @_;
+            my $event = $args->{event};
+            # Skip events which do not have the groupby attribute.
+            my $groupby_val = $event->{arg};
+            return unless $groupby_val;
+            $event->{fingerprint} = $qr->fingerprint($groupby_val);
+            return $args;
+         },
+      );
    }
 
    # Make subs which map attrib aliases to their primary attrib.
    foreach my $alt_attrib ( @{$o->get('attribute-aliases')} ) {
-      push @callbacks, make_alt_attrib($alt_attrib);
-      $callback_names{$callbacks[-1]} = 'attribute aliases';
+      $pipeline->add(
+         name    => 'attribute aliases',
+         process => make_alt_attrib($alt_attrib),
+      );
    }
 
    # Carry attribs forward for --inherit-attributes.
    my $inherited_attribs = $o->get('inherit-attributes');
    if ( @$inherited_attribs ) {
       my $last_val = {};
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d("callback: inherit attribs");
-         foreach my $attrib ( @$inherited_attribs ) {
-            if ( defined $event->{$attrib} ) {
-               # Event has val for this attrib; save it as the last val.
-               $last_val->{$attrib} = $event->{$attrib};
+      $pipeline->add(
+         name    => 'inherit attributes',
+         process => sub {
+            my ( $args ) = @_;
+            my $event = $args->{event};
+            foreach my $attrib ( @$inherited_attribs ) {
+               if ( defined $event->{$attrib} ) {
+                  # Event has val for this attrib; save it as the last val.
+                  $last_val->{$attrib} = $event->{$attrib};
+               }
+               else {
+                  # Inherit last val for this attrib (if there was a last val).
+                  $event->{$attrib} = $last_val->{$attrib}
+                     if defined $last_val->{$attrib};
+               }
             }
-            else {
-               # Inherit last val for this attrib (if there was a last val).
-               $event->{$attrib} = $last_val->{$attrib}
-                  if defined $last_val->{$attrib};
-            }
-         }
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'inherit attributes';
+            return $args;
+         },
+      );
    }
 
-   # Calculate checksum for variation attribs.
-   my @variations = @{$o->get('variations')};
-   if ( @variations ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d("callback: variations");
-         foreach my $attrib ( @variations ) {
-            my $checksum = crc32($event->{$attrib});
-            $event->{"${attrib}_CRC"} = $checksum if defined $checksum;
-         }
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'variations';
-   }
+   { # variations
+      my @variations = @{$o->get('variations')};
+      if ( @variations ) {
+         $pipeline->add(
+            name    => 'variations',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               foreach my $attrib ( @variations ) {
+                  my $checksum = crc32($event->{$attrib});
+                  $event->{"${attrib}_CRC"} = $checksum if defined $checksum;
+               }
+               return $args;
+            },
+         );
+      }
+   } # variations
 
    if ( grep { $_ eq 'tables' } @groupby ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: tables');
-         my $group_by_val = $event->{arg};
-         return 0 unless defined $group_by_val;
-         $event->{tables} = [
-            map {
-               # Canonicalize and add the db name in front
-               $_ =~ s/`//g;
-               if ($_ !~ m/\./ && (my $db = $event->{db} || $event->{Schema})) {
-                  $_ = "$db.$_";
+      $pipeline->add(
+         name    => 'tables',
+         process => sub {
+            my ( $args ) = @_;
+            my $event = $args->{event};
+            my $group_by_val = $event->{arg};
+            return unless defined $group_by_val;
+            $event->{tables} = [
+               map {
+                  # Canonicalize and add the db name in front
+                  $_ =~ s/`//g;
+                  if ( $_ !~ m/\./
+                       && (my $db = $event->{db} || $event->{Schema}) ) {
+                     $_ = "$db.$_";
+                  }
+                  $_;
                }
-               $_;
-            }
-            $qp->get_tables($group_by_val)
-         ];
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'tables';
+               $qp->get_tables($group_by_val)
+            ];
+            return $args;
+         },
+      );
    }
 
-   my %distill_args;
-   if ( $o->get('type') eq 'memcached' || $o->get('type') eq 'http' ) {
-      $distill_args{generic} = 1;
-      if ( $o->get('type') eq 'http' ) {
-         # Remove stuff after url.
-         $distill_args{trf} = sub {
-            my ( $query ) = @_;
-            $query =~ s/(\S+ \S+?)(?:[?;].+)/$1/;
-            return $query;
-         };
+   { # distill
+      my %distill_args;
+      if ( $o->get('type') eq 'memcached' || $o->get('type') eq 'http' ) {
+         $distill_args{generic} = 1;
+         if ( $o->get('type') eq 'http' ) {
+            # Remove stuff after url.
+            $distill_args{trf} = sub {
+               my ( $query ) = @_;
+               $query =~ s/(\S+ \S+?)(?:[?;].+)/$1/;
+               return $query;
+            };
+         }
       }
-   }
-   if ( grep { $_ eq 'distill' } @groupby ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: distill');
-         my $group_by_val = $event->{arg};
-         return 0 unless defined $group_by_val;
-         $event->{distill} = $qr->distill($group_by_val, %distill_args);
-         MKDEBUG && !$event->{distill} && _d('Cannot distill', $event->{arg});
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'distill';
-   }
+      if ( grep { $_ eq 'distill' } @groupby ) {
+         $pipeline->add(
+            name    => 'distill',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               my $group_by_val = $event->{arg};
+               return unless defined $group_by_val;
+               $event->{distill} = $qr->distill($group_by_val, %distill_args);
+               MKDEBUG && !$event->{distill} && _d('Cannot distill',
+                  $event->{arg});
+               return $args;
+            },
+         );
+      }
+   } # distill
 
+   if ( $o->get('zero-admin') ) {
+      $pipeline->add(
+         name    => 'zero admin',
+         process => sub {
+            my ( $args ) = @_;
+            my $event = $args->{event};
+            if ( $event->{arg} && $event->{arg} =~ m/^administrator/ ) {
+               $event->{Rows_sent}     = 0 if exists $event->{Rows_sent};
+               $event->{Rows_examined} = 0 if exists $event->{Rows_examined};
+               $event->{Rows_read}     = 0 if exists $event->{Rows_read};
+            }
+            return $args;
+         },
+      );
+   } # zero admin
+   
    # Filter after special attributes, like fingerprint, tables,
    # distill, etc., have been created.
    if ( $o->get('filter') ) {
@@ -12347,181 +12770,188 @@ sub main {
       else {
          $filter = "( $filter )";  # issue 565
       }
-      my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
+      my $code = 'sub { my ( $args ) = @_; my $event = $args->{event}; '
+               . "$filter && return \$args; };";
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code
          or die "Error compiling --filter code: $code\n$EVAL_ERROR";
-      push @callbacks, $sub;
-      $callback_names{$callbacks[-1]} = 'filter';
-   }
 
-   if ( $o->get('zero-admin') ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: zero admin');
-         if ( $event->{arg} && $event->{arg} =~ m/^administrator/ ) {
-            $event->{Rows_sent}     = 0 if exists $event->{Rows_sent};
-            $event->{Rows_examined} = 0 if exists $event->{Rows_examined};
-            $event->{Rows_read}     = 0 if exists $event->{Rows_read};
-         }
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'zero admin';
-   }
+      $pipeline->add(
+         name    => 'filter',
+         process => $sub,
+      );
+   } # filter
 
    if ( $o->got('sample') ) {
       my $group_by_val = $groupby[0];
       my $num_samples  = $o->get('sample');
       if ( $group_by_val ) {
          my %seen;
-         push @callbacks, sub {
-            my ($event) = @_;
-            MKDEBUG && _d('callback: sample');
-            if ( ++$seen{$event->{$group_by_val}} <= $num_samples ) {
-               MKDEBUG && _d("--sample permits event",
-                  $event->{$group_by_val});
-               return $event;
-            }
-            MKDEBUG && _d("--sample rejects event", $event->{$group_by_val});
-            return;
-         };
-         $callback_names{$callbacks[-1]} = 'sample';
+         $pipeline->add(
+            name    => 'sample',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               if ( ++$seen{$event->{$group_by_val}} <= $num_samples ) {
+                  MKDEBUG && _d("--sample permits event",
+                     $event->{$group_by_val});
+                  return $args;
+               }
+               MKDEBUG && _d("--sample rejects event", $event->{$group_by_val});
+               return;
+            },
+         );
       }
-   }
+   } # sample
+
+   { # execute throttle and execute
+      my $et;
+      if ( my $et_args = $o->get('execute-throttle') ) {
+         # These were check earlier; no need to check them again.
+         my ($rate_max, $int, $step) = @{$o->get('execute-throttle')};
+         $step ||= 5;
+         $step  /= 100; # step specified as percent but $et expect 0.1=10%, etc.
+         MKDEBUG && _d('Execute throttle:', $rate_max, $int, $step);
+
+         my $get_rate = sub {
+            my $instrument = $pipeline->instrumentation;
+            return percentage_of(
+               $instrument->{execute}->{time}   || 0,
+               $instrument->{Pipeline}->{time}  || 0,
+            );
+         };
+
+         $et = new ExecutionThrottler(
+            rate_max  => $rate_max,
+            get_rate  => $get_rate,
+            check_int => $int,
+            step      => $step,
+         );
+         
+         $pipeline->add(
+            name    => 'execute throttle',
+            process => sub {
+               my ( $args ) = @_;
+               $args->{event} = $et->throttle(
+                  event => $args->{event},
+                  stats => \%stats,
+                  misc  => $args->{misc},
+               );
+               return $args;
+            },
+         );
+      } # execute throttle
+
+      if ( my $ex_dsn = $o->get('execute') ) {
+         if ( $o->get('ask-pass') ) {
+            $ex_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
+               . "--execute: ");
+            $o->set('execute', $ex_dsn);
+         }
+
+         my $cur_server = 'execute';
+         ($cur_server, $ex_dbh) = find_role(
+            OptionParser => $o,
+            DSNParser    => $dp,
+            dbh          => $ex_dbh,
+            current      => $cur_server,
+            read_only    => 1,
+            comment      => 'for --execute'
+         );
+         my $cur_time = time();
+         my $curdb;
+         my $default_db = $o->get('execute')->{D};
+         MKDEBUG && _d('Default db:', $default_db);
+         
+         $pipeline->add(
+            name    => 'execute',
+            process => sub {
+               my ( $args ) = @_;
+               my $event = $args->{event};
+               $event->{Exec_orig_time} = $event->{Query_time};
+               if ( ($event->{Skip_exec} || '') eq 'Yes' ) {
+                  MKDEBUG && _d('Not executing event because of ',
+                     '--execute-throttle');
+                  # Zero Query_time to 'Exec time' will show the real time
+                  # spent executing queries.
+                  $event->{Query_time} = 0;
+                  $stats{execute_skipped}++;
+                  return $args;
+               }
+               $stats{execute_executed}++;
+               my $db = $event->{db} || $default_db;
+               eval {
+                  if ( $db && (!$curdb || $db ne $curdb) ) {
+                     $ex_dbh->do("USE $db");
+                     $curdb = $db;
+                  } 
+                  my $start = time();
+                  $ex_dbh->do($event->{arg});
+                  my $end = time();
+                  $event->{Query_time} = $end - $start;
+                  $event->{Exec_diff_time}
+                     = $event->{Query_time} - $event->{Exec_orig_time};
+                  if ($o->get('mirror') && $end-$cur_time > $o->get('mirror')) {
+                     ($cur_server, $ex_dbh) = find_role(
+                        OptionParser => $o,
+                        DSNParser    => $dp,
+                        dbh          => $ex_dbh,
+                        current      => $cur_server,
+                        read_only    => 1,
+                        comment      => 'for --execute'
+                     );
+                     $cur_time = $end;
+                  }
+               };
+               if ( $EVAL_ERROR ) {
+                  MKDEBUG && _d($EVAL_ERROR);
+                  $stats{execute_error}++;
+                  # Don't try to re-execute the statement.  Just skip it.
+                  if ( $EVAL_ERROR =~ m/server has gone away/ ) {
+                     print STDERR $EVAL_ERROR;
+                     eval {
+                        ($cur_server, $ex_dbh) = find_role(
+                           OptionParser => $o,
+                           DSNParser    => $dp,
+                           dbh          => $ex_dbh,
+                           current      => $cur_server,
+                           read_only    => 1,
+                           comment      => 'for --execute'
+                        );
+                        $cur_time = time();
+                     };
+                     if ( $EVAL_ERROR ) {
+                        print STDERR $EVAL_ERROR;
+                        sleep 1;
+                     }
+                     return;
+                  }
+                  if ( $EVAL_ERROR =~ m/No database/ ) {
+                     $stats{execute_no_database}++;
+                  }
+               }
+               return $args;
+            },
+         );
+      } # execute
+   } # execute throttle and execute
 
    if ( $o->get('print') ) {
       my $w = new SlowLogWriter();
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: print');
-         $w->write(*STDOUT, $event);
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'print';
-   }
-
-   my $et;
-   if ( my $et_args = $o->get('execute-throttle') ) {
-      # These were check earlier; no need to check them again.
-      my ($rate_max, $int, $step) = @{$o->get('execute-throttle')};
-      $step ||= 5;
-      $step  /= 100;  # step specified as percent but $et expect 0.1=10%, etc.
-      MKDEBUG && _d('Execute throttle:', $rate_max, $int, $step);
-
-      my $get_rate = sub {
-         return percentage_of(
-            $prof{callback}->{'execute'}->{time} || 0,
-            $prof{total}->{time}                 || 0,
-         );
-      };
-
-      $et = new ExecutionThrottler(
-         rate_max  => $rate_max,
-         get_rate  => $get_rate,
-         check_int => $int,
-         step      => $step,
+      $pipeline->add(
+         name    => 'print',
+         process => sub {
+            my ( $args ) = @_;
+            my $event = $args->{event};
+            MKDEBUG && _d('callback: print');
+            $w->write(*STDOUT, $event);
+            return $args;
+         },
       );
-      push @callbacks, sub {
-         my ( $event, %args ) = @_;
-         MKDEBUG && _d('callback: throttle');
-         return $et->throttle(%args);
-      };
-      $callback_names{$callbacks[-1]} = 'execute throttle';
-   }
-
-   if ( my $ex_dsn = $o->get('execute') ) {
-      if ( $o->get('ask-pass') ) {
-         $ex_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
-            . "--execute: ");
-         $o->set('execute', $ex_dsn);
-      }
-
-      my $cur_server = 'execute';
-      ($cur_server, $ex_dbh) = find_role(
-         OptionParser => $o,
-         DSNParser    => $dp,
-         dbh          => $ex_dbh,
-         current      => $cur_server,
-         read_only    => 1,
-         comment      => 'for --execute'
-      );
-      my $cur_time = time();
-      my $curdb;
-      my $default_db = $o->get('execute')->{D};
-      MKDEBUG && _d('Default db:', $default_db);
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         MKDEBUG && _d('callback: execute');
-         $event->{Exec_orig_time} = $event->{Query_time};
-         if ( ($event->{Skip_exec} || '') eq 'Yes' ) {
-            MKDEBUG && _d('Not executing event because of --execute-throttle');
-            # Zero Query_time to 'Exec time' will show the real time
-            # spent executing queries.
-            $event->{Query_time} = 0;
-            $stats{execute_skipped}++;
-            return $event;
-         }
-         $stats{execute_executed}++;
-         my $db = $event->{db} || $default_db;
-         eval {
-            if ( $db && (!$curdb || $db ne $curdb) ) {
-               $ex_dbh->do("USE $db");
-               $curdb = $db;
-            } 
-            my $start = time();
-            $ex_dbh->do($event->{arg});
-            my $end = time();
-            $event->{Query_time} = $end - $start;
-            $event->{Exec_diff_time}
-               = $event->{Query_time} - $event->{Exec_orig_time};
-            if ( $o->get('mirror') && $end - $cur_time > $o->get('mirror') ) {
-               ($cur_server, $ex_dbh) = find_role(
-                  OptionParser => $o,
-                  DSNParser    => $dp,
-                  dbh          => $ex_dbh,
-                  current      => $cur_server,
-                  read_only    => 1,
-                  comment      => 'for --execute'
-               );
-               $cur_time = $end;
-            }
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d($EVAL_ERROR);
-            $stats{execute_error}++;
-            # Don't try to re-execute the statement.  Just skip it.
-            if ( $EVAL_ERROR =~ m/server has gone away/ ) {
-               print STDERR $EVAL_ERROR;
-               eval {
-                  ($cur_server, $ex_dbh) = find_role(
-                     OptionParser => $o,
-                     DSNParser    => $dp,
-                     dbh          => $ex_dbh,
-                     current      => $cur_server,
-                     read_only    => 1,
-                     comment      => 'for --execute'
-                  );
-                  $cur_time = time();
-               };
-               if ( $EVAL_ERROR ) {
-                  print STDERR $EVAL_ERROR;
-                  sleep 1;
-               }
-               return 0;
-            }
-            if ( $EVAL_ERROR =~ m/No database/ ) {
-               $stats{execute_no_database}++;
-            }
-         }
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = 'execute';
-   }
+   } # print
 
    # Finally, add aggregator obj for each groupby attrib to the callbacks.
-   # These aggregating objs should be the last callbacks.
-   my @ea;  # EventAggregators
-   my @tl;  # EventTimeline (aggregators)
+   # These aggregating objs should be the last pipeline processes.
    foreach my $i ( 0..$#groupby  ) {
       my $groupby = $groupby[$i];
 
@@ -12549,7 +12979,7 @@ sub main {
          Thread_id    => 'string',
          Killed       => 'bool',
       };
-      foreach my $attrib ( @variations ) {
+      foreach my $attrib ( @{$o->get('variations')} ) {
          # Make sure this generated attrib name matches whatever attrib
          # name is generated in the variations pipeline proc.
          $type_for->{"${attrib}_CRC"} = 'string';
@@ -12565,12 +12995,15 @@ sub main {
          type_for          => $type_for,
       );
       push @ea, $ea;
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         $ea->aggregate($event);
-         return $event;
-      };
-      $callback_names{$callbacks[-1]} = "aggregate $groupby";
+
+      $pipeline->add(
+         name    => "aggregate $groupby",
+         process => sub {
+            my ( $args ) = @_;
+            $ea->aggregate($args->{event});
+            return $args;
+         },
+      );
 
       # If user wants a timeline report, too, then create an EventTimeline
       # aggregator for this groupby attrib and add it to the callbacks, too.
@@ -12580,14 +13013,17 @@ sub main {
             attributes => [qw(Query_time ts)],
          );
          push @tl, $tl;
-         push @callbacks, sub {
-            my ( $event ) = @_;
-            $tl->aggregate($event);
-            return $event;
-         };
-         $callback_names{$callbacks[-1]} = "timeline $groupby";
+
+         $pipeline->add(
+            name    => "timeline $groupby",
+            process => sub {
+               my ( $args ) = @_;
+               $tl->aggregate($args->{event});
+               return $args;
+            },
+         );
       }
-   }
+   } # aggregate
 
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
@@ -12607,326 +13043,20 @@ sub main {
    # ##########################################################################
    # Parse the input.
    # ##########################################################################
-   if ( my $patterns = $o->get('embedded-attributes') ) {
-      $misc->{embed}   = qr/$patterns->[0]/o;
-      $misc->{capture} = qr/$patterns->[1]/o;
-      MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
-            $misc->{capture});
+
+   # Pump the pipeline until either no more input, or we're interrupted by
+   # CTRL-C, or--this shouldn't happen--the pipeline causes an error.  All
+   # work happens inside the pipeline via the procs we created above.
+   eval {
+      $pipeline->execute(
+         oktorun       => \$oktorun,
+         pipeline_data => $pipeline_data,
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      warn "The pipeline caused an error: $EVAL_ERROR";
    }
-
-   # Enable timings to instrument code for either of these two opts.
-   # Else, don't instrument to avoid cost of measurement.
-   my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
-   MKDEBUG && _d('Instrument:', $instrument);
-
-   # The EVENT loop is the core work cycle.  It collects/parses events for
-   # either a limited or unlimited period.  It's limited by an optional
-   # run-time or by a finite input, like files.  When a cycle of event
-   # collection ends, a report is made.  Each collect-and-report cycle is
-   # an iteration, and iterations are limited (1 by default) or unlimited.
-   # They're limited by count (--iterations) or by a finite input.  All
-   # work is ultimately limited by $oktorun, which usually becomes false
-   # due to an interrupt (CTRL-C).  So in brief: time limits apply to event
-   # collection; iterations apply to collect-and-report cycles, and all work
-   # stops at the end of input or $oktorun being false.
-   my $max_iters = $o->get('iterations');
-   my $iters     = 0;
-   my $fi        = new FileIterator();
-   my $next_file = $fi->get_file_itr(@ARGV);
-   my @read_files;
-
-   # Get first input (a file, STDIN, proclist, etc.)
-   my ($fh, $filename, $filesize) = $next_file->();
-   MKDEBUG && _d('Reading', $filename);
-   push @read_files, $filename || "STDIN" if $fh;
-
-   ITERATION:
-   while (                                      # Quit if
-      $oktorun                                  # interrupted (e.g. CTRL-C), or
-      && (!$max_iters || $iters++ < $max_iters) # at max iterations, or
-      && defined $fh                            # no more input
-   ) {
-      MKDEBUG && _d("Start iteration", $iters, "of", $max_iters);
-      if ( $o->get('print-iterations') ) {
-         my $iter_start = time;
-         MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
-         print "\n# Iteration $iters started at ", ts($iter_start), "\n";
-      }
-
-      # This block covers the current input being parsed.  The input changes
-      # when it runs out of events and makes $more_events false.  This happens
-      # when the input is a list of files, else it doesn't change for inputs
-      # like STDIN and proclist.
-      INPUT: {
-         # Create callback to read next event.  Some inputs, like
-         # Processlist, may use something else but most next_event.
-         my $next_event;
-         if ( my $read_time = $o->get('read-timeout') ) {
-            $next_event = sub { return read_timeout($fh, $read_time); };
-         }
-         else {
-            $next_event = sub { return <$fh>; };
-         }
-         my $tell = sub { return tell $fh; };
-
-         # Reset these var in case we read two logs out of order by time.
-         $past_since = 0;
-         $at_until   = 0;
-
-         # Make a progress reporter, one per file.
-         my $pr;
-         if ( $o->get('progress') && $filename && -e $filename ) {
-            $pr = new Progress(
-               jobsize => $filesize,
-               spec    => $o->get('progress'),
-               name    => $filename,
-            );
-         }
-
-         # Reset runtime for this iteration.  Event processing (the EVENT
-         # loop below) is limited to runtime.  The time is checked before
-         # each event, so make sure the runtime obj is efficient!
-         $runtime->reset();
-
-         # Parse and process the events in this input.
-         my $event       = {};
-         my $more_events = 1;
-         my $oktorun_sub = sub { $more_events = $_[0]; };
-         EVENT:
-         while (                                  # Quit if:
-            $oktorun                              # instructed to quit
-            && $runtime->have_time(event=>$event) # or time is exceeded
-            && $more_events )                     # or there are no more events
-         {
-            eval {
-               # Run events through the pipeline.  The first pipeline process
-               # is usually responsible for getting the next event. The pipeline
-               # stops if a process does not return the event.  This main loop
-               # stops if a process sets oktorun to false; it usually does this
-               # when there are no more events, but it may do it for other
-               # reasons.  Some inputs are infinite streams of events, like the
-               # proclist, so oktorun is never set to false and it's the user's
-               # job to tell us when to stop.
-               PIPELINE_PROCESS:
-               foreach my $callback ( @callbacks ) {
-                  last unless $oktorun;  # the global oktorun var
-                  my $call_start = $instrument ? time : 0;
-                  $event = $callback->(
-                     $event,                # for backwards compatibility
-                     event      => $event,  # new interface
-                     next_event => $next_event,
-                     tell       => $tell,
-                     oktorun    => $oktorun_sub,
-                     misc       => $misc,
-                     stats      => \%stats,
-                  );
-                  if ( $instrument ) {
-                     my $call_end = time;
-                     my $call_t   = $call_end - $call_start;
-                     my $name     = $callback_names{$callback} || $callback;
-                     $prof{callback}->{$name}->{time} += $call_t;
-                     $prof{callback}->{$name}->{count}++;
-                     $prof{total}->{time} += $call_t;
-                     $prof{total}->{count}++;
-                  }
-                  last PIPELINE_PROCESS unless $event;
-               }
-               if ( !$more_events ) {
-                  MKDEBUG && _d('No more events');
-                  close $fh if $fh;
-                  $fh = undef; 
-
-                  # Only get the next file when there's no more events in
-                  # the current file.  This allows us to do collect-and-report
-                  # cycles (i.e. iterations) on huge files.  This doesn't
-                  # apply to infinite inputs because they do not set
-                  # $more_events false.
-                  ($fh, $filename, $filesize) = $next_file->();
-                  MKDEBUG && _d('Reading', $filename);
-                  if ( $fh ) {
-                     push @read_files, $filename || "STDIN";
-                     $more_events = 1 if $fh;  # more events if more input
-                  }
-               }
-            };
-            if ( $EVAL_ERROR ) {
-               _d($EVAL_ERROR);
-               $stats{pipeline_error}++;
-               last EVENT unless $o->get('continue-on-error');
-            }
-
-            $pr->update($tell) if $pr;
-         }  # EVENT
-      }  # INPUT
-
-      # ######################################################################
-      # Done parsing events, now aggregate, report and possibly do other
-      # things with the results for each --group-by class.
-      # ######################################################################
-      if ( $ea[0]->events_processed() ) {
-         my @reports = @{$o->get('report-format')};
-
-         for my $i ( 0..$#groupby ) {
-            if ( $o->get('report') || $qv ) {
-               $ea[$i]->calculate_statistical_metrics(
-                  apdex_t => $o->get('apdex-threshold'),
-               );
-            }
-
-            my ($orderby_attrib, $orderby_func) = split(/:/, $orderby[$i]);
-            $orderby_attrib = check_orderby_attrib($orderby_attrib, $ea[$i], $o);
-            MKDEBUG && _d('Doing reports for groupby', $groupby[$i], 'orderby',
-               $orderby_attrib, $orderby_func);
-
-            my ($worst, $other) = get_worst_queries(
-               OptionParser   => $o,
-               ea             => $ea[$i],
-               orderby_attrib => $orderby_attrib,
-               orderby_func   => $orderby_func,
-               limit          => $o->get('limit')->[$i] || '95%:20',
-               outliers       => $o->get('outliers')->[$i],
-            );
-
-            if ( $o->get('report') ) {
-               my $expected_range = $o->get('expected-range');
-               my $explain_why    = $expected_range
-                                  && (   @$worst < $expected_range->[0]
-                                      || @$worst > $expected_range->[1]);
-
-               # Print a header for this groupby/class if we're doing the
-               # standard query report and there's more than one class or
-               # there's one class but it's not the normal class grouped
-               # by fingerprint.
-               my $print_header = 0;
-               if ( (grep { $_ eq 'query_report'; } @{$o->get('report-format')})
-                    && (@groupby > 1 || $groupby[$i] ne 'fingerprint') ) {
-                  $print_header = 1;
-               }
-
-               my $qrf = new QueryReportFormatter(
-                  QueryReview     => $qv,
-                  dbh             => $ep_dbh,
-                  ExplainAnalyzer => $exa,
-                  %common_modules,
-               );
-               # http://code.google.com/p/maatkit/issues/detail?id=1141
-               $qrf->set_report_formatter(
-                  report    => 'profile',
-                  formatter => new ReportFormatter (
-                     line_width       => $o->get('explain') ? 82 : 74,
-                     long_last_column => 1,
-                     extend_right     => 1,
-                  ),
-               );
-               $qrf->print_reports(
-                  reports      => \@reports,
-                  ea           => $ea[$i],
-                  worst        => $worst,
-                  other        => $other,
-                  orderby      => $orderby_attrib,
-                  groupby      => $groupby[$i],
-                  print_header => $print_header,
-                  explain_why  => $explain_why,
-                  files        => \@read_files,
-                  log_type     => $o->get('type')->[0],
-                  group        => { map { $_=>1 } qw(rusage date hostname files header) }
-               );
-            }
-
-            if ( $qv ) {  # query review
-               update_query_review_tables(
-                  ea           => $ea[$i],
-                  worst        => $worst,
-                  QueryReview  => $qv,
-                  OptionParser => $o,
-               );
-            }
-
-            if ( $o->get('timeline') ) {  # --timeline
-               $tl[$i]->report($tl[$i]->results(), sub { print @_ });
-               $tl[$i]->reset_aggregated_data();
-            }
-
-            if ( $o->get('table-access') ) {  # --table-access
-               print_table_access_report(
-                  ea    => $ea[$i],
-                  worst => $worst,
-                  %common_modules,
-               );
-            }
-
-            if ( my $file = $o->get('save-results') ) {
-               save_results(
-                  ea    => $ea[$i],
-                  worst => $worst,
-                  file  => $file,
-                  gzip  => $o->get('gzip'),
-               );
-            }
-
-            $ea[$i]->reset_aggregated_data();  # reset for next iteration
-
-            # Print header report only once.  So remove it from the
-            # list of reports after the first groupby's reports.
-            if ( $i == 0 ) {
-               @reports = grep { $_ ne 'header' } @reports;
-            }
-
-         } # Each groupby
-      }
-      else {
-         print "\n# No events processed.\n";
-      }
-
-      if ( $o->get('pipeline-profile') ) {
-         my $report = new ReportFormatter(
-            line_width => 74,
-         );
-         $report->set_columns(
-            { name => 'Process'                   },
-            { name => 'Time',  right_justify => 1 },
-            { name => 'Count', right_justify => 1 },
-         );
-         $report->set_title('Pipeline profile');
-         foreach my $callback ( @callbacks ) {
-           my $name = $callback_names{$callback} || $callback;
-            my $t    = $prof{callback}->{$name}->{time} || 0;
-            my $tp   = sprintf('%.2f %4.1f%%', $t,
-                           $t / ($prof{total}->{time} || 1) * 100);
-            $report->add_line($name, $tp,
-               $prof{callback}->{$name}->{count} || 0);
-            
-            # Reset profile for next iteration.
-            map { $prof{callback}->{$name}->{$_} = 0 }
-               keys %{$prof{callback}->{$name}};
-         }
-         map { $prof{total}->{$_} = 0 } keys %{$prof{total}};
-
-         print "\n" . $report->get_report();
-      }
-
-      if ( $o->get('statistics') ) {
-         if ( keys %stats ) {
-            my $report = new ReportFormatter(
-               line_width => 74,
-            );
-            $report->set_columns(
-               { name => 'Statistic',                    },
-               { name => 'Value',     right_justify => 1 },
-            );
-            foreach my $stat ( sort keys %stats ) {
-               $report->add_line($stat, $stats{$stat} || 0);
-
-               # Reset stats for next iteration.
-               $stats{$stat} = 0;
-            }
-            print "\n" . $report->get_report();
-         }
-         else {
-            print "\n# No statistics values.\n";
-         }
-      }
-   } # ITERATION
+   MKDEBUG && _d("Pipeline data:", Dumper($pipeline_data));
 
    # Disconnect all open $dbh's
    map {
@@ -12942,6 +13072,177 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# TODO: This sub is poorly named since it does more than print reports:
+# it aggregates, reports, does QueryReview stuff, etc.
+sub print_reports {
+   my ( %args ) = @_;
+   my @required_args = qw(eas OptionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my ($o, $qv, $pipeline) = @args{qw(OptionParser QueryReview Pipeline)};
+   my ($eas, $tls, $stats) = @args{qw(eas tls stats)};
+
+   my @reports = @{$o->get('report-format')};
+   my @groupby = @{$args{groupby}};
+   my @orderby = @{$args{orderby}};
+
+   for my $i ( 0..$#groupby ) {
+      if ( $o->get('report') || $qv ) {
+         $eas->[$i]->calculate_statistical_metrics(
+            apdex_t => $o->get('apdex-threshold'),
+         );
+      }
+
+      my ($orderby_attrib, $orderby_func) = split(/:/, $orderby[$i]);
+      $orderby_attrib = check_orderby_attrib($orderby_attrib, $eas->[$i], $o);
+      MKDEBUG && _d('Doing reports for groupby', $groupby[$i], 'orderby',
+         $orderby_attrib, $orderby_func);
+
+      my ($worst, $other) = get_worst_queries(
+         OptionParser   => $o,
+         ea             => $eas->[$i],
+         orderby_attrib => $orderby_attrib,
+         orderby_func   => $orderby_func,
+         limit          => $o->get('limit')->[$i] || '95%:20',
+         outliers       => $o->get('outliers')->[$i],
+      );
+
+      if ( $o->get('report') ) {
+         my $expected_range = $o->get('expected-range');
+         my $explain_why    = $expected_range
+                            && (   @$worst < $expected_range->[0]
+                                || @$worst > $expected_range->[1]);
+
+         # Print a header for this groupby/class if we're doing the
+         # standard query report and there's more than one class or
+         # there's one class but it's not the normal class grouped
+         # by fingerprint.
+         my $print_header = 0;
+         if ( (grep { $_ eq 'query_report'; } @{$o->get('report-format')})
+              && (@groupby > 1 || $groupby[$i] ne 'fingerprint') ) {
+            $print_header = 1;
+         }
+
+         my $qrf = new QueryReportFormatter(
+            dbh             => $ep_dbh,
+            %args,
+         );
+         # http://code.google.com/p/maatkit/issues/detail?id=1141
+         $qrf->set_report_formatter(
+            report    => 'profile',
+            formatter => new ReportFormatter (
+               line_width       => $o->get('explain') ? 82 : 74,
+               long_last_column => 1,
+               extend_right     => 1,
+            ),
+         );
+         $qrf->print_reports(
+            reports      => \@reports,
+            ea           => $eas->[$i],
+            worst        => $worst,
+            other        => $other,
+            orderby      => $orderby_attrib,
+            groupby      => $groupby[$i],
+            print_header => $print_header,
+            explain_why  => $explain_why,
+            files        => $args{files},
+            log_type     => $o->get('type')->[0],
+            group        => { map { $_=>1 } qw(rusage date hostname files header) }
+         );
+      }
+
+      if ( $qv ) {  # query review
+         update_query_review_tables(
+            ea           => $eas->[$i],
+            worst        => $worst,
+            QueryReview  => $qv,
+            OptionParser => $o,
+         );
+      }
+
+      if ( $o->get('timeline') ) {  # --timeline
+         $tls->[$i]->report($tls->[$i]->results(), sub { print @_ });
+         $tls->[$i]->reset_aggregated_data();
+      }
+
+      if ( $o->get('table-access') ) {  # --table-access
+         print_table_access_report(
+            ea    => $eas->[$i],
+            worst => $worst,
+            %args,
+         );
+      }
+
+      if ( my $file = $o->get('save-results') ) {
+         save_results(
+            ea    => $eas->[$i],
+            worst => $worst,
+            file  => $file,
+            gzip  => $o->get('gzip'),
+         );
+      }
+
+      $eas->[$i]->reset_aggregated_data();  # reset for next iteration
+
+      # Print header report only once.  So remove it from the
+      # list of reports after the first groupby's reports.
+      if ( $i == 0 ) {
+         @reports = grep { $_ ne 'header' } @reports;
+      }
+
+   } # Each groupby
+
+   if ( $o->get('pipeline-profile') ) {
+      my $report = new ReportFormatter(
+         line_width => 74,
+      );
+      $report->set_columns(
+         { name => 'Process'                   },
+         { name => 'Time',  right_justify => 1 },
+         { name => 'Count', right_justify => 1 },
+      );
+      $report->set_title('Pipeline profile');
+      my $instrument = $pipeline->instrumentation;
+      my $total_time = $instrument->{Pipeline};
+      foreach my $process_name ( $pipeline->processes() ) {
+         my $t    = $instrument->{$process_name}->{time} || 0;
+         my $tp   = sprintf('%.2f %4.1f%%', $t, $t / ($total_time || 1) * 100);
+         $report->add_line($process_name, $tp,
+            $instrument->{$process_name}->{count} || 0);
+      }
+      # Reset profile for next iteration.
+      $pipeline->reset();
+
+      print "\n" . $report->get_report();
+   }
+
+   if ( $o->get('statistics') ) {
+      if ( keys %$stats ) {
+         my $report = new ReportFormatter(
+            line_width => 74,
+         );
+         $report->set_columns(
+            { name => 'Statistic',                    },
+            { name => 'Value',     right_justify => 1 },
+         );
+         foreach my $stat ( sort keys %$stats ) {
+            $report->add_line($stat, $stats->{$stat} || 0);
+
+            # Reset stats for next iteration.
+            $stats->{$stat} = 0;
+         }
+         print "\n" . $report->get_report();
+      }
+      else {
+         print "\n# No statistics values.\n";
+      }
+   }
+
+   return;
+}
 
 # Pass in the currently open $dbh (if any), where $current points to ('execute'
 # or 'processlist') and whether you want to be connected to the read_only
@@ -13002,19 +13303,19 @@ sub make_alt_attrib {
    MKDEBUG && _d('Primary attrib:', $attrib, 'aliases:', @alts);
    my @lines;
    push @lines,
-      'sub { my ( $event ) = @_; ',
-      'MKDEBUG && _d("callback: alt attrib");',
+      'sub { my ( $args ) = @_; ',
+      'my $event = $args->{event}; ',
       "if ( exists \$event->{'$attrib'} ) { ",
       (map { "delete \$event->{'$_'}; "; } @alts),
-      'return $event; }',     
+      'return $args; }',     
       # Primary attrib doesn't exist; look for alts
       (map {
          "if ( exists \$event->{'$_'} ) { "
          . "\$event->{'$attrib'} = \$event->{'$_'}; "
          . "delete \$event->{'$_'}; "
-         . 'return $event; }';
+         . 'return $args; }';
       } @alts),
-      'return $event; }';
+      'return $args; }';
    MKDEBUG && _d('attrib alias sub for', $attrib, ':', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
