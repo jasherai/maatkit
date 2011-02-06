@@ -119,7 +119,6 @@ sub execute {
 
    MKDEBUG && _d("Pipeline starting at", time);
    my $instrument = $self->{instrument};
-   my $last_proc  = scalar @{$self->{procs}} - 1;
    my $processes  = $self->{procs};
    my $procno     = 0;  # so we can see which proc if one causes an error
    my $output;
@@ -127,8 +126,7 @@ sub execute {
    while ( $$oktorun ) {
       eval {
          PIPELINE_PROCESS:
-         for ( 0..$last_proc ) {
-            $procno = $_;  # XXX
+         while ( $procno < scalar @{$self->{procs}} ) {
             my $call_start = $instrument ? time : 0;
 
             # Execute this pipeline process.
@@ -148,11 +146,12 @@ sub execute {
                   $self->{names}->[$procno]);
                last PIPELINE_PROCESS;
             }
+            $procno++;
          }
       };
       if ( $EVAL_ERROR ) {
-         warn "Pipeline process " . ($self->{names}->[$procno] || "")
-            . " caused an error: $EVAL_ERROR";
+         warn "Pipeline process " $procno . '(' . ($self->{names}->[$procno] || "")
+            . ") caused an error: $EVAL_ERROR";
          die $EVAL_ERROR unless $self->{continue_on_error};
       }
    }

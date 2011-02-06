@@ -12211,7 +12211,9 @@ sub main {
             # (i.e. iterations) on huge files.  This doesn't apply to infinite
             # inputs because they don't set more_events false.
             if ( !$args->{input_fh} || !$args->{more_events} ) {
-               close $args->{input_fh} if $args->{input_fh};
+               if ( $args->{input_fh} ) {
+                  close $args->{input_fh} or die $OS_ERROR;
+               }
                my ($fh, $filename, $filesize) = $next_file->();
                if ( $fh ) {
                   MKDEBUG && _d('Reading', $filename);
@@ -12644,7 +12646,8 @@ sub main {
                MKDEBUG && _d("No more input, terminating pipeline");
 
                # This shouldn't happen, but I want to know if it does.
-               warn "There's an event in the pipeline but no current input"
+               warn "There's an event in the pipeline but no current input: "
+                     . Dumper($args)
                   if $args->{event};
 
                $oktorun = 0;  # 2. terminate pipeline
