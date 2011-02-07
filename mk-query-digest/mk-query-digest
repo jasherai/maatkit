@@ -11685,7 +11685,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Pipeline package 7262
+# Pipeline package 7268
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Pipeline.pm
@@ -11704,7 +11704,7 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-use Time::HiRes qw(time usleep);
+use Time::HiRes qw(time);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -11769,16 +11769,14 @@ sub execute {
 
    MKDEBUG && _d("Pipeline starting at", time);
    my $instrument = $self->{instrument};
-   my $last_proc  = scalar @{$self->{procs}} - 1;
    my $processes  = $self->{procs};
-   my $procno     = 0;  # so we can see which proc if one causes an error
-   my $output;
    EVENT:
    while ( $$oktorun ) {
+      my $procno  = 0;  # so we can see which proc if one causes an error
+      my $output;
       eval {
          PIPELINE_PROCESS:
-         for ( 0..$last_proc ) {
-            $procno = $_;  # XXX
+         while ( $procno < scalar @{$self->{procs}} ) {
             my $call_start = $instrument ? time : 0;
 
             MKDEBUG && _d("Pipeline process", $self->{names}->[$procno]);
@@ -11797,11 +11795,13 @@ sub execute {
                   $self->{names}->[$procno]);
                last PIPELINE_PROCESS;
             }
+            $procno++;
          }
       };
       if ( $EVAL_ERROR ) {
-         warn "Pipeline process " . ($self->{names}->[$procno] || "")
-            . " caused an error: $EVAL_ERROR";
+         warn "Pipeline process $procno ("
+            . ($self->{names}->[$procno] || "")
+            . ") caused an error: $EVAL_ERROR";
          die $EVAL_ERROR unless $self->{continue_on_error};
       }
    }
@@ -12152,15 +12152,10 @@ sub main {
    my @read_files; # file names that have been parsed
    my %stats;      # various stats/counters used in some procs
 
-   # The terminator proc uses the Runtime obj and max iters to determine
-   # when/if to terminate the pipeline.
-   my $runtime;
-   my $max_iters = $o->get('iterations');
-
    # The pipeline data hashref is passed to each proc.  Procs use this to
    # pass data through the pipeline.  The most importat data is the event.
    # Other data includes in the next_event callback, time and iters left,
-   # etc.
+   # etc.  This hashref is accessed inside a proc via the $args arg.
    my $pipeline_data = { iter => 1 };
 
    # Enable timings to instrument code for either of these two opts.
@@ -12212,7 +12207,8 @@ sub main {
             # inputs because they don't set more_events false.
             if ( !$args->{input_fh} || !$args->{more_events} ) {
                if ( $args->{input_fh} ) {
-                  close $args->{input_fh} or die $OS_ERROR;
+                  close $args->{input_fh}
+                     or die "Cannot close input fh: $OS_ERROR";
                }
                my ($fh, $filename, $filesize) = $next_file->();
                if ( $fh ) {
@@ -12426,7 +12422,7 @@ sub main {
       else {
          $now_callback = sub { return; };
       }
-      $runtime = new Runtime(
+      $pipeline_data->{Runtime} = new Runtime(
          now     => $now_callback,
          runtime => $o->get('run-time'),
       );
@@ -12482,7 +12478,8 @@ sub main {
             }
             else {
                # Clock and event run-time modes need to check the time.
-               $args->{time_left} = $runtime->time_left(event=>$args->{event});
+               $args->{time_left}
+                  = $args->{Runtime}->time_left(event=>$args->{event});
             }
 
             return $args;
@@ -12575,15 +12572,22 @@ sub main {
          name    => 'iteration',
          process => sub {
             my ( $args ) = @_;
-            my $iter = $args->{iter};
+
+            # Start the (next) iteration.
             if ( !$args->{iter_start} ) {
                my $iter_start = $args->{iter_start} = time;
-               MKDEBUG && _d('Iteration', $iter, 'started at', ts($iter_start));
-               print "\n# Iteration $iter started at ", ts($iter_start), "\n"
-                  if $o->get('print-iterations');
-               $args->{iters_left} = $max_iters - $args->{iter} if $max_iters;
+               MKDEBUG && _d('Iteration', $args->{iter},
+                  'started at', ts($iter_start));
+               
+               if ( $o->get('print-iterations') ) {
+                  print "\n# Iteration $args->{iter} started at ",
+                     ts($iter_start), "\n";
+               }
             }
 
+            # Determine if we should stop the current iteration.
+            # If we do, then we report events collected during this
+            # iter, then reset and increment for the next iter.
             my $report    = 0;
             my $time_left = $args->{time_left};
             if ( !$args->{more_events}
@@ -12596,6 +12600,10 @@ sub main {
                     && $args->{unix_ts} >= $args->{next_ts_interval} ) {
                MKDEBUG && _d("Event is in the next interval, reporting");
 
+               # Get the next ts interval based on the current log ts.
+               # Log ts can make big jumps, so just += $rt might not
+               # set the next ts interval at a time past the current
+               # log ts.
                my $rt = $o->get('run-time');
                do {
                   $args->{next_ts_interval} += $rt;
@@ -12605,10 +12613,7 @@ sub main {
             }
 
             if ( $report ) {
-               MKDEBUG && _d("Iteration", $iter, "stopped, reporting");
-
-               # TODO: If reporting is slow (>1s) then we could fork
-               # and report to let the pipeline continue.
+               MKDEBUG && _d("Iteration", $args->{iter}, "stopped at",ts(time));
                if ( $ea[0]->events_processed() ) {
                   print_reports(
                      eas             => \@ea,
@@ -12627,10 +12632,29 @@ sub main {
                   print "\n# No events processed.\n";
                }
 
+               # Decrement iters_left after finishing an iter because in the
+               # default case, 1 iter, if we decr when the iter starts, then
+               # terminator will think there's no iters left before the one
+               # iter has finished.
+               if ( my $max_iters = $o->get('iterations') ) {
+                  $args->{iters_left} = $max_iters - $args->{iter};
+                  MKDEBUG && _d($args->{iters_left}, "iterations left");
+               }
+
+               # Next iteration.
                $args->{iter}++;
                $args->{iter_start} = undef;
+
+               # Runtime is per-iteration, so reset it, and reset time_left
+               # else terminator will think runtime has elapsed when really
+               # we may just be between iters.
+               $args->{Runtime}->reset();
+               $args->{time_left} = undef;
             }
 
+            # Continue the pipeline even if we reported and went to the next
+            # iter because there could be an event in the pipeline that is
+            # the first in the next/new iter.
             return $args;
          },
       );
@@ -12642,6 +12666,8 @@ sub main {
          process => sub {
             my ( $args ) = @_;
 
+            # The first sure-fire state that terminates the pipeline is
+            # having no more input.
             if ( !$args->{input_fh} ) {
                MKDEBUG && _d("No more input, terminating pipeline");
 
@@ -12654,29 +12680,17 @@ sub main {
                return;        # 1. exit pipeline early
             }
 
-            my $time_left  = $args->{time_left};
-            if ( defined $time_left && $time_left <= 0 ) {
-               # It's time to stop this iteration.  If this is the last iter,
-               # then we can disregard any event we may have--it either
-               # didn't get parsed in time to make it into this iter (clock
-               # time) or it would belong to the next iter (event time) if
-               # there were one.
-               my $iters_left = $args->{iters_left};
-               if ( defined $iters_left && !$iters_left ) {
-                  MKDEBUG && _d("No more time and no more iters",
-                     "terminating pipeline");
-                  $oktorun = 0;  # 2. terminate pipeline
-                  return;        # 1. exit pipeline early
-               }
-               else {
-                  MKDEBUG && _d("Resetting runtime for next iter");
-                  $runtime->reset();
-               }
+            # The second sure-first state is having no more iterations.
+            my $iters_left = $args->{iters_left};
+            if ( defined $iters_left && $iters_left <= 0 ) {
+               MKDEBUG && _d("No more iterations, terminating pipeline");
+               $oktorun = 0;  # 2. terminate pipeline
+               return;        # 1. exit pipeline early
             }
 
             # There's time or iters left so keep running.
             if ( $args->{event} ) {
-               MKDEBUG && _d("Event in pipeline, first for this new iter");
+               MKDEBUG && _d("Event in pipeline, continuing");
                return $args;
             }
             else {
@@ -14674,7 +14688,12 @@ How frequently to poll the processlist, in seconds.
 type: int; default: 1
 
 How many times to iterate through the collect-and-report cycle.  If 0, iterate
-to infinity.  See also L<"--run-time">.
+to infinity.  Each iteration runs for L<"--run-time"> amount of time.  An
+iteration is usually determined by an amount of time and a report is printed
+when that amount of time elapses.  With L<"--run-time-mode"> C<interval>,
+an interval is instead determined by the interval time you specify with
+L<"--run-time">.  See L<"--run-time"> and L<"--run-time-mode"> for more
+information.
 
 =item --limit
 
@@ -15119,8 +15138,14 @@ redundant to store this for other attributes.
 
 type: time
 
-How long to run before exiting.  The default is to run forever (you can
-interrupt with CTRL-C).  See also L<"--iterations">.
+How long to run for each L<"--iterations">.  The default is to run forever
+(you can interrupt with CTRL-C).  Because L<"--iterations"> defaults to 1,
+if you only specify L<"--run-time">, mk-query-digest runs for that amount of
+time and then exits.  The two options are specified together to do
+collect-and-report cycles.  For example, specifying L<"--iterations"> C<4>
+L<"--run-time"> C<15m> with a continuous input (like STDIN or
+L<"--processlist">) will cause mk-query-digest to run for 1 hour
+(15 minutes x 4), reporting four times, once at each 15 minute interval.
 
 =item --run-time-mode
 
@@ -15134,7 +15159,7 @@ values for this option:
 =item clock
 
 L<"--run-time"> specifies an amount of real clock time during which the tool
-should run for each L<"--iteration">.
+should run for each L<"--iterations">.
 
 =item event
 
@@ -15158,23 +15183,26 @@ L<"--run-time"> must be an interval that divides evenly into minutes, hours
 or days.  For example, C<5m> divides evently into hours (60/5=12, so 12
 5 minutes intervals per hour) but C<7m> does not (60/7=8.6).
 
-Specifying C<--run-time-mode interval --run-time 30m> is similar to
-specifying C<--run-time-mode clock --run-time 30m --iterations 0>.  In the
-latter case, mk-query-digest will run forever, producing reports every
+Specifying C<--run-time-mode interval --run-time 30m --iterations 0> is
+similar to specifying C<--run-time-mode clock --run-time 30m --iterations 0>.
+In the latter case, mk-query-digest will run forever, producing reports every
 30 minutes, but this only works effectively with  continuous inputs like
-STDIN and the processlist.  For fixed inputs, like log files, the latter
+STDIN and the processlist.  For fixed inputs, like log files, the former
 example produces multiple reports by dividing the log into 30 minutes
 intervals based on timestamps.
 
-Intervals are calculated from the first timestamp seen in the log.
-For example, if the first timestamp is C<12:10:30> and the interval is
-30 minutes, then the first interval ends at C<12:29:59>.  Therefore,
-the interval is C<12:00:00> to C<12:29:59>, so the first event at
-C<12:10:30> is included in the first interval.  When a new timestamp
-exceeds the interval, a report is printed, and the next interval
-is calculated based on the log timestamp that ended the interval.
-If, to extend the example, the new timestamp is C<15:00:09>, the next
-interval ends at C<15:29:59>.
+Intervals are calculated from the zeroth second/minute/hour in which a
+timestamp occurs, not from whatever time it specifies.  For example,
+with 30 minute intervals and a timestamp of C<12:10:30>, the interval
+is I<not> C<12:10:30> to C<12:40:30>, it is C<12:00:00> to C<12:29:59>.
+Or, with 1 hour interavals, it is C<12:00:00> to C<12:59:59>.
+When a new timestamp exceeds the interval, a report is printed, and the
+next interval is recalculated based on the new timestamp.
+
+Since L<"--iterations"> is 1 by default, you probably want to specify
+a new value else mk-query-digest will only get and report on the first
+interval from the log since 1 interval = 1 iteration.  If you want to
+get and report every interval in a log, specify L<"--iterations"> C<0>.
 
 =back
 

@@ -26,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 9;
+   plan tests => 10;
 }
 
 my @args;
@@ -110,6 +110,7 @@ ok(
 );
 
 # Run-time interval.
+push @args, qw(--iterations 0);
 ok(
    no_diff(
       sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
@@ -133,7 +134,7 @@ ok(
    "Run-time mode interval 30s"
 );
 
-# No, contrary to the above, those two events are together because they're
+# Now, contrary to the above, those two events are together because they're
 # within the same 30m interval.
 ok(
    no_diff(
@@ -142,6 +143,19 @@ ok(
       "mk-query-digest/t/samples/slow033-rtm-interval-30m.txt",
    ),
    "Run-time mode interval 30m"
+);
+
+pop @args;  # report --iterations 0
+pop @args;
+# Like the first 30s run above, but with only 3 interations, only the
+# first 3 queries are gotten.
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, "$trunk/common/t/samples/slow033.txt",
+         qw(--run-time-mode interval --run-time 30 --iterations 3)) },
+      "mk-query-digest/t/samples/slow033-rtm-interval-30s-3iter.txt"
+   ),
+   "Run-time mode interval and --iterations"
 );
 
 # #############################################################################
