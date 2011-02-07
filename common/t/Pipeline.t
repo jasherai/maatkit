@@ -58,13 +58,20 @@ $pipeline->add(
    name    => 'proc1',
    process => sub {
       print "proc1";
-      return shift @exit;
+      return 1;
    },
 );
 $pipeline->add(
    name    => 'proc2',
    process => sub {
       print "proc2";
+      return shift @exit;
+   },
+);
+$pipeline->add(
+   name    => 'proc3',
+   process => sub {
+      print "proc3";
       $oktorun = 0;
       return;
    },
@@ -76,7 +83,7 @@ $output = output(
 
 is(
    $output,
-   "proc1proc1proc2",
+   "proc1proc2proc1proc2proc3",
    "Pipeline restarted"
 );
 
@@ -224,7 +231,7 @@ $output = output(
 
 like(
    $output,
-   qr/proc1 caused an error.+proc2/s,
+   qr/0 \(proc1\) caused an error.+proc2/s,
    "Continues on error"
 );
 
