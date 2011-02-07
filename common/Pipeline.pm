@@ -31,7 +31,7 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-use Time::HiRes qw(time usleep);
+use Time::HiRes qw(time);
 
 sub new {
    my ( $class, %args ) = @_;
