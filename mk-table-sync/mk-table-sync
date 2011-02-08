@@ -9004,7 +9004,14 @@ Usage: mk-table-sync [OPTION...] DSN [DSN...]
 mk-table-sync synchronizes data efficiently between MySQL tables.
 
 This tool changes data, so for maximum safety, you should back up your data
-before you use it.
+before you use it.  When synchronizing a server that is a replication slave with
+the --replicate or --sync-to-master methods, it B<always> makes the changes on
+the replication master, B<never> the replication slave directly.  This is in
+general the only safe way to bring a replica back in sync with its master;
+changes to the replica are usually the source of the problems in the first
+place.  However, the changes it makes on the master should be no-op changes that
+set the data to their current values, and actually affect only the replica.
+Please read the detailed documentation that follows to learn more about this.
 
 Sync db.tbl on host1 to host2:
 
