@@ -435,7 +435,7 @@ sub query_report {
          # So the report will print something like,
          #   # arg crc      685 (2/66%), 159 (1/33%)
          # Thus we want our "CRC" line to be 685 and not 18547302820.
-         if ( $samp_query ) {
+         if ( $samp_query && ($args{variations} && @{$args{variations}}) ) {
             my $crc = crc32($samp_query);
             $report.= "# CRC " . ($crc ? $crc % 1_000 : "") . "\n";
          }

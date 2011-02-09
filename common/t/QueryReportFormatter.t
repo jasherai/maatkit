@@ -953,12 +953,13 @@ $qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub { $qrf->print_reports(
-         reports => [qw(header query_report profile)],
-         ea      => $ea,
-         worst   => [['select col from tbl where id=?','top',1]],
-         other   => [],
-         orderby => 'Query_time',
-         groupby => 'fingerprint',
+         reports    => [qw(header query_report profile)],
+         ea         => $ea,
+         worst      => [['select col from tbl where id=?','top',1]],
+         other      => [],
+         orderby    => 'Query_time',
+         groupby    => 'fingerprint',
+         variations => [qw(arg)],
       ); },
       "common/t/samples/QueryReportFormatter/report001.txt",
    ),
@@ -970,11 +971,12 @@ $qrf->set_report_formatter(report=>'profile', formatter=>$report);
 ok(
    no_diff(
       sub { $qrf->print_reports(
-         reports => [qw(profile query_report header)],
-         ea      => $ea,
-         worst   => [['select col from tbl where id=?','top',1]],
-         orderby => 'Query_time',
-         groupby => 'fingerprint',
+         reports    => [qw(profile query_report header)],
+         ea         => $ea,
+         worst      => [['select col from tbl where id=?','top',1]],
+         orderby    => 'Query_time',
+         groupby    => 'fingerprint',
+         variations => [qw(arg)],
       ); },
       "common/t/samples/QueryReportFormatter/report003.txt",
    ),
@@ -1030,8 +1032,9 @@ ok(
                ['execute select i from d.t where i=?', 'top',1],
                ['prepare select i from d.t where i=?', 'top',2],
             ],
-            orderby => 'Query_time',
-            groupby => 'fingerprint',
+            orderby    => 'Query_time',
+            groupby    => 'fingerprint',
+            variations => [qw(arg)],
          );
       },
       "common/t/samples/QueryReportFormatter/report002.txt",
