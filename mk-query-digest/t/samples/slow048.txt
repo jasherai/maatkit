@@ -24,7 +24,6 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'products'\G
 #    SHOW CREATE TABLE `products`\G
-# CRC 144581416
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT * FROM `products` ORDER BY name, shape asc\G
 

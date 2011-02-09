@@ -27,7 +27,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `test` LIKE 'n'\G
 #    SHOW CREATE TABLE `test`.`n`\G
-# CRC 3895703743
 # EXPLAIN /*!50100 PARTITIONS*/
 select sleep(2) from n\G
 
@@ -59,6 +58,5 @@ select sleep(2) from n\G
 # Tables
 #    SHOW TABLE STATUS FROM `test` LIKE 'n'\G
 #    SHOW CREATE TABLE `test`.`n`\G
-# CRC 1142521805
 # EXPLAIN /*!50100 PARTITIONS*/
 select sleep(2) from test.n\G

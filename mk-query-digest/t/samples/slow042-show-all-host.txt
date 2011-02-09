@@ -26,7 +26,6 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 2911836762
 # EXPLAIN /*!50100 PARTITIONS*/
 select foo
 \G

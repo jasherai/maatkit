@@ -36,6 +36,5 @@
 # Tables
 #    SHOW TABLE STATUS FROM `db3` LIKE 'vendor11gonzo'\G
 #    SHOW CREATE TABLE `db3`.`vendor11gonzo`\G
-# CRC 1229664523
 INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact')\G

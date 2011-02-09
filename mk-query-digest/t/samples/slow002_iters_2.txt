@@ -34,7 +34,6 @@
 #    SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
 #    SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
 #    SHOW CREATE TABLE `db1`.`gonzo`\G
-# CRC 632913816
 update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3\G

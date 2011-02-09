@@ -36,7 +36,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `foo` LIKE 'bar'\G
 #    SHOW CREATE TABLE `foo`.`bar`\G
-# CRC 874569052
 UPDATE foo.bar
 SET    biz = '91848182522'\G
 # Converted for EXPLAIN
@@ -78,7 +77,6 @@ select     biz = '91848182522' from foo.bar \G
 #    SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
 #    SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
 #    SHOW CREATE TABLE `db1`.`gonzo`\G
-# CRC 632913816
 update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3\G

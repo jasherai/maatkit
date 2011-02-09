@@ -42,7 +42,6 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'two'\G
 #    SHOW CREATE TABLE `two`\G
-# CRC 4114698846
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT two FROM two WHERE id=?\G
 
@@ -71,7 +70,6 @@ SELECT two FROM two WHERE id=?\G
 # Tables
 #    SHOW TABLE STATUS LIKE 'three'\G
 #    SHOW CREATE TABLE `three`\G
-# CRC 391146178
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT three FROM three WHERE id=?\G
 
@@ -100,6 +98,5 @@ SELECT three FROM three WHERE id=?\G
 # Tables
 #    SHOW TABLE STATUS LIKE 'one'\G
 #    SHOW CREATE TABLE `one`\G
-# CRC 3035295057
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT one FROM one WHERE id=?\G

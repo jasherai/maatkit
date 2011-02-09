@@ -27,7 +27,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `db2` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `db2`.`tbl`\G
-# CRC 476880549
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT MIN(id),MAX(id) FROM tbl\G
 
@@ -56,7 +55,6 @@ SELECT MIN(id),MAX(id) FROM tbl\G
 # 100ms
 #    1s
 #  10s+
-# CRC 566511592
 SET NAMES utf8\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xAA353644DE4C4CB4 at byte 0 ________
@@ -84,5 +82,4 @@ SET NAMES utf8\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3954282531
 administrator command: Quit\G
