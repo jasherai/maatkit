@@ -1,5 +1,7 @@
 Changelog for mk-variable-advisor:
 
+   * The tool did not prompt for a password with --ask-pass (issue 1243).
+
 2010-09-11: version 1.0.1
 
    * The --source-of-variables filename was made lowercase (issue 1115).
