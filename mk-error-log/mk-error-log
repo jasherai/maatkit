@@ -1715,7 +1715,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 6387
+# Transformers package 7226
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -1748,6 +1748,7 @@ our @EXPORT_OK   = qw(
    unix_timestamp
    any_unix_timestamp
    make_checksum
+   crc32
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
@@ -1938,6 +1939,21 @@ sub make_checksum {
    my $checksum = uc substr(md5_hex($val), -16);
    MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
+}
+
+sub crc32 {
+   my ( $string ) = @_;
+   return unless $string;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub _d {

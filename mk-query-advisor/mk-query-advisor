@@ -2604,7 +2604,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 6387
+# Transformers package 7226
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Transformers.pm
@@ -2637,6 +2637,7 @@ our @EXPORT_OK   = qw(
    unix_timestamp
    any_unix_timestamp
    make_checksum
+   crc32
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
@@ -2827,6 +2828,21 @@ sub make_checksum {
    my $checksum = uc substr(md5_hex($val), -16);
    MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
+}
+
+sub crc32 {
+   my ( $string ) = @_;
+   return unless $string;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub _d {
@@ -3999,7 +4015,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 6969
+# SQLParser package 7242
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SQLParser.pm
@@ -4607,6 +4623,37 @@ sub parse_values {
    return \@vals;
 }
 
+sub parse_set {
+   my ( $self, $set ) = @_;
+   MKDEBUG && _d("Parse SET", $set);
+   return unless $set;
+   my $vals = $self->parse_csv($set);
+   return unless $vals && @$vals;
+
+   my @set;
+   foreach my $col_val ( @$vals ) {
+      my ($tbl_col, $val)  = $col_val =~ m/^([^=]+)\s*=\s*(.+)/;
+
+      my ($c) = $val =~ m/^(['"])/;
+      if ( $c ) {
+         $val =~ s/^$c//;
+         $val =~ s/$c$//;
+      }
+
+      my ($col, $tbl, $db) = reverse split(/\./, $tbl_col);
+
+      my $set_struct = {
+         column => $col,
+         value  => $val,
+      };
+      $set_struct->{table}    = $tbl if $tbl;
+      $set_struct->{database} = $db  if $db;
+      MKDEBUG && _d("SET:", Dumper($set_struct));
+      push @set, $set_struct;
+   }
+   return \@set;
+}
+
 sub parse_csv {
    my ( $self, $vals ) = @_;
    return unless $vals;
@@ -4615,7 +4662,6 @@ sub parse_csv {
 }
 {
    no warnings;  # Why? See same line above.
-   *parse_set          = \&parse_csv;
    *parse_on_duplicate = \&parse_csv;
 }
 

@@ -2456,10 +2456,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 6387
+# Transformers package 7226
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
@@ -2485,12 +2489,12 @@ our @EXPORT_OK   = qw(
    unix_timestamp
    any_unix_timestamp
    make_checksum
+   crc32
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
 our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
-                                         # like a MySQL YYMMDD without hh:mm:ss.
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -2500,12 +2504,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -2526,7 +2526,6 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
    my $p   = $args{p} || 0; # float precision
@@ -2539,7 +2538,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -2562,8 +2560,6 @@ sub secs_to_time {
          $secs % 60);
 }
 
-# Convert time values to number of seconds:
-# 1s = 1, 1m = 60, 1h = 3600, 1d = 86400.
 sub time_to_secs {
    my ( $val, $default_suffix ) = @_;
    die "I need a val argument" unless defined $val;
@@ -2601,8 +2597,6 @@ sub shorten {
       $num, $units[$n]);
 }
 
-# Turns a unix timestamp into an ISO8601 formatted date and time.  $gmt makes
-# this relative to GMT, for test determinism.
 sub ts {
    my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
@@ -2619,8 +2613,6 @@ sub ts {
    return $val;
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
-# handles a timestamp with fractions after it.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
@@ -2633,9 +2625,6 @@ sub parse_timestamp {
    return $val;
 }
 
-# Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch).  Optional microseconds are printed.  $gmt
-# makes it use GMT time instead of local time (to make tests deterministic).
 sub unix_timestamp {
    my ( $val, $gmt ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
@@ -2651,15 +2640,6 @@ sub unix_timestamp {
    return $val;
 }
 
-# Turns several different types of timestamps into a unix timestamp.
-# Each type is auto-detected.  Supported types are:
-#   * N[shdm]                Now - N[shdm]
-#   * 071015 21:43:52        MySQL slow log timestamp
-#   * 2009-07-01 [3:43:01]   Proper timestamp with options HH:MM:SS
-#   * NOW()                  A MySQL time express
-# For the last type, the callback arg is required.  It is passed the
-# given value/expression and is expected to return a single value
-# (the result of the expression).
 sub any_unix_timestamp {
    my ( $val, $callback ) = @_;
 
@@ -2673,9 +2653,6 @@ sub any_unix_timestamp {
       return time - $n;
    }
    elsif ( $val =~ m/^\d{9,}/ ) {
-      # unix timestamp 100000000 is roughly March, 1973, so older
-      # dates won't be caught here; they'll probably be mistaken
-      # for a MySQL slow log timestamp.
       MKDEBUG && _d('ts is already a unix timestamp');
       return $val;
    }
@@ -2698,12 +2675,26 @@ sub any_unix_timestamp {
    return;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
    MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
+}
+
+sub crc32 {
+   my ( $string ) = @_;
+   return unless $string;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub _d {
