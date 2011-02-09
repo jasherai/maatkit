@@ -65,7 +65,10 @@ is_deeply(
 # Provide a default db to make --execute work.
 $cnf .= ',D=test';
 
-# We tail -n 27 to get everything from "Exec orig" onward.  The lines
+# TODO: This test is a PITA because every time the mqd output
+# changes the -n of tail has to be adjusted.
+
+# We tail to get everything from "Exec orig" onward.  The lines
 # above have the real execution time will will vary.  The last 18 lines
 # are sufficient to see that it actually executed without errors.
 ok(
@@ -73,7 +76,7 @@ ok(
       sub { mk_query_digest::main(@args, '--execute', $cnf,
          "$trunk/common/t/samples/slow018.txt") },
       'mk-query-digest/t/samples/slow018_execute_report_2.txt',
-      trf => 'tail -n 27',
+      trf => 'tail -n 26',
    ),
    '--execute with default database'
 );

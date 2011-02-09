@@ -26,5 +26,4 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 2151770939
 administrator command: Connect\G

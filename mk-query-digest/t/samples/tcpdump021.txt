@@ -27,7 +27,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't'\G
 #    SHOW CREATE TABLE `d`.`t`\G
-# CRC 4166892348
 PREPARE SELECT i FROM d.t WHERE i=?\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/
@@ -63,7 +62,6 @@ SELECT i FROM d.t WHERE i=?\G
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't'\G
 #    SHOW CREATE TABLE `d`.`t`\G
-# CRC 1438470990
 EXECUTE SELECT i FROM d.t WHERE i="3"\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/
@@ -93,5 +91,4 @@ SELECT i FROM d.t WHERE i="3"\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3954282531
 administrator command: Quit\G

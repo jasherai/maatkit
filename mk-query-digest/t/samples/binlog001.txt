@@ -42,7 +42,6 @@
 #    SHOW CREATE TABLE `test3`.`tblo`\G
 #    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
 #    SHOW CREATE TABLE `test3`.`tbl2`\G
-# CRC 565410455
 replace into test4.tbl9(tbl5, day, todo, comment)
  select distinct o.tbl5, date(o.col3), 'misc', right('foo', 50)
       from test3.tblo as o
@@ -78,7 +77,6 @@ replace into test4.tbl9(tbl5, day, todo, comment)
 #    SHOW CREATE TABLE `test3`.`tblo`\G
 #    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
 #    SHOW CREATE TABLE `test3`.`tbl2`\G
-# CRC 3388414816
 update test3.tblo as o
          inner join test3.tbl2 as e on o.animal = e.animal and o.oid = e.oid
       set e.tblo = o.tblo,
@@ -116,7 +114,6 @@ select  e.tblo = o.tblo,
 #    SHOW CREATE TABLE `test3`.`tblo`\G
 #    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
 #    SHOW CREATE TABLE `test3`.`tbl2`\G
-# CRC 3766054289
 update test3.tblo as o inner join test3.tbl2 as e
  on o.animal = e.animal and o.oid = e.oid
       set o.tbl2 = e.tbl2,
@@ -156,7 +153,6 @@ select  o.tbl2 = e.tbl2,
 # 100ms
 #    1s
 #  10s+  ################################################################
-# CRC 2379306917
 BEGIN\G
 
 # Query 5: 0 QPS, 0x concurrency, ID 0xED69B13F3D0161D0 at byte 2479 _____
@@ -183,7 +179,6 @@ BEGIN\G
 # Tables
 #    SHOW TABLE STATUS FROM `test2` LIKE 'tbl8'\G
 #    SHOW CREATE TABLE `test2`.`tbl8`\G
-# CRC 2645266152
 update test2.tbl8
       set last2metric1 = last1metric1, last2time = last1time,
          last1metric1 = last0metric1, last1time = last0time,
@@ -219,7 +214,6 @@ select  last2metric1 = last1metric1, last2time = last1time,
 # Tables
 #    SHOW TABLE STATUS FROM `test1` LIKE 'tbl6'\G
 #    SHOW CREATE TABLE `test1`.`tbl6`\G
-# CRC 1921065199
 insert into test1.tbl6
       (day, tbl5, misccol9type, misccol9, metric11, metric12, secs)
       values

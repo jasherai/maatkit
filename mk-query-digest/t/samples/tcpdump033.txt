@@ -40,7 +40,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't'\G
 #    SHOW CREATE TABLE `d`.`t`\G
-# CRC 3796682846
 EXECUTE select * from d.t where name="adam"\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/
@@ -74,7 +73,6 @@ select * from d.t where name="adam"\G
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't'\G
 #    SHOW CREATE TABLE `d`.`t`\G
-# CRC 61663748
 PREPARE select * from d.t where name="daniel"\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/
@@ -104,7 +102,6 @@ select * from d.t where name="daniel"\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3188352164
 DEALLOCATE PREPARE 4\G
 
 # Profile

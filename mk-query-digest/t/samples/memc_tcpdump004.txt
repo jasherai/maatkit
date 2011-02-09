@@ -24,7 +24,6 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 2845720735
 incr key
 
 # Query 2: 0 QPS, 0x concurrency, ID 0xC03129972E1D6A1F at byte 1788 _____
@@ -52,5 +51,4 @@ incr key
 # 100ms
 #    1s
 #  10s+
-# CRC 815530420
 decr key

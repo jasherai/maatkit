@@ -28,7 +28,6 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 2151770939
 administrator command: Connect\G
 
 # Query 2: 0.00 QPS, 0x concurrency, ID 0xAA353644DE4C4CB4 at byte 464 ___
@@ -51,7 +50,6 @@ administrator command: Connect\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3954282531
 administrator command: Quit\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0x4D096479916B0F45 at byte 346 ______
@@ -77,7 +75,6 @@ administrator command: Quit\G
 # Tables
 #    SHOW TABLE STATUS FROM `my_webstats` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `my_webstats`.`tbl`\G
-# CRC 3419461366
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT DISTINCT col FROM tbl WHERE foo=20061219\G
 
@@ -104,7 +101,6 @@ SELECT DISTINCT col FROM tbl WHERE foo=20061219\G
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
 #    SHOW CREATE TABLE `db1`.`tbl`\G
-# CRC 2515375876
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT foo 
                          FROM tbl
@@ -131,7 +127,6 @@ SELECT foo
 # 100ms
 #    1s
 #  10s+
-# CRC 29877484
 administrator command: Init DB\G
 
 # Profile

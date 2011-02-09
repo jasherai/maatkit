@@ -28,7 +28,6 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'auction_category_map'\G
 #    SHOW CREATE TABLE `auction_category_map`\G
-# CRC 3181383162
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT category_id
                 FROM auction_category_map 
@@ -56,7 +55,6 @@ SELECT category_id
 # Tables
 #    SHOW TABLE STATUS LIKE 'auction_search'\G
 #    SHOW CREATE TABLE `auction_search`\G
-# CRC 2567603525
 # EXPLAIN /*!50100 PARTITIONS*/
 SELECT auction_id, auction_title_en AS title, close_time,
                                          number_of_items_per_lot, 

@@ -27,7 +27,6 @@
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't3'\G
 #    SHOW CREATE TABLE `d`.`t3`\G
-# CRC 478229000
 PREPARE SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/
@@ -61,7 +60,6 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't3'\G
 #    SHOW CREATE TABLE `d`.`t3`\G
-# CRC 3193395006
 EXECUTE SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f="1.23"\G
 # Converted for EXPLAIN
 # EXPLAIN /*!50100 PARTITIONS*/

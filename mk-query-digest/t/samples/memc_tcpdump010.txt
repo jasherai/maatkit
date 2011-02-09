@@ -23,5 +23,4 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 1075957878
 delete my_key

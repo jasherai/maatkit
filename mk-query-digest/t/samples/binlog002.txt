@@ -41,7 +41,6 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 41017991
 create database d\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0x03409022EB8A4AE7 at byte 795 ______
@@ -69,7 +68,6 @@ create database d\G
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
 #    SHOW CREATE TABLE `d`.`foo`\G
-# CRC 2398972914
 create table foo (i int)\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xF579EC4A9633EEA0 at byte 973 ______
@@ -94,7 +92,6 @@ create table foo (i int)\G
 # 100ms
 #    1s
 #  10s+
-# CRC 2488547422
 insert foo values (1) /*... omitted ...*/\G
 
 # Profile

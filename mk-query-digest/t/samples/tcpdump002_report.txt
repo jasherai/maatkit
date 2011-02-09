@@ -25,7 +25,6 @@
 # 100ms
 #    1s
 #  10s+
-# CRC 2151770939
 administrator command: Connect\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0xE3A3649C5FAC418D at byte 2449 _____
@@ -54,7 +53,6 @@ administrator command: Connect\G
 # 100ms
 #    1s
 #  10s+
-# CRC 4030577651
 # EXPLAIN /*!50100 PARTITIONS*/
 select @@version_comment limit 1\G
 
@@ -84,7 +82,6 @@ select @@version_comment limit 1\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3646712338
 # EXPLAIN /*!50100 PARTITIONS*/
 select "paris in the the spring" as trick\G
 
@@ -114,5 +111,4 @@ select "paris in the the spring" as trick\G
 # 100ms
 #    1s
 #  10s+
-# CRC 3954282531
 administrator command: Quit\G
