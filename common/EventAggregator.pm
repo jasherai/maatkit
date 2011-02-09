@@ -431,10 +431,8 @@ sub make_handler {
    # We only save unique and worst values for the class, not globally.
    if ( $track{unq} ) {
       push @lines, (
-         'if (scalar keys %{$class->{unq}} < ' . MAX_UNQ_STRINGS . ') {',
-            '++$class->{unq}->{$val}',
-         '}',
-      )
+         '++$class->{unq}->{$val}',
+      );
    }
 
    if ( $args{worst} ) {
