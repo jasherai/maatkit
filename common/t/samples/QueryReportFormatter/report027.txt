@@ -30,7 +30,7 @@
 # Tables
 #    SHOW TABLE STATUS FROM `qrf` LIKE 't'\G
 #    SHOW CREATE TABLE `qrf`.`t`\G
-# CRC 2314245491
+# CRC 491
 # EXPLAIN /*!50100 PARTITIONS*/
 select t1.i from t as t1 join t as t2 where t1.i < t2.i and t1.v is not null order by t1.i\G
 # *************************** 1. row ***************************
