@@ -2913,8 +2913,13 @@ sub main {
       my $dsn_defaults = $dp->parse_options($o);
       my $dsn          = $dp->parse(shift @ARGV, $dsn_defaults);
 
+      if ( $o->get('ask-pass') ) {
+         $dsn->{p} = OptionParser::prompt_noecho("Enter password: ");
+      }
+
       $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
       $dbh->{FetchHashKeyName} = 'NAME_lc';
+      MKDEBUG && _d('Connected dbh', $dbh);
    }
 
    # ########################################################################
