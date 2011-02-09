@@ -9,13 +9,14 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 81;
+use Test::More tests => 83;
 
 use QueryRewriter;
 use EventAggregator;
 use QueryParser;
 use SlowLogParser;
 use BinaryLogParser;
+use Transformers;
 use MaatkitTest;
 
 my $qr = new QueryRewriter();
@@ -1906,6 +1907,43 @@ is(
    "Saved only MAX_UNQ_STRINGS (1_000) string"
 );
 };
+
+# #############################################################################
+# Special-case attribs called *_crc for mqd --variations.
+# #############################################################################
+
+# Any attrib called *_crc should be automatically treated as a string,
+# so no need to specify type_for.
+$ea = new EventAggregator(
+   groupby => 'arg',
+   worst   => 'Query_time',
+);
+
+# And _crc attribs should be % 1000 so there shouldn't be more than 1k of them.
+for my $i ( 1001..2102 ) {
+   $ea->aggregate(
+      { arg        => 'foo',
+        Query_time => 1,
+        Foo_crc    => Transformers::crc32("string$i"),
+      }
+   );
+}
+
+my $crcs = $ea->results->{classes}->{foo}->{Foo_crc};
+is(
+   $crcs->{cnt},
+   1102,
+   "Aggregated all the CRCs"
+);
+
+# Some CRCs become the same value after mod 1000, those although
+# there were more than 1k aggregated, no more than 1k should be saved.
+cmp_ok(
+   scalar keys %{$crcs->{unq}},
+   '<=',
+   1000,
+   "Saved no more than 1_000 CRCs"
+);
 
 # #############################################################################
 # Done.

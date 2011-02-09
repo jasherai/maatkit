@@ -342,10 +342,11 @@ sub make_handler {
 
    # Ripped off from Regexp::Common::number and modified.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
-            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
-            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
-            :                                    'string';
+   my $type = $self->type_for($attrib)           ? $self->type_for($attrib)
+            : $attrib =~ m/_crc$/                ? 'string'
+            : $val    =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val    =~ m/^(?:Yes|No)$/         ? 'bool'
+            :                                      'string';
    MKDEBUG && _d('Type for', $attrib, 'is', $type, '(sample:', $val, ')');
    $self->{type_for}->{$attrib} = $type;
 
@@ -402,6 +403,13 @@ sub make_handler {
       # have a Query_time attribute.
       push @tmp, '++PLACE->{cnt};';  # count of all values seen
 
+      # CRC attribs are bucketed in 1k buckets by % 1_000.  We must
+      # convert the val early so min and max don't show, e.g. 996791064
+      # whereas unq will contain 64 (996791064 % 1_000).
+      if ( $attrib =~ m/_crc$/ ) {
+         push @tmp, '$val = $val % 1_000;';
+      }
+
       # Track min, max and sum of values.  Min and max for strings is
       # mostly used for timestamps; min ts is earliest and max ts is latest.
       push @tmp, (
@@ -430,9 +438,7 @@ sub make_handler {
 
    # We only save unique and worst values for the class, not globally.
    if ( $track{unq} ) {
-      push @lines, (
-         '++$class->{unq}->{$val}',
-      );
+      push @lines, '++$class->{unq}->{$val}';
    }
 
    if ( $args{worst} ) {
