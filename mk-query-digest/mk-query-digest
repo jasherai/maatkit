@@ -4711,7 +4711,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 7228
+# EventAggregator package 7272
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/EventAggregator.pm
@@ -4946,10 +4946,11 @@ sub make_handler {
    return unless defined $val; # can't determine type if it's undef
 
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
-            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
-            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
-            :                                    'string';
+   my $type = $self->type_for($attrib)           ? $self->type_for($attrib)
+            : $attrib =~ m/_crc$/                ? 'string'
+            : $val    =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val    =~ m/^(?:Yes|No)$/         ? 'bool'
+            :                                      'string';
    MKDEBUG && _d('Type for', $attrib, 'is', $type, '(sample:', $val, ')');
    $self->{type_for}->{$attrib} = $type;
 
@@ -4990,6 +4991,10 @@ sub make_handler {
 
       push @tmp, '++PLACE->{cnt};';  # count of all values seen
 
+      if ( $attrib =~ m/_crc$/ ) {
+         push @tmp, '$val = $val % 1_000;';
+      }
+
       push @tmp, (
          'PLACE->{min} = $val if !defined PLACE->{min} || $val '
             . $lt . ' PLACE->{min};',
@@ -5013,11 +5018,7 @@ sub make_handler {
    }
 
    if ( $track{unq} ) {
-      push @lines, (
-         'if (scalar keys %{$class->{unq}} < ' . MAX_UNQ_STRINGS . ') {',
-            '++$class->{unq}->{$val}',
-         '}',
-      )
+      push @lines, '++$class->{unq}->{$val}';
    }
 
    if ( $args{worst} ) {
@@ -6013,7 +6014,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 7235
+# QueryReportFormatter package 7274
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReportFormatter.pm
@@ -6334,8 +6335,10 @@ sub query_report {
          $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
 
-         $report.= "# CRC " . (crc32($samp_query) || "") . "\n"
-            if $samp_query;
+         if ( $samp_query && ($args{variations} && @{$args{variations}}) ) {
+            my $crc = crc32($samp_query);
+            $report.= "# CRC " . ($crc ? $crc % 1_000 : "") . "\n";
+         }
 
          my $log_type = $args{log_type} || '';
          my $mark     = $log_type eq 'memcached'
@@ -12764,7 +12767,7 @@ sub main {
                my $event = $args->{event};
                foreach my $attrib ( @variations ) {
                   my $checksum = crc32($event->{$attrib});
-                  $event->{"${attrib}_CRC"} = $checksum if defined $checksum;
+                  $event->{"${attrib}_crc"} = $checksum if defined $checksum;
                }
                return $args;
             },
@@ -13065,11 +13068,6 @@ sub main {
          Thread_id    => 'string',
          Killed       => 'bool',
       };
-      foreach my $attrib ( @{$o->get('variations')} ) {
-         # Make sure this generated attrib name matches whatever attrib
-         # name is generated in the variations pipeline proc.
-         $type_for->{"${attrib}_CRC"} = 'string';
-      }
 
       my $ea = new EventAggregator(
          groupby           => $groupby,
@@ -13236,6 +13234,7 @@ sub print_reports {
             explain_why  => $explain_why,
             files        => $args{files},
             log_type     => $o->get('type')->[0],
+            variations   => $o->get('variations'),
             group        => { map { $_=>1 } qw(rusage date hostname files header) }
          );
       }
