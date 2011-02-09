@@ -15552,19 +15552,21 @@ type: Array
 Report the number of variations in these attributes' values.
 
 Variations show how many distinct values an attribute had within a class.
-The default value for this option, C<arg>, shows how many distinct queries
+The usual value for this option is C<arg> which shows how many distinct queries
 were in the class.  This can be useful to determine a query's cacheability.
 
 Distinct values are determined by CRC32 checksums of the attributes' values.
 These checksums are reported in the query report for attributes specified by
 this option, like:
 
-  # arg CRC      1094834597 (1/25%), 144581416 (1/25%)... 2 more
+  # arg crc      109 (1/25%), 144 (1/25%)... 2 more
 
 In that class there were 4 distinct queries.  The checksums of the first two
 variations are shown, and each one occurred once (or, 25% of the time).
 
-Only the first 1,000 variations are saved.
+The counts of distinct variations is approximate because only 1,000 variations
+are saved.  The mod (%) 1000 of the full CRC32 checksum is saved, so some
+distinct checksums are treated as equal.
 
 =item --version
 
