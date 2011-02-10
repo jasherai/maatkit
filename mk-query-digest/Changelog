@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2011-02-09: version 0.9.26
+
    * --interval did not always work (issue 1186).
    * Added --run-time-mode option (issue 1150).
    * Added --variations option (issue 511).

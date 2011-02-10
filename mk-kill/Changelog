@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+2011-02-09: version 0.9.9
+
    * Removed option --[no]only-oldest (issue 1221).
    * Removed option --all-but-oldest (issue 1221).
    * Changed option --all to --match-all (issue 1221).

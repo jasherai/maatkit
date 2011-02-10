@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2011-02-09: version 1.0.24
+
    * Officially deprecated this tool and noted that in the documentation.
 
 2010-06-08: version 1.0.23
