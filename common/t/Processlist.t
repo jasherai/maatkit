@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 23;
+use Test::More tests => 24;
 
 use Processlist;
 use MaatkitTest;
@@ -22,6 +22,10 @@ my $ms  = new MasterSlave();
 my $pl  = new Processlist(MasterSlave=>$ms);
 my $rsp = new TextResultSetParser();
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 my @events;
 my $procs;
 
@@ -77,7 +81,9 @@ parse_n_times(
 is_deeply($pl->_get_rows()->{prev_rows}, [], 'everything went away');
 is(scalar @events, 0, 'No events fired from sleeping connection that left');
 
+# ###########################################################################
 # Make sure there's a fresh start...
+# ###########################################################################
 $pl = Processlist->new(MasterSlave=>$ms);
 
 # The initial processlist shows a query in progress.
@@ -96,10 +102,12 @@ parse_n_times(
 is_deeply(
    $pl->_get_rows()->{prev_rows},
    [
-      [1, 'root', 'localhost', 'test', 'Query', 2,
-         'executing', 'query1_1',
-         Transformers::unix_timestamp('2001-01-01 00:04:58'), .05,
-         Transformers::unix_timestamp('2001-01-01 00:05:00') ],
+      [ 1, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query1_1',
+        Transformers::unix_timestamp('2001-01-01 00:04:58'),   # START
+        0.05,                                                  # ETIME
+        Transformers::unix_timestamp('2001-01-01 00:05:00'),   # FSEEN
+        { executing => 0 },
+      ],
    ],
    'Prev knows about the query',
 );
@@ -124,10 +132,12 @@ $procs = [
 is_deeply(
    $pl->_get_rows()->{prev_rows},
    [
-      [2, 'root', 'localhost', 'test', 'Query', 1,
-         'executing', 'query2_1',
-         Transformers::unix_timestamp('2001-01-01 00:05:00'), .03,
-         Transformers::unix_timestamp('2001-01-01 00:05:01')],
+      [ 2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1',
+        Transformers::unix_timestamp('2001-01-01 00:05:00'),   # START
+        .03,                                                   # ETIME
+        Transformers::unix_timestamp('2001-01-01 00:05:01'),   # FSEEN
+        { executing => 0 },
+      ],
    ],
    'Prev forgot disconnected cxn 1, knows about cxn 2',
 );
@@ -202,8 +212,11 @@ is_deeply(
    $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
-      Transformers::unix_timestamp('2001-01-01 00:05:03') ],
+        Transformers::unix_timestamp('2001-01-01 00:05:03'),   # START
+        3.14159,                                               # ETIME
+        Transformers::unix_timestamp('2001-01-01 00:05:03'),   # FSEEN
+        { executing => 0 },
+      ],
    ],
    'Prev says query2_2 just started',
 );
@@ -235,8 +248,11 @@ is_deeply(
    $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
-      Transformers::unix_timestamp('2001-01-01 00:05:03') ],
+        Transformers::unix_timestamp('2001-01-01 00:05:03'),
+        3.14159,
+        Transformers::unix_timestamp('2001-01-01 00:05:03'),
+        { executing => 2.718 },
+      ],
    ],
    'After query2_2 fired, the prev array has the one starting at 05:03',
 );
@@ -261,8 +277,11 @@ is_deeply(
    $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      Transformers::unix_timestamp('2001-01-01 00:05:08'), 0.123,
-      Transformers::unix_timestamp('2001-01-01 00:05:08.500') ],
+        Transformers::unix_timestamp('2001-01-01 00:05:08'),
+        0.123,
+        Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
+        { executing => 0 },
+      ],
    ],
    'After query2_2 fired, the prev array has the one starting at 05:08',
 );
@@ -284,9 +303,62 @@ is_deeply(
    'query2_2 fired',
 );
 
-# #########################################################################
+
+# ###########################################################################
+# Issue 867: Make mk-query-digest detect Lock_time from processlist
+# ###########################################################################
+$pl = Processlist->new(MasterSlave=>$ms);
+
+# For 2/10ths of a second, the query is Locked.  First time we see this
+# cxn and query, we don't/can't know how much of it's execution Time was
+# Locked or something else, so the first 1/10th second of Locked time is
+# ignored and the 2nd tenth is counted.  Then...
+parse_n_times(
+   2,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Query', 0, 'Locked', 'query1_1'],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.0'),
+   etime => .1,
+);
+
+# ...when the query changes states, we guesstimate that half the poll time
+# between state changes was in the previous state, and the other half in
+# the new/current state.  So Locked picks up 0.05 (1/2 of 1/10), bringing
+# its total to 0.15.
+parse_n_times(
+   1,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query1_1'],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.3'),
+   etime => .1,
+);
+
+@events = parse_n_times(
+   1,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Sleep', 0, '', undef],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.4'),
+   etime => .1,
+);
+
+is(
+   $events[0]->{Lock_time},
+   0.15,
+   "Detects Lock_time from Locked state"
+);
+
+# ###########################################################################
 # Tests for "find" functionality.
-# #########################################################################
+# ###########################################################################
 
 my %find_spec = (
    busy_time    => 60,
@@ -462,9 +534,6 @@ is_deeply(
    'idle_time'
 );
 
-# #########################################################################
-# Tests for "find" functionality.
-# #########################################################################
 %find_spec = (
    match => { User => 'msandbox' },
 );
@@ -490,10 +559,9 @@ ok(
    "Matches replication thread"
 );
 
-
-# #############################################################################
+# ###########################################################################
 # Find "all".
-# #############################################################################
+# ###########################################################################
 %find_spec = (
    all => 1,
 );

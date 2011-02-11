@@ -1,4 +1,4 @@
-# This program is copyright 2008-2010 Baron Schwartz.
+# This program is copyright 2008-2011 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,6 +17,9 @@
 # ###########################################################################
 # Processlist package $Revision$
 # ###########################################################################
+
+# Package: Processlist
+# Processlist makes events when used to poll SHOW FULL PROCESSLIST.
 package Processlist;
 
 use strict;
@@ -30,21 +33,33 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
-   ID      => 0,
-   USER    => 1,
+   # 0-7 are the standard processlist columns.
+   ID      => 0,  
+   USER    => 1,  
    HOST    => 2,
    DB      => 3,
    COMMAND => 4,
    TIME    => 5,
    STATE   => 6,
    INFO    => 7,
-   START   => 8, # Calculated start time of statement
-   ETIME   => 9, # Exec time of SHOW PROCESSLIST (margin of error in START)
+   # 8, 9 and 10 are extra info we calculate.
+   START   => 8,  # Calculated start time of statement ($misc->{time} - TIME)
+   ETIME   => 9,  # Exec time of SHOW PROCESSLIST (margin of error in START)
    FSEEN   => 10, # First time ever seen
+   PROFILE => 11, # Profile of individual STATE times
 };
 
-# Arugments:
-#   * MasterSlave  ojb: used to find, skip replication threads
+
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   MasterSlave - MasterSlave obj for finding replicationt threads
+#
+# Returns:
+#   Processlist object
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(MasterSlave) ) {
@@ -144,17 +159,6 @@ sub new {
 #
 # The $code shouldn't return itself, e.g. if it's a PROCESSLIST you should
 # filter out $dbh->{mysql_thread_id}.
-#
-# TODO: unresolved issues are
-# 1) What about Lock_time?  It's unclear if a query starts at 100, unlocks at
-#    105 and completes at 110, is it 5s lock and 5s exec?  Or 5s lock, 10s exec?
-#    This code should match that behavior.
-# 2) What about splitting the difference?  If I see a query now with 0s, and one
-#    second later I look and see it's gone, should I split the middle and say it
-#    ran for .5s?
-# 3) I think user/host needs to do user/host/ip, really.  And actually, port
-#    will show up in the processlist -- make that a property too.
-# 4) It should put cmd => Query, cmd => Admin, or whatever
 sub parse_event {
    my ( $self, %args ) = @_;
    my @required_args = qw(misc);
@@ -206,61 +210,100 @@ sub parse_event {
       # In each of the if/elses, something must be undef'ed to prevent
       # infinite looping.
       if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
-         MKDEBUG && _d('$curr and $prev are the same cxn');
+         MKDEBUG && _d('Checking existing cxn', $curr->[ID]);
+
+         # XXX Does this refer to...
          # Or, if its start time seems to be after the start time of
          # the previously seen one, it's also a new query.
-         my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-         my $is_new = 0;
+
+         # If this is true, then the cxn was executing a query last time
+         # we saw it.  Determine if the cxn is executing a new query.
+         my $new_query = 0;
+         my $fudge     = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
          if ( $prev->[INFO] ) {
-            if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-               # This is a different query or a new query
-               MKDEBUG && _d('$curr has a new query');
-               $is_new = 1;
+            if ( !$curr->[INFO] || $prev->[INFO] ne $curr->[INFO] ) {
+               # This is a new/different query because what's currently
+               # executing is different from what the cxn was previously
+               # executing.
+               MKDEBUG && _d('Info is different; new query');
+               $new_query = 1;
             }
-            elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
-               MKDEBUG && _d('$curr time is less than $prev time');
-               $is_new = 1;
+            elsif ( defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME] ) {
+               # This is a new/different query because the current exec
+               # time is less than the previous exec time, so the previous
+               # query ended and a new one began between polls.
+               MKDEBUG && _d('Current Time is less than previous; new query');
+               $new_query = 1;
             }
-            elsif ( $curr->[INFO] && defined $curr->[TIME]
-                    && $misc->{time} - $curr->[TIME] - $prev->[START]
-                       - $prev->[ETIME] - $misc->{etime} > $fudge
+            elsif ( $curr->[INFO]
+                    && defined $curr->[TIME]
+                    &&   $misc->{time}   # current wallclock time
+                       - $curr->[TIME]   # current exec time
+                       - $prev->[START]  # prev wallclock
+                       - $prev->[ETIME]  # prev poll time
+                       - $misc->{etime}  # current poll time
+                       > $fudge
             ) {
-               MKDEBUG && _d('$curr has same query that restarted');
-               $is_new = 1;
+               # XXX ...this?
+               MKDEBUG && _d('$curr has same query that restarted; new query');
+               $new_query = 1;
             }
-            if ( $is_new ) {
+
+            if ( $new_query ) {
+               # The cxn is executing a new query, so the previous query ended.
+               # Make an event for the previous query.
+               $self->_update_profile($prev, $curr, $misc);
                $event = $self->make_event($prev, $misc->{time});
             }
          }
+
+         # If this is true, the cxn is currently executing a query.
+         # Determine if that query is old (i.e. same one running previously),
+         # or new.  In either case, we save it to recheck it next poll.
          if ( $curr->[INFO] ) {
-            if ( $prev->[INFO] && !$is_new ) {
-               MKDEBUG && _d('Pushing old history item back onto $prev');
+            if ( $prev->[INFO] && !$new_query ) {
+               MKDEBUG && _d('Saving old (still running) query');
+               $self->_update_profile($prev, $curr, $misc);
                push @new, [ @$prev ];
             }
             else {
-               MKDEBUG && _d('Pushing new history item onto $prev');
-               push @new,
-                  [ @$curr, int($misc->{time} - $curr->[TIME]),
-                     $misc->{etime}, $misc->{time} ];
+               MKDEBUG && _d('Saving new query');
+               push @new, [
+                  @$curr,                              # proc info
+                  int($misc->{time} - $curr->[TIME]),  # START
+                  $misc->{etime},                      # ETIME
+                  $misc->{time},                       # FSEEN
+                  { $curr->[STATE] => 0 },             # PROFILE
+               ];
             }
          }
+
          $curr = $prev = undef; # Fetch another from each.
       }
-      # The row in the prev doesn't exist in the curr.  Fire an event.
       elsif ( !$curr
               || ($curr && $prev && $curr->[ID] > $prev->[ID]) ) {
-         MKDEBUG && _d('$curr is not in $prev');
+         # If there's no curr, then the prev ended between polls.
+         # Or, if there's a curr but its ID is greater than the last
+         # ID we saw for this cxn, then it's actually a new/different
+         # cxn, also meaning that prev ended between polls.
+         MKDEBUG && _d('cxn', $prev->[ID], 'ended');
          $event = $self->make_event($prev, $misc->{time});
          $prev = undef;
       }
-      # The row in curr isn't in prev; start a new event.
       else { # This else must be entered, to prevent infinite loops.
-         MKDEBUG && _d('$prev is not in $curr');
+         # The cxn is new because curr isn't in prev.  Begin saving
+         # its info for comparison in later polls.
+         MKDEBUG && _d('New cxn', $curr->[ID]);
          if ( $curr->[INFO] && defined $curr->[TIME] ) {
-            MKDEBUG && _d('Pushing new history item onto $prev');
-            push @new,
-               [ @$curr, int($misc->{time} - $curr->[TIME]),
-                  $misc->{etime}, $misc->{time} ];
+            # But only save the new cxn if it's executing.
+            MKDEBUG && _d('Saving query of new cxn');
+            push @new, [
+               @$curr,                              # proc info
+               int($misc->{time} - $curr->[TIME]),  # START
+               $misc->{etime},                      # ETIME
+               $misc->{time},                       # FSEEN
+               { $curr->[STATE] => 0 },             # PROFILE
+            ];
          }
          $curr = undef; # No infinite loops.
       }
@@ -293,7 +336,7 @@ sub make_event {
       bytes      => length($row->[INFO]),
       ts         => Transformers::ts($row->[START] + $row->[TIME]), # Query END time
       Query_time => $Query_time,
-      Lock_time  => 0,               # TODO
+      Lock_time  => $row->[PROFILE]->{Locked} || 0,
    };
    MKDEBUG && _d('Properties of event:', Dumper($event));
    return $event;
@@ -304,6 +347,54 @@ sub _get_rows {
    my %rows = map { $_ => $self->{$_} }
       qw(prev_rows new_rows curr_row prev_row);
    return \%rows;
+}
+
+# Sub: _update_profile
+#   Update a query's PROFILE of STATE times.  The given cxn arrayrefs
+#   ($prev and $curr) should be the same cxn and same query.  If the
+#   query' state hasn't changed, the current state's time is incremented
+#   by the poll time (ETIME).  Else, half the poll time is added to the
+#   previous state and half to the current state (re issue 1246).
+#
+#   We cannot calculate a START for any state because the query's TIME
+#   covers all states, so there's no way a posteriori to know how much
+#   of TIME was spent in any given state.  The best we can do is count
+#   how long we see the query in each state where ETIME (poll time)
+#   defines our resolution.
+#
+# Parameters:
+#   $prev - Arrayref of cxn's previous info
+#   $curr - Arrayref of cxn's current info
+#   $misc - Hashref with etime of poll
+sub _update_profile {
+   my ( $self, $prev, $curr, $misc ) = @_;
+   return unless $prev && $curr;
+
+   # Update only $prev because the caller should only be saving that arrayref.
+
+   if ( ($prev->[STATE] || "") eq ($curr->[STATE] || "") ) {
+      MKDEBUG && _d("Query is still in", $curr->[STATE], "state");
+      $prev->[PROFILE]->{$prev->[STATE] || ""} += $misc->{etime};
+   }
+   else {
+      # XXX The State of this cxn changed between polls.  How long
+      # was it in its previous state, and how long has it been in
+      # its current state?  We can't tell, so this is a compromise
+      # re http://code.google.com/p/maatkit/issues/detail?id=1246
+      MKDEBUG && _d("Query changed from state", $prev->[STATE],
+         "to", $curr->[STATE]);
+      my $half_etime = ($misc->{etime} || 0) / 2;
+
+      # Previous state ends.
+      $prev->[PROFILE]->{$prev->[STATE] || ""} += $half_etime;
+
+      # Query assumes new state and we presume that the query has been
+      # in that state for half the poll time.
+      $prev->[STATE] = $curr->[STATE];
+      $prev->[PROFILE]->{$curr->[STATE] || ""}  = $half_etime;
+   }
+
+   return;
 }
 
 # Accepts a PROCESSLIST and a specification of filters to use against it.
