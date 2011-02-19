@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 32;
 
 use Processlist;
 use MaatkitTest;
@@ -18,32 +18,38 @@ use Transformers;
 use MasterSlave;
 use MaatkitTest;
 
-my $ms  = new MasterSlave();
-my $pl  = new Processlist(MasterSlave=>$ms);
-my $rsp = new TextResultSetParser();
-
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-my @events;
+
+my $ms  = new MasterSlave();
+my $rsp = new TextResultSetParser();
+my $pl;
 my $procs;
+my @events;
 
 sub parse_n_times {
    my ( $n, %args ) = @_;
-   my @events;
+   @events = ();
    for ( 1..$n ) {
-      my $event = $pl->parse_event(misc => \%args);
+      my $event = $pl->parse_event(%args);
       push @events, $event if $event;
    }
-   return @events;
 }
 
-# An unfinished query doesn't crash anything.
+# ###########################################################################
+# A cxn that's connecting should be seen but ignored until it begins
+# to execute a query.
+# ###########################################################################
+$pl = new Processlist(MasterSlave=>$ms);
+
 $procs = [
    [ [1, 'unauthenticated user', 'localhost', undef, 'Connect', undef,
     'Reading from net', undef] ],
+    [],[],
 ],
+
 parse_n_times(
    3,
    code  => sub {
@@ -51,38 +57,53 @@ parse_n_times(
    },
    time  => Transformers::unix_timestamp('2001-01-01 00:05:00'),
 );
-is_deeply($pl->_get_rows()->{prev_rows}, [], 'Prev does not know about undef query');
-is(scalar @events, 0, 'No events fired from connection in process');
 
-# Make a new one to replicate a bug with certainty...
+is(
+   scalar @events,
+   0,
+   "No events for new cxn still connecting"
+);
+
+is_deeply(
+   $pl->_get_active_cxn(),
+   {},
+   "Cxn not saved because it's not executing a query"
+);
+
+# ###########################################################################
+# A sleeping cxn that goes aways should be safely ignored.
+# ###########################################################################
 $pl = Processlist->new(MasterSlave=>$ms);
 
-# An existing sleeping query that goes away doesn't crash anything.
 parse_n_times(
    1,
-   code  => sub {
-      return [
-         [1, 'root', 'localhost', undef, 'Sleep', 7, '', undef],
-      ],
+   code => sub {
+      return [ [1, 'root', 'localhost', undef, 'Sleep', 7, '', undef], ];
    },
-   time  => Transformers::unix_timestamp('2001-01-01 00:05:00'),
+   time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
 );
 
 # And now the connection goes away...
 parse_n_times(
    1,
-   code  => sub {
-      return [
-      ],
-   },
-   time  => Transformers::unix_timestamp('2001-01-01 00:05:01'),
+   code => sub { return []; },
+   time => Transformers::unix_timestamp('2001-01-01 00:05:01'),
 );
 
-is_deeply($pl->_get_rows()->{prev_rows}, [], 'everything went away');
-is(scalar @events, 0, 'No events fired from sleeping connection that left');
+is(
+   scalar @events,
+   0,
+   "No events for sleep cxn that went away"
+);
+
+is_deeply(
+   $pl->_get_active_cxn(),
+   {},
+   "Sleeping cxn not saved"
+);
 
 # ###########################################################################
-# Make sure there's a fresh start...
+# A more life-like test with multiple queries that come, execute and go away.
 # ###########################################################################
 $pl = Processlist->new(MasterSlave=>$ms);
 
@@ -98,29 +119,35 @@ parse_n_times(
    etime => .05,
 );
 
-# The $prev array should now show that the query started at time 2 seconds ago
-is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [
-      [ 1, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query1_1',
-        Transformers::unix_timestamp('2001-01-01 00:04:58'),   # START
-        0.05,                                                  # ETIME
-        Transformers::unix_timestamp('2001-01-01 00:05:00'),   # FSEEN
-        { executing => 0 },
-      ],
-   ],
-   'Prev knows about the query',
+is(
+   scalar @events,
+   0,
+   'No events fired'
 );
 
-is(scalar @events, 0, 'No events fired');
+# The should now be active cxn with a query that started 2 seconds ago.
+is_deeply(
+   $pl->_get_active_cxn(),
+   {
+      1 => [
+         1, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query1_1',
+         Transformers::unix_timestamp('2001-01-01 00:04:58'),   # START
+         0.05,                                                  # ETIME
+         Transformers::unix_timestamp('2001-01-01 00:05:00'),   # FSEEN
+         { executing => 0 },
+      ],
+   },
+   "Cxn 1 is active"
+);
 
-# The next processlist shows a new query in progress and the other one is not
-# there anymore at all.
+# The next processlist shows a new cxn/query in progress and the first
+# one (above) has ended.
 $procs = [
    [ [2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1'] ],
 ];
-@events = parse_n_times(
-   2, 
+
+parse_n_times(
+   1, 
    code  => sub {
       return shift @$procs,
    },
@@ -128,21 +155,7 @@ $procs = [
    etime => .03,
 );
 
-# The $prev array should not have the first one anymore, just the second one.
-is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [
-      [ 2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1',
-        Transformers::unix_timestamp('2001-01-01 00:05:00'),   # START
-        .03,                                                   # ETIME
-        Transformers::unix_timestamp('2001-01-01 00:05:01'),   # FSEEN
-        { executing => 0 },
-      ],
-   ],
-   'Prev forgot disconnected cxn 1, knows about cxn 2',
-);
-
-# And the first query has fired an event.
+# Event should have been made for the first query.
 is_deeply(
    \@events,
    [  {  db         => 'test',
@@ -157,11 +170,25 @@ is_deeply(
       },
    ],
    'query1_1 fired',
+) or print Dumper(\@events);
+
+# Only the 2nd cxn/query should be active now.
+is_deeply(
+   $pl->_get_active_cxn(),
+   {
+      2 => [
+         2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1',
+         Transformers::unix_timestamp('2001-01-01 00:05:00'),   # START
+         .03,                                                   # ETIME
+         Transformers::unix_timestamp('2001-01-01 00:05:01'),   # FSEEN
+         { executing => 0 },
+      ],
+   },
+   "Only cxn 2 is active"
 );
 
-# In this sample, the query on cxn 2 is finished, but the connection is still
-# open.
-@events = parse_n_times(
+# The query on cxn 2 is finished, but the connection is still open.
+parse_n_times(
    1,
    code  => sub {
       return [
@@ -171,14 +198,7 @@ is_deeply(
    time  => Transformers::unix_timestamp('2001-01-01 00:05:02'),
 );
 
-# And so as a result, query2_1 has fired and the prev array is empty.
-is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [],
-   'Prev says no queries are active',
-);
-
-# And the first query on cxn 2 has fired an event.
+# And so as a result, query2_1 has fired...
 is_deeply(
    \@events,
    [  {  db         => 'test',
@@ -195,9 +215,16 @@ is_deeply(
    'query2_1 fired',
 );
 
+# ...and there's no more active cxn.
+is_deeply(
+   $pl->_get_active_cxn(),
+   {},
+   "No active cxn"
+);
+
 # In this sample, cxn 2 is running a query, with a start time at the current
 # time of 3 secs later
-@events = parse_n_times(
+parse_n_times(
    1,
    code  => sub {
       return [
@@ -209,29 +236,30 @@ is_deeply(
 );
 
 is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [
-      [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-        Transformers::unix_timestamp('2001-01-01 00:05:03'),   # START
-        3.14159,                                               # ETIME
-        Transformers::unix_timestamp('2001-01-01 00:05:03'),   # FSEEN
-        { executing => 0 },
+   $pl->_get_active_cxn(),
+   {
+      2 => [
+         2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
+         Transformers::unix_timestamp('2001-01-01 00:05:03'),   # START
+         3.14159,                                               # ETIME
+         Transformers::unix_timestamp('2001-01-01 00:05:03'),   # FSEEN
+         { executing => 0 },
       ],
-   ],
-   'Prev says query2_2 just started',
+   },
+   'query2_2 just started',
 );
 
 # And there is no event on cxn 2.
-is_deeply(
-   \@events,
-   [],
-   'query2_2 is not fired yet',
+is(
+   scalar @events,
+   0,
+   'query2_2 has not fired yet',
 );
 
 # In this sample, the "same" query is running one second later and this time it
 # seems to have a start time of 5 secs later, which is not enough to be a new
 # query.
-@events = parse_n_times(
+parse_n_times(
    1,
    code  => sub {
       return [
@@ -242,25 +270,29 @@ is_deeply(
    etime => 2.718,
 );
 
-# And so as a result, query2_2 has NOT fired, but the prev array contains the
-# query2_2 still.
-is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [
-      [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-        Transformers::unix_timestamp('2001-01-01 00:05:03'),
-        3.14159,
-        Transformers::unix_timestamp('2001-01-01 00:05:03'),
-        { executing => 2.718 },
-      ],
-   ],
-   'After query2_2 fired, the prev array has the one starting at 05:03',
+is(
+   scalar @events,
+   0,
+      'query2_2 has not fired yet',
 );
 
-is(scalar(@events), 0, 'It did not fire yet');
+# And so as a result, query2_2 has NOT fired, but the query is still active.
+is_deeply(
+   $pl->_get_active_cxn(),
+   {
+      2 => [
+         2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
+         Transformers::unix_timestamp('2001-01-01 00:05:03'),
+         3.14159,
+         Transformers::unix_timestamp('2001-01-01 00:05:03'),
+         { executing => 2 },
+      ],
+   },
+   'Cxn 2 still active with query starting at 05:03',
+);
 
 # But wait!  There's another!  And this time we catch it!
-@events = parse_n_times(
+parse_n_times(
    1,
    code  => sub {
       return [
@@ -271,22 +303,6 @@ is(scalar(@events), 0, 'It did not fire yet');
    etime => 0.123,
 );
 
-# And so as a result, query2_2 has fired and the prev array contains the "new"
-# query2_2.
-is_deeply(
-   $pl->_get_rows()->{prev_rows},
-   [
-      [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-        Transformers::unix_timestamp('2001-01-01 00:05:08'),
-        0.123,
-        Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
-        { executing => 0 },
-      ],
-   ],
-   'After query2_2 fired, the prev array has the one starting at 05:08',
-);
-
-# And the query has fired an event.
 is_deeply(
    \@events,
    [  {  db         => 'test',
@@ -300,9 +316,24 @@ is_deeply(
          id         => 2,
       },
    ],
-   'query2_2 fired',
+   'Original query2_2 fired',
 );
 
+# And so as a result, query2_2 has fired and the prev array contains the "new"
+# query2_2.
+is_deeply(
+   $pl->_get_active_cxn(),
+   {
+      2 => [
+         2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
+         Transformers::unix_timestamp('2001-01-01 00:05:08'),
+         0.123,
+         Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
+         { executing => 0 },
+      ],
+   },
+   "New query2_2 is active, starting at 05:08"
+);
 
 # ###########################################################################
 # Issue 867: Make mk-query-digest detect Lock_time from processlist
@@ -314,13 +345,23 @@ $pl = Processlist->new(MasterSlave=>$ms);
 # Locked or something else, so the first 1/10th second of Locked time is
 # ignored and the 2nd tenth is counted.  Then...
 parse_n_times(
-   2,
+   1,
    code  => sub {
       return [
          [1, 'root', 'localhost', 'test', 'Query', 0, 'Locked', 'query1_1'],
       ],
    },
-   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.0'),
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.2'),
+   etime => .1,
+);
+parse_n_times(
+   1,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Query', 0, 'Locked', 'query1_1'],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.4'),
    etime => .1,
 );
 
@@ -335,26 +376,210 @@ parse_n_times(
          [1, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query1_1'],
       ],
    },
-   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.3'),
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.6'),
    etime => .1,
 );
 
-@events = parse_n_times(
+parse_n_times(
    1,
    code  => sub {
       return [
          [1, 'root', 'localhost', 'test', 'Sleep', 0, '', undef],
       ],
    },
-   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.4'),
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:00.8'),
    etime => .1,
 );
 
+$events[0]->{Lock_time} = sprintf '%.1f', $events[0]->{Lock_time};
 is(
    $events[0]->{Lock_time},
-   0.15,
+   0.3,
    "Detects Lock_time from Locked state"
 );
+
+# Query_time should be 0.6 because it it was first seen at :00.2 and
+# then ends at :00.8.  So .8 - .2 = .6.
+ok(
+      $events[0]->{Query_time} >= 0.58
+   && $events[0]->{Query_time} <= 0.69,
+   "Query_time is accurate (0.58 <= t <= 0.69)"
+);
+
+# ###########################################################################
+# Issue 1252: mk-query-digest --processlist does not work well
+# ###########################################################################
+$pl = Processlist->new(MasterSlave=>$ms);
+
+# @ :10.0
+# First call we have 3 queries, none of which are finished.  This poll
+# actually started at :10.0 but took .5s to complete so time=:10.5.
+parse_n_times(
+   1,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Query', 1, 'Locked',    'query1'],
+         [2, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query2'],
+         [3, 'root', 'localhost', 'test', 'Query', 3, 'executing', 'query3'],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:10.5'),
+   etime => 0.5,
+);
+is_deeply(
+   \@events,
+   [],
+   "No events yet (issue 1252)"
+) or print Dumper(\@events);
+
+is_deeply(
+   $pl->_get_active_cxn(),
+   {
+      1 => [
+         1, 'root', 'localhost', 'test', 'Query', 1, 'Locked',    'query1',
+         Transformers::unix_timestamp('2011-01-01 00:00:09'),   # START
+         0.5,                                                   # ETIME
+         Transformers::unix_timestamp('2011-01-01 00:00:10.5'), # FSEEN
+         { Locked => 0 },
+      ],
+      2 => [
+         2, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query2',
+         Transformers::unix_timestamp('2011-01-01 00:00:08'),   # START
+         0.5,                                                   # ETIME
+         Transformers::unix_timestamp('2011-01-01 00:00:10.5'), # FSEEN
+         { executing => 0 },
+      ],
+      3 => [
+         3, 'root', 'localhost', 'test', 'Query', 3, 'executing', 'query3',
+         Transformers::unix_timestamp('2011-01-01 00:00:07'),   # START
+         0.5,                                                   # ETIME
+         Transformers::unix_timestamp('2011-01-01 00:00:10.5'), # FSEEN
+         { executing => 0 },
+      ],
+   },
+   "All three cxn are active (issue 1252)"
+);
+
+# @ :11.0
+# Second call queries 3 & 2 have finished, so we should get an event for
+# one of them and the other will be cached.  Also note: query 1 has changed
+# from Locked to executing. -- This poll actually started at :11.0 but took
+# 0.1s to complete so time=:11.1.
+parse_n_times(
+   1,
+   code  => sub {
+      return [
+         [1, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query1'],
+      ],
+   },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:11.1'),
+   etime => 0.1,
+);
+
+# Processlist uses hashes so the returns may be unpredictable due to
+# keys/values %$hash being unpredictable.  So we save the returns, then
+# sort them later by cxn ID.
+my @event_q;
+push @event_q, @events;
+
+is(
+   scalar @events,
+   1,
+   "2nd call, an event returned (issue 1252)"
+);
+
+# @ :11.0
+# Third call finishes query 1 but should returned cached event first
+# since it finished at 2nd call. -- No poll happens until all cached
+# events are returned.
+parse_n_times(
+   1,
+   code  => sub { return []; },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:11.1'),
+   etime => 0.5,
+);
+
+is(
+   scalar @events,
+   1,
+   "3rd call, another event returned (issue 1252)"
+) or print Dumper(\@events);
+
+push @event_q, @events;
+@event_q = sort { $a->{id} <=> $b->{id} } @event_q;
+is_deeply(
+   \@event_q,
+   [ {
+      Lock_time   => 0,
+      Query_time  => 2,
+      arg         => 'query2',
+      bytes       => 6,
+      db          => 'test',
+      host        => 'localhost',
+      id          => 2,
+      ts          => '2011-01-01T00:00:10',
+      user        => 'root'
+   },
+   {
+      Lock_time   => 0,
+      Query_time  => 3,
+      arg         => 'query3',
+      bytes       => 6,
+      db          => 'test',
+      host        => 'localhost',
+      id          => 3,
+      ts          => '2011-01-01T00:00:10',
+      user        => 'root'
+   } ],
+   "Cxn 2 and 3 finished (issue 1252)",
+) or print Dumper(\@event_q);
+
+# @ :11.5
+# Fourth call returns query1 that finished last call. -- This poll
+# actually happens at :11.5 and took 0.2s to complete so time=:11.7.
+parse_n_times(
+   1,
+   code  => sub { return []; },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:11.7'),
+   etime => 0.2,
+);
+
+# This query was first seen at :10.5 and then was done and gone by :11.7.
+# Thus we observed it for 1.2s.  Actually, the query was last seen at :11.1,
+# so between then and :11.7 is .6s, i.e. one poll interval.  So the query
+# really ended sometime during the poll interval :11.1-:11.7.
+$events[0]->{Query_time} = sprintf '%.6f', $events[0]->{Query_time};
+$events[0]->{Lock_time}  = sprintf '%.2f', $events[0]->{Lock_time};
+is_deeply(
+   \@events,
+   [ {
+      Lock_time   => '0.30',
+      Query_time  => '1.200000',
+      arg         => 'query1',
+      bytes       => 6,
+      db          => 'test',
+      host        => 'localhost',
+      id          => 1,
+      ts          => '2011-01-01T00:00:10',
+      user        => 'root'
+   } ],
+   "4th call, last finished event (issue 1252)"
+) or print Dumper(\@events);
+
+# @ :12.0
+# Fifth call returns nothing because there's no events.
+parse_n_times(
+   1,
+   code  => sub { return []; },
+   time  => Transformers::unix_timestamp('2011-01-01 00:00:12.0'),
+   etime => 0.1,
+);
+
+is(
+   scalar @events,
+   0,
+   "No events (issue 1252)"
+) or print Dumper(\@events);
 
 # ###########################################################################
 # Tests for "find" functionality.
