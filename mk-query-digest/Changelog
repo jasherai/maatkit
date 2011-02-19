@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * --processlist did not work well (issue 1252).
+
 2011-02-09: version 0.9.26
 
    * --interval did not always work (issue 1186).

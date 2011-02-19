@@ -54,6 +54,15 @@ my $output = output(
    sub { mk_query_digest::main(@args, qw(--run-time 5)); },
 );
 
+($exec) = $output =~ m/^(# Exec time.+?)$/ms;
+ok(
+   no_diff(
+      $exec,
+      "mk-query-digest/t/samples/proclist001.txt",
+      cmd_output => 1,
+   ),
+   "--processlist correctly observes and measures multiple queries"
+);
 
 # #############################################################################
 # Done.
