@@ -5,7 +5,7 @@
 #    1 0x949BAEB72FDE23A2  1.4501 33.3%    16 0.0906 1.00  0.00 SELECT stats_cvs_group
 #    2 0x8FFEBD609B778EB2  0.5053 11.6%    45 0.0112 1.00  0.10 INSERT activity_log
 #    3 0x64F8E6F000640AF8  0.3750  8.6%     5 0.0750 1.00  0.00 SELECT users
-#    4 0x22375E33FDA4E899  0.3705  8.5%     1 0.3705 1.00  0.00 SELECT UPDATE ONLY OF
+#    4 0x22375E33FDA4E899  0.3705  8.5%     1 0.3705 1.00  0.00 SELECT ONLY OF
 #    5 0x60D6962E42C08882  0.1020  2.3%    46 0.0022 1.00  0.00 SELECT plugins
 #    6 0x32AF9886FDBBAE30  0.0981  2.3%    38 0.0026 1.00  0.00 SELECT frs_filetype frs_processor frs_file frs_dlstats_filetotal_agg
 #    7 0x5E64B4F52EC23D71  0.0936  2.1%    17 0.0055 1.00  0.01 SELECT trove_cat trove_group_link

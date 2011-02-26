@@ -74,4 +74,4 @@ SELECT auction_id, auction_title_en AS title, close_time,
 # Rank Query ID           Response time Calls R/Call Apdx V/M   Item
 # ==== ================== ============= ===== ====== ==== ===== ==========
 #    1 0x2361B36A4AEB397B  0.0000  0.0%     1 0.0000 1.00  0.00 SELECT auction_category_map
-#    2 0x0A3E6DCD23F3445A  0.0000  0.0%     1 0.0000 1.00  0.00 SELECT REPLACE auction_search
+#    2 0x0A3E6DCD23F3445A  0.0000  0.0%     1 0.0000 1.00  0.00 SELECT auction_search

@@ -24,22 +24,22 @@ require "$trunk/mk-query-digest/mk-query-digest";
 # #############################################################################
 
 my @args   = qw(--report-format profile --type pglog);
-my $sample = "$trunk/common/t/samples/";
+my $sample = "$trunk/common/t/samples/pg/";
 
 ok(
    no_diff(
-      sub { mk_query_digest::main(@args, $sample.'pg-sample1') },
+      sub { mk_query_digest::main(@args, $sample.'pg-log-009.txt') },
       "mk-query-digest/t/samples/pg-sample1"
    ),
-   'Analysis for pg-sample1',
+   'Analysis for pg-log-009.txt',
 );
 
 ok(
    no_diff(
-      sub { mk_query_digest::main(@args, $sample.'pg-syslog-sample1') },
+      sub { mk_query_digest::main(@args, $sample.'pg-syslog-008.txt') },
       "mk-query-digest/t/samples/pg-syslog-sample1"
    ),
-   'Analysis for pg-syslog-sample1',
+   'Analysis for pg-syslog-008.txt',
 );
 
 # #############################################################################
