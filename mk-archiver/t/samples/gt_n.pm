@@ -36,6 +36,7 @@ sub get_row_count {
    $sth->execute();
    my @row = $sth->fetchrow_array();
    MKDEBUG && _d('Row count:', $row[0]);
+   $sth->finish();
    return $row[0];
 }
 
