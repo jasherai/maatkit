@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 263;
+use Test::More tests => 266;
 
 use QueryRewriter;
 use QueryParser;
@@ -1320,6 +1320,28 @@ is(
 	$qr->distill("peek tbl poke db"),
 	'',
 	'distills non-SQL'
+);
+
+# Issue 1176: mk-query-digest incorrectly distills queries with certain keywords
+
+# I want to see first how this is handled.  It's correct because the query
+# really does read from tables a and c; table b is just an alias.
+is(
+   $qr->distill("select c from (select * from a) as b where exists (select * from c where id is null)"),
+   "SELECT a c",
+   "distills SELECT with subquery in FROM and WHERE"
+);
+
+is(
+	$qr->distill("select c from t where col='delete'"),
+	'SELECT t',
+   'distills SELECT with keyword as value (issue 1176)'
+);
+
+is(
+   $qr->distill('SELECT c, replace(foo, bar) FROM t WHERE col <> "insert"'),
+   'SELECT t',
+   'distills SELECT with REPLACE function (issue 1176)'
 );
 
 # #############################################################################

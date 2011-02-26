@@ -286,13 +286,26 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
+
+   # http://code.google.com/p/maatkit/issues/detail?id=1176
+   # A SELECT query can't have any verbs other than UNION.
+   # Subqueries (SELECT SELECT) are reduced to 1 SELECT in the
+   # do loop above.  And there's no valid SQL syntax like
+   # SELECT ... DELETE (there are valid multi-verb syntaxes, like
+   # INSERT ... SELECT).  So if it's a SELECT with multiple verbs,
+   # we need to check it else SELECT c FROM t WHERE col='delete'
+   # will incorrectly distill as SELECT DELETE t.
+   if ( ($verbs[0] || '') eq 'SELECT' && @verbs > 1 ) {
+      MKDEBUG && _d("False-positive verbs after SELECT:", @verbs[1..$#verbs]);
+      my $union = grep { $_ eq 'UNION' } @verbs;
+      @verbs    = $union ? qw(SELECT UNION) : qw(SELECT);
+   }
+
    # This used to be "my $verbs" but older verisons of Perl complain that
    # ""my" variable $verbs masks earlier declaration in same scope" where
    # the earlier declaration is our $verbs.
    # http://code.google.com/p/maatkit/issues/detail?id=957
    my $verb_str = join(q{ }, @verbs);
-   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
-
    return $verb_str;
 }
 
