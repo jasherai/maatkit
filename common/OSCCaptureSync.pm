@@ -106,10 +106,18 @@ sub sync {
 
 sub cleanup {
    my ( $self, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(dbh db msg);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my ($dbh, $db, $msg) = @args{@required_args};
+
+   foreach my $trigger ( qw(del ins upd) ) {
+      my $sql = "DROP TRIGGER IF EXISTS `$db`.`mk_osc_$trigger`";
+      $msg->($sql);
+      $dbh->do($sql) unless $args{print};
+   }
+
    return;
 }
 

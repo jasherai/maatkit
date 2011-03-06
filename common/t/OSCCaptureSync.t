@@ -33,7 +33,7 @@ elsif ( !@{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')} ) {
    plan skip_all => "Sandbox master does not have the sakila database";
 }
 else {
-   plan tests => 3;
+   plan tests => 4;
 }
 
 $sb->load_file("master", "common/t/samples/osc/tbl001.sql");
@@ -78,6 +78,21 @@ is_deeply(
    ],
    "Triggers work"
 ) or print Dumper($rows);
+
+output(sub {
+   $osc->cleanup(
+      dbh => $dbh,
+      db  => 'osc',
+      msg => $msg,
+   );
+});
+
+$rows = $dbh->selectall_arrayref("show triggers from `osc` like 't'");
+is_deeply(
+   $rows,
+   [],
+   "Cleanup removes the triggers"
+);
 
 # #############################################################################
 # Done.
