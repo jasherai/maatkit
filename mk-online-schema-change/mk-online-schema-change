@@ -4178,14 +4178,7 @@ sub main {
    # ########################################################################
    # Pre-checks.
    # ########################################################################
-   my $chunk = checks(
-      dbh        => $dbh,
-      db         => $db,
-      old_tbl    => $old_tbl,
-      new_tbl    => $new_tbl,
-      tbl_struct => $tables{old_tbl_struct},
-      %common_modules,
-   );
+   my $chunk = checks(%plugin_args);
    $plugin_args{chunk_column} = $chunk->{column};
    $plugin_args{chunk_index}  = $chunk->{index};
    if ( $o->get('exit-after-checks') ) {
@@ -4338,13 +4331,16 @@ sub main {
 # ############################################################################
 sub checks {
    my ( %args ) = @_;
-   my @required_args = qw(dbh db old_tbl new_tbl VersionParser Quoter TableParser);
+   my @required_args = qw(dbh old_table old_table_renamed old_tbl_struct new_table VersionParser Quoter TableParser OptionParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dbh, $db)          = @args{qw(dbh db)};
-   my ($old_tbl, $new_tbl) = @args{qw(old_tbl new_tbl)};
-   my ($vp, $q, $tp)       = @args{qw(VersionParser Quoter TableParser)};
+   my ($dbh)                   = $args{dbh};
+   my ($old_table, $new_table) = @args{qw(old_table new_table)};
+   my ($vp, $q, $tp, $o)       = @args{qw(VersionParser Quoter TableParser OptionParser)};
+
+   my ($db, $old_tbl)   = $q->split_unquote($old_table);
+   my (undef, $new_tbl) = $q->split_unquote($new_table);
 
    my $sql = "";
 
@@ -4357,6 +4353,15 @@ sub checks {
    # The old table must exist of course.
    if ( !$tp->check_table(dbh=>$dbh, db=>$db, tbl=>$old_tbl) ) {
       die "The old table does not exist.  Create it an try again.\n";
+   }
+
+   if ( $o->get('rename-tables') ) {
+      my (undef,$old_tbl_renamed) = $q->split_unquote($args{old_table_renamed});
+      if ( $tp->check_table(dbh=>$dbh, db=>$db, tbl=>$old_tbl_renamed) ) {
+         die "The old renamed table $args{old_table_renamed} already exists, "
+            . "probably from a previous run.  See --drop-old-table for more "
+            . "information.\n";
+      }
    }
 
    # The new table should not exist.  This could be an option, but for now
@@ -4378,7 +4383,7 @@ sub checks {
    # For now, we require that the old table has an exact-chunkable
    # column (i.e. unique single-column).
    my ($exact, @chunkable_cols) = $args{TableChunker}->find_chunk_columns(
-      tbl_struct => $args{tbl_struct},
+      tbl_struct => $args{old_tbl_struct},
       exact      => 1,
    );
    if ( !$exact || !@chunkable_cols ) {
@@ -4389,7 +4394,7 @@ sub checks {
       . "$chunkable_cols[0]->{index}");
 
    $chunkable_cols[0]->{column_ddl}
-      = $args{tbl_struct}->{defs}->{$chunkable_cols[0]->{column}};
+      = $args{old_tbl_struct}->{defs}->{$chunkable_cols[0]->{column}};
    $chunkable_cols[0]->{column_ddl} =~ s/AUTO_INCREMENT//i;
 
    return $chunkable_cols[0];
