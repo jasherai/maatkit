@@ -66,19 +66,27 @@ sub copy {
          warn "Chunk number ", ($chunkno + 1), "is undefined";
          next;
       }
+
       my $sql = "INSERT IGNORE INTO $new_table ($columns) "
               . "SELECT $columns FROM $old_table "
               . "WHERE ($chunks->[$chunkno])"
               . ($args{where}        ? " AND ($args{where})"  : "")
               . ($args{engine_flags} ? " $args{engine_flags}" : "");
+
+      # Most times we always msg($sql), but there may be a lot of chunks
+      # so only do this if we're printing (i.e. not executing).
       if ( $args{print} ) {
          $msg->($sql);
       }
       else {
          $dbh->do($sql);
       }
+
+      # Update Progress (if there is one) with the chunkno just finished.
       $pr->update(sub { return $chunkno + 1; }) if $pr;
-      $sleep->($chunkno + 1) if $sleep;
+
+      # Sleep if there's a callback and this isn't the last chunk.
+      $sleep->($chunkno + 1) if $sleep && $chunkno < $n_chunks;
    }
 
    return;

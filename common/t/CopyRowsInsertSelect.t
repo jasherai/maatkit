@@ -155,8 +155,8 @@ output( sub {
 });
 is(
    $sleep_cnt,
-   2,
-   "Calls sleep callback after each chunk"
+   1,
+   "Calls sleep callback after each chunk (except last chunk)"
 );
 
 eval {
