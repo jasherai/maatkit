@@ -15,13 +15,13 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# CopyTableInsertSelect package $Revision$
+# CopyRowsInsertSelect package $Revision$
 # ###########################################################################
 
-# Package: CopyTableInsertSelect
-# CopyTableInsertSelect implements the copy rows phase of an online schema
+# Package: CopyRowsInsertSelect
+# CopyRowsInsertSelect implements the copy rows phase of an online schema
 # change.
-package CopyTableInsertSelect;
+package CopyRowsInsertSelect;
 
 use strict;
 use warnings FATAL => 'all';
@@ -34,7 +34,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   %args - Arguments
 #
 # Returns:
-#   CopyTableInsertSelect object
+#   CopyRowsInsertSelect object
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw();
@@ -101,5 +101,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End CopyTableInsertSelect package
+# End CopyRowsInsertSelect package
 # ###########################################################################
