@@ -3641,6 +3641,152 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Progress package 7096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Progress.pm
+#   trunk/common/t/Progress.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+package Progress;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg (qw(jobsize)) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   if ( (!$args{report} || !$args{interval}) ) {
+      if ( $args{spec} && @{$args{spec}} == 2 ) {
+         @args{qw(report interval)} = @{$args{spec}};
+      }
+      else {
+         die "I need either report and interval arguments, or a spec";
+      }
+   }
+
+   my $name  = $args{name} || "Progress";
+   $args{start} ||= time();
+   my $self;
+   $self = {
+      last_reported => $args{start},
+      fraction      => 0,       # How complete the job is
+      callback      => sub {
+         my ($fraction, $elapsed, $remaining, $eta) = @_;
+         printf STDERR "$name: %3d%% %s remain\n",
+            $fraction * 100,
+            Transformers::secs_to_time($remaining),
+            Transformers::ts($eta);
+      },
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub validate_spec {
+   shift @_ if $_[0] eq 'Progress'; # Permit calling as Progress-> or Progress::
+   my ( $spec ) = @_;
+   if ( @$spec != 2 ) {
+      die "spec array requires a two-part argument\n";
+   }
+   if ( $spec->[0] !~ m/^(?:percentage|time|iterations)$/ ) {
+      die "spec array's first element must be one of "
+        . "percentage,time,iterations\n";
+   }
+   if ( $spec->[1] !~ m/^\d+$/ ) {
+      die "spec array's second element must be an integer\n";
+   }
+}
+
+sub set_callback {
+   my ( $self, $callback ) = @_;
+   $self->{callback} = $callback;
+}
+
+sub start {
+   my ( $self, $start ) = @_;
+   $self->{start} = $self->{last_reported} = $start || time();
+}
+
+sub update {
+   my ( $self, $callback, $now ) = @_;
+   my $jobsize   = $self->{jobsize};
+   $now        ||= time();
+   $self->{iterations}++; # How many updates have happened;
+
+   if ( $self->{report} eq 'time'
+         && $self->{interval} > $now - $self->{last_reported}
+   ) {
+      return;
+   }
+   elsif ( $self->{report} eq 'iterations'
+         && ($self->{iterations} - 1) % $self->{interval} > 0
+   ) {
+      return;
+   }
+   $self->{last_reported} = $now;
+
+   my $completed = $callback->();
+   $self->{updates}++; # How many times we have run the update callback
+
+   return if $completed > $jobsize;
+
+   my $fraction = $completed > 0 ? $completed / $jobsize : 0;
+
+   if ( $self->{report} eq 'percentage'
+         && $self->fraction_modulo($self->{fraction})
+            >= $self->fraction_modulo($fraction)
+   ) {
+      $self->{fraction} = $fraction;
+      return;
+   }
+   $self->{fraction} = $fraction;
+
+   my $elapsed   = $now - $self->{start};
+   my $remaining = 0;
+   my $eta       = $now;
+   if ( $completed > 0 && $completed <= $jobsize && $elapsed > 0 ) {
+      my $rate = $completed / $elapsed;
+      if ( $rate > 0 ) {
+         $remaining = ($jobsize - $completed) / $rate;
+         $eta       = $now + int($remaining);
+      }
+   }
+   $self->{callback}->($fraction, $elapsed, $remaining, $eta, $completed);
+}
+
+sub fraction_modulo {
+   my ( $self, $num ) = @_;
+   $num *= 100; # Convert from fraction to percentage
+   return sprintf('%d',
+      sprintf('%d', $num / $self->{interval}) * $self->{interval});
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Progress package
+# ###########################################################################
+
+# ###########################################################################
 # OSCCaptureSync package 7308
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
@@ -3757,6 +3903,94 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# CopyRowsInsertSelect package 7312
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/CopyRowsInsertSelect.pm
+#   trunk/common/t/CopyRowsInsertSelect.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package CopyRowsInsertSelect;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $self = {
+      %args,
+   };
+
+   return bless $self, $class;
+}
+
+sub copy {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh msg old_table new_table chunks columns);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $msg, $old_table, $new_table, $chunks) = @args{@required_args};
+   my $pr       = $args{Progress};
+   my $sleep    = $args{sleep};
+   my $columns  = join(', ', @{$args{columns}});
+   my $n_chunks = @$chunks - 1;
+
+   for my $chunkno ( 0..$n_chunks ) {
+      if ( !$chunks->[$chunkno] ) {
+         warn "Chunk number ", ($chunkno + 1), "is undefined";
+         next;
+      }
+
+      my $sql = "INSERT IGNORE INTO $new_table ($columns) "
+              . "SELECT $columns FROM $old_table "
+              . "WHERE ($chunks->[$chunkno])"
+              . ($args{where}        ? " AND ($args{where})"  : "")
+              . ($args{engine_flags} ? " $args{engine_flags}" : "");
+
+      if ( $args{print} ) {
+         $msg->($sql);
+      }
+      else {
+         $dbh->do($sql);
+      }
+
+      $pr->update(sub { return $chunkno + 1; }) if $pr;
+
+      $sleep->($chunkno + 1) if $sleep && $chunkno < $n_chunks;
+   }
+
+   return;
+}
+
+sub cleanup {
+   my ( $self, %args ) = @_;
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End CopyRowsInsertSelect package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -3767,6 +4001,7 @@ sub _d {
 package mk_online_schema_change;
 
 use English qw(-no_match_vars);
+use Time::HiRes qw(usleep);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -3827,6 +4062,14 @@ sub main {
       if ( ($o->get('new-table') || "") eq $old_tbl ) {
          $o->save_error("--new-table cannot be the same as the old table");
       }
+
+      if ( $o->get('progress') ) {
+         eval { Progress->validate_spec($o->get('progress')) };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            $o->save_error("--progress $EVAL_ERROR");
+         }
+      }
    }
 
    $o->usage_or_errors();
@@ -3835,7 +4078,7 @@ sub main {
    my $exit_status = 0;
 
    # ########################################################################
-   # Connect to MySQL if not reading files.
+   # Connect to MySQL.
    # ########################################################################
    my $dbh = get_cxn(
       dsn          => $dsn,
@@ -3845,13 +4088,29 @@ sub main {
    );
 
    # ########################################################################
+   # Daemonize only after (potentially) asking for passwords for --ask-pass.
+   # ########################################################################
+   my $daemon;
+   if ( $o->get('daemonize') ) {
+      $daemon = new Daemon(o=>$o);
+      $daemon->daemonize();
+      MKDEBUG && _d('I am a daemon now');
+   }
+   elsif ( $o->get('pid') ) {
+      # We're not daemoninzing, it just handles PID stuff.
+      $daemon = new Daemon(o=>$o);
+      $daemon->make_PID_file();
+   }
+
+   # ########################################################################
    # Setup/init some vars.
    # ########################################################################
-   my $new_tbl    = $o->get('new-table') || "__new_$old_tbl";
-   my %tables     = (
-      db        => $db,
-      old_table => $q->join_quote($db, $old_tbl),
-      new_table => $q->join_quote($db, $new_tbl),
+   my $new_tbl = $o->get('new-table') || "__new_$old_tbl";
+   my %tables  = (
+      db                => $db,
+      old_table         => $q->join_quote($db, $old_tbl),
+      new_table         => $q->join_quote($db, $new_tbl),
+      old_table_renamed => $q->join_quote($db, "__old_$old_tbl"),
    );
    msg("Old table: $tables{old_table}");
    msg("New table: $tables{new_table}");
@@ -3870,6 +4129,53 @@ sub main {
    );
 
    # ########################################################################
+   # Create the capture-sync and copy-rows plugins.  Currently, we just have
+   # one method for each.
+   # ########################################################################
+   my $capture_sync = new OSCCaptureSync();
+   my $copy_rows    = new CopyRowsInsertSelect();
+
+   # More values are added later.  These are the minimum need to do --cleanup.
+   my %plugin_args = (
+      dbh   => $dbh,
+      msg   => \&msg,  # so plugin can talk back to user
+      print => $o->get('print'),
+      where => $o->get('where'),
+      %tables,
+      %common_modules,
+   );
+
+   if ( my $sleep_time = $o->get('sleep') ) {
+      MKDEBUG && _d("Sleep time:", $sleep_time);
+      $sleep_time *= 1_000_000;  # convert to microseconds
+      $plugin_args{sleep} = sub {
+         my ( $chunkno ) = @_;
+         MKDEBUG && _d("Sleeping after chunk", $chunkno);
+         usleep($sleep_time);
+      };
+   }
+
+   # ########################################################################
+   # Just cleanup and exit.
+   # ########################################################################
+   if ( $o->get('cleanup-and-exit') ) {
+      msg("Calling " . (ref $copy_rows). "::cleanup()");
+      $copy_rows->cleanup(%plugin_args);
+
+      msg("Calling " . (ref $capture_sync) . "::cleanup()");
+      $capture_sync->cleanup(%plugin_args);
+
+#      if ( $o->get('drop-old-table') ) {
+#         my $sql = "DROP TABLE IF EXISTS $tables{old_table_renamed}";
+#         msg($sql);
+#         $dbh->do($sql) unless $o->get('print');
+#      }
+
+      msg("$PROGRAM_NAME ending for --cleanup-and-exit");
+      exit 0;
+   }
+
+   # ########################################################################
    # Pre-checks.
    # ########################################################################
    my $chunk = checks(
@@ -3880,6 +4186,8 @@ sub main {
       tbl_struct => $tables{old_tbl_struct},
       %common_modules,
    );
+   $plugin_args{chunk_column} = $chunk->{column};
+   $plugin_args{chunk_index}  = $chunk->{index};
    if ( $o->get('exit-after-checks') ) {
       msg("$PROGRAM_NAME ending for --exit-after-checks; all checks passed");
       exit 0;
@@ -3906,21 +4214,13 @@ sub main {
       chunk_size => $o->get('chunk-size'),
       %range_stats,
    );
-
-   # ########################################################################
-   # Daemonize only after (potentially) asking for passwords for --ask-pass.
-   # ########################################################################
-   my $daemon;
-   if ( $o->get('daemonize') ) {
-      $daemon = new Daemon(o=>$o);
-      $daemon->daemonize();
-      MKDEBUG && _d('I am a daemon now');
-   }
-   elsif ( $o->get('pid') ) {
-      # We're not daemoninzing, it just handles PID stuff.
-      $daemon = new Daemon(o=>$o);
-      $daemon->make_PID_file();
-   }
+   $plugin_args{chunks}   = \@chunks;
+   $plugin_args{Progress} = new Progress(
+      jobsize => scalar @chunks,
+      spec    => $o->get('progress'),
+      name    => "Copying rows",
+   );
+   msg("$tables{old_table} chunked into " . scalar @chunks . " chunks");
 
    eval {
       my $sql = "";
@@ -3957,6 +4257,8 @@ sub main {
       # Determine what columns the two tables 
       # #####################################################################
       my @columns;
+      # If --print is in effect, then chances are the new table wasn't
+      # created above, so we can't get it's struct.
       if ( !$o->get('print') ) {
          $tables{new_tbl_struct} = $tp->parse(
                $du->get_create_table($dbh, $q, $db, $new_tbl));
@@ -3973,34 +4275,19 @@ sub main {
          @columns = sort { $col_posn->{$a} <=> $col_posn->{$b} } @columns;
          msg("Shared columns: " . join(', ', @columns));
       }
-
-      # #####################################################################
-      # Work below here (capture, copy, sync and clean) is mostly handled
-      # via plugins.
-      # #####################################################################
-      my %plugin_args = (
-         dbh          => $dbh,
-         columns      => \@columns,
-         chunk_column => $chunk->{column},
-         chunk_index  => $chunk->{index},
-         msg          => \&msg,  # so plugin can talk back to user
-         %tables,
-         %common_modules,
-      );
+      $plugin_args{columns} = \@columns;
 
       # #####################################################################
       # Start capturing changes to the new table.
       # #####################################################################
-      my $capture_sync = new OSCCaptureSync();
       msg("Calling " . (ref $capture_sync) . "::capture()");
       $capture_sync->capture(%plugin_args);
 
       # #####################################################################
       # Copy rows from new table to old table.
       # #####################################################################
-#      my $copy = new CopyTableInsertSelect();
-#      msg("Calling " . (ref $copy) . "::copy()");
-#      $copy->copy(%plugin_args);
+      msg("Calling " . (ref $copy_rows) . "::copy()");
+      $copy_rows->copy(%plugin_args);
 
       # #####################################################################
       # Sync tables.
@@ -4009,22 +4296,36 @@ sub main {
       $capture_sync->sync(%plugin_args);
 
       # #####################################################################
-      # Swap tables.
+      # Rename tables.
       # #####################################################################
+      if ( $o->get('rename-tables') ) {
+         msg("Renaming the tables");
+         $sql = "RENAME TABLE $tables{old_table} TO $tables{old_table_renamed},"
+              . " $tables{new_table} TO $tables{old_table}";
+         msg($sql);
+         $dbh->do($sql) unless $o->get('print');
+         msg("Old table renamed to $tables{old_table_renamed}");
+      }
 
       # #####################################################################
       # Cleanup.
       # #####################################################################
-#      msg("Calling " . (ref $copy). "::cleanup()");
-#      $copy->cleanup(%plugin_args);
+      msg("Calling " . (ref $copy_rows). "::cleanup()");
+      $copy_rows->cleanup(%plugin_args);
 
       msg("Calling " . (ref $capture_sync) . "::cleanup()");
       $capture_sync->cleanup(%plugin_args);
 
+      if ( $o->get('rename-tables') &&  $o->get('drop-old-table') ) {
+         $sql = "DROP TABLE $tables{old_table_renamed}";
+         msg($sql);
+         $dbh->do($sql) unless $o->get('print');
+      }
    };
    if ( $EVAL_ERROR ) {
-      warn "$PROGRAM_NAME ending prematurely because an error occurred: "
-         . $EVAL_ERROR;
+      warn "An error occurred:\n\n$EVAL_ERROR\n"
+         . "Some triggers, temp tables, etc. may not have been removed. "
+         . "Run with --cleanup-and-exit to remove these items.\n";
       $exit_status = 1;
    }
 
@@ -4037,9 +4338,11 @@ sub main {
 # ############################################################################
 sub checks {
    my ( %args ) = @_;
-
-   my $dbh                 = $args{dbh};
-   my $db                  = $args{db};
+   my @required_args = qw(dbh db old_tbl new_tbl VersionParser Quoter TableParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db)          = @args{qw(dbh db)};
    my ($old_tbl, $new_tbl) = @args{qw(old_tbl new_tbl)};
    my ($vp, $q, $tp)       = @args{qw(VersionParser Quoter TableParser)};
 
@@ -4108,6 +4411,10 @@ sub get_cxn {
       $dsn->{p} = OptionParser::prompt_noecho("Enter password: "); 
    }
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => $ac});
+
+   $dbh->do('SET SQL_LOG_BIN=0') unless $o->get('bin-log');
+   $dbh->do('SET FOREIGN_KEY_CHECKS=0') unless $o->get('foreign-key-checks');
+
    return $dbh;
 }
 
@@ -4188,6 +4495,12 @@ Semicolon-separated list of ALTER TABLE statments to execute on the new table.
 
 Prompt for a password when connecting to MySQL.
 
+=item --[no]bin-log
+
+default: yes
+
+Enable binary logging (C<SET SQL_LOG_BIN=1>).
+
 =item --charset
 
 short form: -A; type: string
@@ -4202,6 +4515,10 @@ without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 type: size; default: 1000
 
 Chunk size.
+
+=item --cleanup-and-exit
+
+Cleanup and exit;
 
 =item --config
 
@@ -4234,17 +4551,19 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --[no]drop-old-table
+=item --drop-old-table
 
 Drop the old table once the new table has been successfully synchronized.
-
-=item --[no]drop-triggers
-
-Drop any triggers created.
 
 =item --exit-after-checks
 
 Run all checks then exit; do not begin online schema change.
+
+=item --[no]foreign-key-checks
+
+default: yes
+
+Enforce foreign key checks (FOREIGN_KEY_CHECKS=1).
 
 =item --help
 
@@ -4293,19 +4612,25 @@ Port number to use for connection.
 
 Don't execute SQL statements, just print them to STDOUT.
 
+=item --progress
+
+type: array; default: time,30
+
+Print progress reports to STDERR while copying rows.
+
+The value is a comma-separated list with two parts.  The first part can be
+percentage, time, or iterations; the second part specifies how often an update
+should be printed, in percentage, seconds, or number of iterations.
+
 =item --quiet
 
 Do not print messages to STDOUT.
 
-=item --sentinel
+=item --[no]rename-tables
 
-type: string; default: /tmp/mk-online-schema-change-sentinel
+default: yes
 
-Exit if this file exists.
-
-The presence of the file specified by L<"--sentinel"> will cause all running
-instances of mk-online-schema-change to exit.  You might find this handy to
-stop cron jobs gracefully if necessary.  See also L<"--stop">.
+Rename new table to old table.
 
 =item --set-vars
 
@@ -4314,19 +4639,17 @@ type: string; default: wait_timeout=10000
 Set these MySQL variables.  Immediately after connecting to MySQL, this string
 will be appended to SET and executed.
 
+=item --sleep
+
+type: float; default: 0
+
+How long to sleep between chunks while copying rows.
+
 =item --socket
 
 short form: -S; type: string
 
 Socket file to use for connection.
-
-=item --stop
-
-Stop running instances by creating the L<"--sentinel"> file.
-
-Causes mk-online-schema-change to create the sentinel file specified by
-L<"--sentinel"> and exit.  This should have the effect of stopping all
-running instances which are watching the same sentinel file.
 
 =item --user
 
