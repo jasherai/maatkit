@@ -8,13 +8,55 @@ require '../common/MaatkitTest.pm';
 
 MaatkitTest->import(qw(load_file));
 
-my %not_instantiated = (
+# These modules are not instantiated as objects.
+my %not_obj = (
    ServerSpecs    => 1,
    MaatkitCommon  => 1,
    Transformers   => 1,
 );
+
+# Many tools dyanmically instantiate objs like $plugin="WatchStatus",
+# $plugin->new().  So this script can't detect that.
+my %dynamic = (
+   'mk-loadavg' => {
+      WatchStatus       => 1,
+      WatchProcesslist  => 1,
+      WatchServer       => 1, 
+   },
+   'mk-query-advisor' => {
+      SlowLogParser     => 1,
+      GeneralLogParser  => 1,
+   },
+   'mk-query-digest' => {
+      TcpdumpParser           => 1,
+      MySQLProtocolParser     => 1,
+      PgLogParser             => 1,
+      SlowLogParser           => 1,
+      MemcachedProtocolParser => 1,
+      MemcachedEvent          => 1,
+      BinaryLogParser         => 1,
+      GeneralLogParser        => 1,
+      ProtocolParser          => 1,
+      HTTPProtocolParser      => 1,
+   },
+   'mk-table-sync' => {
+      TableSyncStream   => 1,
+      TableSyncChunk    => 1,
+      TableSyncNibble   => 1,
+      TableSyncGroupBy  => 1,
+   },
+);
+
+# If these base-class modules are present, they should be accompanied
+# by a subclass.
+my %base_class = (
+   'AdvisorRules' => [ qw(QueryAdvisorRules VariableAdvisorRules) ],
+);
+
+# Nearly every tool has or needs these modules.
 my %ignore = (
-   DSNParser => 1,
+   OptionParser => 1,
+   DSNParser    => 1,
 );
 
 # If you specify one program, it has to be given like ../mk-find/mk-find
@@ -22,6 +64,8 @@ my @progs = @ARGV;
 if ( !@progs ) {
    @progs = <../mk-*/mk-*>;
 }
+
+my $exit_status = 0;
 
 foreach my $prog ( @progs ) {
    my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
@@ -32,16 +76,23 @@ foreach my $prog ( @progs ) {
 
    my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;
    my @unused = grep {
+      my $module = $_;
       my $unused = 0;
-      if ( $not_instantiated{$_} ) {
-         chomp(my $g = `grep -c '${_}::' $prog`);  # MaatkitCommon::_d
-         chomp(my $i = `grep -c '${_}->import' $prog`);  # Transformers->import
+      if ( $not_obj{$module} ) {
+         chomp(my $g = `grep -c '${_}::' $prog`);       # MaatkitCommon::_d
+         chomp(my $i = `grep -c '${_}->import' $prog`); # Transformers->import
          $g ||= 0;
          $i ||= 0;
          $unused = 1 if $g + $i == 0;
       }
+      elsif ( $dynamic{$program}->{$module} ) {
+         # Can't detect these.
+      }
+      elsif ( $base_class{$module} ) {
+         $unused = 1 unless grep { $uses{$_} } @{$base_class{$module}};
+      }
       else {
-         $unused = 1 unless $uses{$_};
+         $unused = 1 unless $uses{$module};
       }
       $unused;
    }
@@ -50,7 +101,9 @@ foreach my $prog ( @progs ) {
    if ( @unused ) {
       print "$program has unused modules:\n"
          . join('', map { "\t$_\n" } @unused);
+      $exit_status = 1;
    }
 }
 
-exit;
+print "No unused modules were detected in any tool.\n";
+exit $exit_status;
