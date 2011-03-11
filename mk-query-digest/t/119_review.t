@@ -13,7 +13,10 @@ use Test::More;
 
 use MaatkitTest;
 use Sandbox;
-use DSNParser;
+shift @INC;
+shift @INC;
+shift @INC;
+require "$trunk/mk-query-digest/mk-query-digest";
 
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -23,7 +26,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 16;
+   plan tests => 17;
 }
 
 my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
@@ -339,6 +342,38 @@ SET    biz = '91848182522'",
       },
    ],
    "Review history has Percona extended slowlog attribs (issue 1149)"
+);
+
+
+# #############################################################################
+# Issue 1265: mk-query-digest --review-history table with minimum 2 columns
+# #############################################################################
+$dbh->do('use test');
+$dbh->do('truncate table test.query_review');
+$dbh->do('drop table test.query_review_history');
+
+# mqd says "The table must have at least the following columns:"
+my $min_tbl = "CREATE TABLE query_review_history (
+  checksum     BIGINT UNSIGNED NOT NULL,
+  sample       TEXT NOT NULL
+)";
+$dbh->do($min_tbl);
+
+$output = output(
+   sub { mk_query_digest::main(
+      '--review', 'h=127.1,u=msandbox,p=msandbox,P=12345,D=test,t=query_review',
+      '--review-history', 't=query_review_history',
+      qw(--no-report --no-continue-on-error),
+      "$trunk/common/t/samples/slow002.txt")
+   },
+   stderr => 1,
+);
+
+# stub: this do repro the error
+# print $output;
+ok(
+   1,
+   "issue 1265"
 );
 
 # #############################################################################
