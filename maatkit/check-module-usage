@@ -1,11 +1,16 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+   unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-require '../common/MaatkitTest.pm';
-
+use MaatkitTest;
 MaatkitTest->import(qw(load_file));
 
 # These modules are not instantiated as objects.
@@ -62,7 +67,7 @@ my %ignore = (
 # If you specify one program, it has to be given like ../mk-find/mk-find
 my @progs = @ARGV;
 if ( !@progs ) {
-   @progs = <../mk-*/mk-*>;
+   @progs = `ls $trunk/mk-*/mk-*`;
 }
 
 my $exit_status = 0;
@@ -72,6 +77,7 @@ foreach my $prog ( @progs ) {
    next unless $program;
 
    # Arg to load_file is relative to MAATKIT_WORKING_COPY.
+   print "$program ";
    my $contents = load_file("$base/$program");
 
    my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;
@@ -99,11 +105,16 @@ foreach my $prog ( @progs ) {
    grep { !$ignore{$_} } $contents =~ m/^# (\w+) package \d+/gm;
 
    if ( @unused ) {
-      print "$program has unused modules:\n"
+      print "has unused modules:\n"
          . join('', map { "\t$_\n" } @unused);
       $exit_status = 1;
    }
+   else {
+      print "OK\n"
+   }
 }
 
-print "No unused modules were detected in any tool.\n";
+print "No unused modules were detected in any tool.\n"
+   if $exit_status == 0;
+
 exit $exit_status;
