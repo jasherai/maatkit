@@ -4047,7 +4047,7 @@ sub main {
       }
    }
    $dsn = $dp->parse($dsn, $dp->parse_options($o));
-   my ($db, $old_tbl) = $q->split_unquote($dsn->{t}, $dsn->{D});
+   my ($db, $old_tbl) = $q->split_unquote($dsn->{t} || "", $dsn->{D} || "");
 
    if ( !$o->get('help') ) {
       if ( !$db ) {
@@ -4059,7 +4059,7 @@ sub main {
          $o->save_error('The DSN must specify a t (table) part');
       }
 
-      if ( ($o->get('new-table') || "") eq $old_tbl ) {
+      if ( $old_tbl && $old_tbl eq ($o->get('new-table') || "") ) {
          $o->save_error("--new-table cannot be the same as the old table");
       }
 
