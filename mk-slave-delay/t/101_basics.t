@@ -64,6 +64,7 @@ like(
 diag(`/tmp/12346/stop >/dev/null`);
 diag(`mv /tmp/12346/my.sandbox.cnf-original /tmp/12346/my.sandbox.cnf`);
 diag(`/tmp/12346/start >/dev/null`);
+diag(`/tmp/12346/use -e "set global read_only=1"`);
 
 # #############################################################################
 # Check --use-master

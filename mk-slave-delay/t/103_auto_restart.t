@@ -61,6 +61,7 @@ else {
 
    sleep 1;
    diag(`/tmp/12346/start >/dev/null`);
+   diag(`/tmp/12346/use -e "set global read_only=1"`);
    exit;
 }
 
