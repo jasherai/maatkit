@@ -2078,7 +2078,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6861
+# QueryRewriter package 7300
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -2273,9 +2273,14 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verb_str = join(q{ }, @verbs);
-   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
+   if ( ($verbs[0] || '') eq 'SELECT' && @verbs > 1 ) {
+      MKDEBUG && _d("False-positive verbs after SELECT:", @verbs[1..$#verbs]);
+      my $union = grep { $_ eq 'UNION' } @verbs;
+      @verbs    = $union ? qw(SELECT UNION) : qw(SELECT);
+   }
+
+   my $verb_str = join(q{ }, @verbs);
    return $verb_str;
 }
 

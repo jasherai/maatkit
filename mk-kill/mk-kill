@@ -1932,19 +1932,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 7213
+# Processlist package 7289
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Processlist.pm
 #   trunk/common/t/Processlist.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package Processlist;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
+use Time::HiRes qw(time usleep);
+use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -1952,18 +1954,20 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
-   ID      => 0,
-   USER    => 1,
+   ID      => 0,  
+   USER    => 1,  
    HOST    => 2,
    DB      => 3,
    COMMAND => 4,
    TIME    => 5,
    STATE   => 6,
    INFO    => 7,
-   START   => 8, # Calculated start time of statement
-   ETIME   => 9, # Exec time of SHOW PROCESSLIST (margin of error in START)
+   START   => 8,  # Calculated start time of statement ($start - TIME)
+   ETIME   => 9,  # Exec time of SHOW PROCESSLIST (margin of error in START)
    FSEEN   => 10, # First time ever seen
+   PROFILE => 11, # Profile of individual STATE times
 };
+
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1972,128 +1976,151 @@ sub new {
    }
    my $self = {
       %args,
-      prev_rows => [],
-      new_rows  => [],
-      curr_row  => undef,
-      prev_row  => undef,
+      polls       => 0,
+      last_poll   => 0,
+      active_cxn  => {},  # keyed off ID
+      event_cache => [],
    };
    return bless $self, $class;
 }
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(misc);
+   my @required_args = qw(code);
    foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
+     die "I need a $arg argument" unless $args{$arg};
    }
-   my ($misc) = @args{@required_args};
+   my ($code) = @args{@required_args};
 
-   my $code = $misc->{code};
-   die "I need a code arg to misc" unless $code;
-
-   my @curr;
-   if ( $self->{curr_rows} ) {
-      MKDEBUG && _d('Current rows from last call');
-      @curr = @{$self->{curr_rows}};
-   }
-   else {
-      my $rows = $code->();
-      if ( $rows && scalar @$rows ) {
-         MKDEBUG && _d('Got new current rows');
-         @curr = sort { $a->[ID] <=> $b->[ID] } @$rows;
-      }
-      else {
-         MKDEBUG && _d('No current rows');
-      }
+   if ( @{$self->{event_cache}} ) {
+      MKDEBUG && _d("Returning cached event");
+      return shift @{$self->{event_cache}};
    }
 
-   my @prev = @{$self->{prev_rows} ||= []};
-   my @new  = @{$self->{new_rows}  ||= []};; # Becomes next invocation's @prev
-   my $curr = $self->{curr_row}; # Rows from each source
-   my $prev = $self->{prev_row};
-   my $event;
-
-   MKDEBUG && _d('Rows:', scalar @prev, 'prev,', scalar @curr, 'current');
-
-   if ( !$curr && @curr ) {
-      MKDEBUG && _d('Fetching row from curr');
-      $curr = shift @curr;
+   if ( $self->{interval} && $self->{polls} ) {
+      MKDEBUG && _d("Sleeping between polls");
+      usleep($self->{interval});
    }
-   if ( !$prev && @prev ) {
-      MKDEBUG && _d('Fetching row from prev');
-      $prev = shift @prev;
+
+   MKDEBUG && _d("Polling PROCESSLIST");
+   my ($time, $etime) = @args{qw(time etime)};
+   my $start          = $etime ? 0 : time;  # don't need start if etime given
+   my $rows           = $code->();
+   if ( !$rows ) {
+      warn "Processlist callback did not return an arrayref";
+      return;
    }
-   if ( $curr || $prev ) {
-      if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
-         MKDEBUG && _d('$curr and $prev are the same cxn');
-         my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-         my $is_new = 0;
+   $time  = time           unless $time;
+   $etime = $time - $start unless $etime;
+   $self->{polls}++;
+   MKDEBUG && _d('Rows:', ($rows ? scalar @$rows : 0), 'in', $etime, 'seconds');
+
+   my $active_cxn = $self->{active_cxn};
+   my $curr_cxn   = {};
+   my @new_cxn    = ();
+
+   CURRENTLY_ACTIVE_CXN:
+   foreach my $curr ( @$rows ) {
+
+      $curr_cxn->{$curr->[ID]} = $curr;
+
+      my $query_start = $time - ($curr->[TIME] || 0);
+
+      if ( $active_cxn->{$curr->[ID]} ) {
+         MKDEBUG && _d('Checking existing cxn', $curr->[ID]);
+         my $prev      = $active_cxn->{$curr->[ID]}; # previous state of cxn
+         my $new_query = 0;
+         my $fudge     = ($curr->[TIME] || 0) =~ m/\D/ ? 0.001 : 1; # micro-t?
+
          if ( $prev->[INFO] ) {
-            if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-               MKDEBUG && _d('$curr has a new query');
-               $is_new = 1;
+            if ( !$curr->[INFO] || $prev->[INFO] ne $curr->[INFO] ) {
+               MKDEBUG && _d('Info is different; new query');
+               $new_query = 1;
             }
-            elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
-               MKDEBUG && _d('$curr time is less than $prev time');
-               $is_new = 1;
+            elsif ( defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME] ) {
+               MKDEBUG && _d('Time is less than previous; new query');
+               $new_query = 1;
             }
             elsif ( $curr->[INFO] && defined $curr->[TIME]
-                    && $misc->{time} - $curr->[TIME] - $prev->[START]
-                       - $prev->[ETIME] - $misc->{etime} > $fudge
-            ) {
-               MKDEBUG && _d('$curr has same query that restarted');
-               $is_new = 1;
+                    && $query_start - $etime - $prev->[START] > $fudge ) {
+               MKDEBUG && _d('Query restarted; new query',
+                  $query_start, $etime, $prev->[START], $fudge);
+               $new_query = 1;
             }
-            if ( $is_new ) {
-               $event = $self->make_event($prev, $misc->{time});
+
+            if ( $new_query ) {
+               $self->_update_profile($prev, $curr, $time);
+               push @{$self->{event_cache}},
+                  $self->make_event($prev, $time);
             }
          }
+
          if ( $curr->[INFO] ) {
-            if ( $prev->[INFO] && !$is_new ) {
-               MKDEBUG && _d('Pushing old history item back onto $prev');
-               push @new, [ @$prev ];
+            if ( $prev->[INFO] && !$new_query ) {
+               MKDEBUG && _d("Query on cxn", $curr->[ID], "hasn't changed");
+               $self->_update_profile($prev, $curr, $time);
             }
             else {
-               MKDEBUG && _d('Pushing new history item onto $prev');
-               push @new,
-                  [ @$curr, int($misc->{time} - $curr->[TIME]),
-                     $misc->{etime}, $misc->{time} ];
+               MKDEBUG && _d('Saving new query, state', $curr->[STATE]);
+               push @new_cxn, [
+                  @$curr,                   # proc info
+                  int($query_start),        # START
+                  $etime,                   # ETIME
+                  $time,                    # FSEEN
+                  { $curr->[STATE] => 0 },  # PROFILE
+               ];
             }
          }
-         $curr = $prev = undef; # Fetch another from each.
-      }
-      elsif ( !$curr
-              || ($curr && $prev && $curr->[ID] > $prev->[ID]) ) {
-         MKDEBUG && _d('$curr is not in $prev');
-         $event = $self->make_event($prev, $misc->{time});
-         $prev = undef;
-      }
-      else { # This else must be entered, to prevent infinite loops.
-         MKDEBUG && _d('$prev is not in $curr');
+      } 
+      else {
+         MKDEBUG && _d('New cxn', $curr->[ID]);
          if ( $curr->[INFO] && defined $curr->[TIME] ) {
-            MKDEBUG && _d('Pushing new history item onto $prev');
-            push @new,
-               [ @$curr, int($misc->{time} - $curr->[TIME]),
-                  $misc->{etime}, $misc->{time} ];
+            MKDEBUG && _d('Saving query of new cxn, state', $curr->[STATE]);
+            push @new_cxn, [
+               @$curr,                   # proc info
+               int($query_start),        # START
+               $etime,                   # ETIME
+               $time,                    # FSEEN
+               { $curr->[STATE] => 0 },  # PROFILE
+            ];
          }
-         $curr = undef; # No infinite loops.
+      }
+   }  # CURRENTLY_ACTIVE_CXN
+
+   PREVIOUSLY_ACTIVE_CXN:
+   foreach my $prev ( values %$active_cxn ) {
+      if ( !$curr_cxn->{$prev->[ID]} ) {
+         MKDEBUG && _d('cxn', $prev->[ID], 'ended');
+         push @{$self->{event_cache}},
+            $self->make_event($prev, $time);
+         delete $active_cxn->{$prev->[ID]};
+      }
+      elsif (   ($curr_cxn->{$prev->[ID]}->[COMMAND] || "") eq 'Sleep' 
+             || !$curr_cxn->{$prev->[ID]}->[STATE]
+             || !$curr_cxn->{$prev->[ID]}->[INFO] ) {
+         MKDEBUG && _d('cxn', $prev->[ID], 'became idle');
+         delete $active_cxn->{$prev->[ID]};
       }
    }
 
-   $self->{prev_rows} = \@new;
-   $self->{prev_row}  = $prev;
-   $self->{curr_rows} = scalar @curr ? \@curr : undef;
-   $self->{curr_row}  = $curr;
+   map { $active_cxn->{$_->[ID]} = $_; } @new_cxn;
 
+   $self->{last_poll} = $time;
+
+   my $event = shift @{$self->{event_cache}};
+   MKDEBUG && _d(scalar @{$self->{event_cache}}, "events in cache");
    return $event;
 }
 
 sub make_event {
    my ( $self, $row, $time ) = @_;
-   my $Query_time = $row->[TIME];
-   if ( $row->[TIME] < $time - $row->[FSEEN] ) {
-      $Query_time = $time - $row->[FSEEN];
-   }
+
+   my $observed_time = $time - $row->[FSEEN];
+   my $Query_time    = max($row->[TIME], $observed_time);
+
+
+
+
    my $event = {
       id         => $row->[ID],
       db         => $row->[DB],
@@ -2103,17 +2130,41 @@ sub make_event {
       bytes      => length($row->[INFO]),
       ts         => Transformers::ts($row->[START] + $row->[TIME]), # Query END time
       Query_time => $Query_time,
-      Lock_time  => 0,               # TODO
+      Lock_time  => $row->[PROFILE]->{Locked} || 0,
    };
    MKDEBUG && _d('Properties of event:', Dumper($event));
    return $event;
 }
 
-sub _get_rows {
+sub _get_active_cxn {
    my ( $self ) = @_;
-   my %rows = map { $_ => $self->{$_} }
-      qw(prev_rows new_rows curr_row prev_row);
-   return \%rows;
+   MKDEBUG && _d("Active cxn:", Dumper($self->{active_cxn}));
+   return $self->{active_cxn};
+}
+
+sub _update_profile {
+   my ( $self, $prev, $curr, $time ) = @_;
+   return unless $prev && $curr;
+
+   my $time_elapsed = $time - $self->{last_poll};
+
+
+   if ( ($prev->[STATE] || "") eq ($curr->[STATE] || "") ) {
+      MKDEBUG && _d("Query is still in", $curr->[STATE], "state");
+      $prev->[PROFILE]->{$prev->[STATE] || ""} += $time_elapsed;
+   }
+   else {
+      MKDEBUG && _d("Query changed from state", $prev->[STATE],
+         "to", $curr->[STATE]);
+      my $half_time = ($time_elapsed || 0) / 2;
+
+      $prev->[PROFILE]->{$prev->[STATE] || ""} += $half_time;
+
+      $prev->[STATE] = $curr->[STATE];
+      $prev->[PROFILE]->{$curr->[STATE] || ""}  = $half_time;
+   }
+
+   return;
 }
 
 sub find {
@@ -3158,7 +3209,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6861
+# QueryRewriter package 7300
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryRewriter.pm
@@ -3353,9 +3404,14 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verb_str = join(q{ }, @verbs);
-   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
+   if ( ($verbs[0] || '') eq 'SELECT' && @verbs > 1 ) {
+      MKDEBUG && _d("False-positive verbs after SELECT:", @verbs[1..$#verbs]);
+      my $union = grep { $_ eq 'UNION' } @verbs;
+      @verbs    = $union ? qw(SELECT UNION) : qw(SELECT);
+   }
+
+   my $verb_str = join(q{ }, @verbs);
    return $verb_str;
 }
 
