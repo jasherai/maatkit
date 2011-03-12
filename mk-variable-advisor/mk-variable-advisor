@@ -3571,7 +3571,8 @@ severity: warn
 
 MySQL's internal XA transaction support between InnoDB and the
 binary log is disabled.  The binary log might not match InnoDB's state
-after crash recovery.
+after crash recovery, and replication might drift out of sync due to
+out-of-order statements in the binary log.
 
 =item log_bin
 
