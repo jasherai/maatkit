@@ -30,7 +30,8 @@ fi
 
 echo
 echo "Done uploading release $VER packages to Google Code."
-echo "Remember to remove the \"Featured\" label from the previous release."
+echo "Go to http://code.google.com/p/maatkit/downloads/list and "
+echo "remove the \"Featured\" label from the previous release."
 echo
 
 exit 0
