@@ -13970,17 +13970,24 @@ of the run, and a list of input file read/parsed.
 
 Following this is the response-time profile over the events.  This is a
 highly summarized view of the unique events in the detailed query report
-that follows.  Here is a sample:
+that follows.  It contains the following columns:
 
-  # Rank Query ID           Response time    Calls   R/Call     Item
-  # ==== ================== ================ ======= ========== ====
-  #    1 0x31DA25F95494CA95     0.1494 99.9%       1   0.149435 SHOW
-  #    2 0x3AEAAD0E15D725B5     0.0001  0.1%       2   0.000041 SET
-  #    3 0x813031B8BBC3B329     0.0000  0.0%       1   0.000015 COMMIT
+ Column        Meaning
+ ============  ==========================================================
+ Rank          The query's rank within the entire set of queries analyzed
+ Query ID      The query's fingerprint
+ Response time The total response time, and percentage of overall total
+ Calls         The number of times this query was executed
+ R/Call        The mean response time per execution
+ Apdx          The Apdex score; see --apdex-threshold for details
+ V/M           The Variance-to-mean ratio of response time
+ EXPLAIN       If --explain was specified, a sparkline; see --explain
+ Item          The distilled query
 
-The columns should be fairly self-explanatory: rank, query ID, response time sum
-and percentage of total; number of calls and response time per call; and the
-distilled query (see L<"distill"> for more detail on this).
+A final line whose rank is shown as MISC contains aggregate statistics on the
+queries that were not included in the report, due to options such as
+L<"--limit"> and L<"--outliers">.  For details on the variance-to-mean ratio,
+please see http://en.wikipedia.org/wiki/Index_of_dispersion.
 
 Next, the detailed query report is printed.  Each query appears in a paragraph.
 Here is a sample, slightly reformatted so 'perldoc' will not wrap lines in a
