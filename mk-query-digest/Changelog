@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2011-03-12: version 0.9.27
+
    * --processlist did not work well (issue 1252).
    * Certain keywords were incorrectly distilled (issue 1176).
 
