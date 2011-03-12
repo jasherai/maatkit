@@ -13816,8 +13816,8 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-query-digest - Parses logs and more.  Analyze, transform, filter, review and
-report on queries.
+mk-query-digest - Analyze query execution logs and generate a query report,
+filter, replay, or transform queries for MySQL, PostgreSQL, memcached, and more.
 
 =head1 SYNOPSIS
 
@@ -14323,8 +14323,8 @@ Auxiliary DSN used for special options.
 
 The following options may require a DSN even when only parsing a slow log file:
 
-  * L<"--since">
-  * L<"--until">
+  * --since
+  * --until
 
 See each option for why it might require a DSN.
 
