@@ -147,7 +147,8 @@ sub set_history_options {
    my $sql = "REPLACE INTO $args{table}("
       . join(', ',
          map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
-      . ') VALUES (CONV(?, 16, 10), ?, '
+      . ') VALUES (CONV(?, 16, 10), ?'
+      . (@cols ? ', ' : '')  # issue 1265
       . join(', ', map {
          # ts_min and ts_max might be part of the PK, in which case they must
          # not be NULL.
@@ -158,8 +159,9 @@ sub set_history_options {
    MKDEBUG && _d($sql);
 
    $self->{history_sth}     = $args{dbh}->prepare($sql);
-   $self->{history_cols}    = \@cols;
    $self->{history_metrics} = \@metrics;
+
+   return;
 }
 
 # Save review history for a class of queries.  The incoming data is a bunch

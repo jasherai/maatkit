@@ -31,12 +31,12 @@ if ( !$dbh ) {
    plan skip_all => "Cannot connect to sandbox master";
 }
 else {
-   plan tests => 6;
+   plan tests => 8;
 }
 
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', "common/t/samples/query_review.sql");
-
+my $output = "";
 my $qr = new QueryRewriter();
 my $lp = new SlowLogParser;
 my $q  = new Quoter();
@@ -243,4 +243,67 @@ eval {
 };
 is($EVAL_ERROR, '', 'No error on undef ts_min and ts_max');
 
+# #############################################################################
+# Issue 1265: mk-query-digest --review-history table with minimum 2 columns
+# #############################################################################
+$dbh->do('truncate table test.query_review');
+$dbh->do('drop table test.query_review_history');
+# mqd says "The table must have at least the following columns:"
+my $min_tbl = "CREATE TABLE query_review_history (
+  checksum     BIGINT UNSIGNED NOT NULL,
+  sample       TEXT NOT NULL
+)";
+$dbh->do($min_tbl);
+
+$hist_struct = $tp->parse(
+   $du->get_create_table($dbh, $q, 'test', 'query_review_history'));
+$qv->set_history_options(
+   table      => 'test.query_review_history',
+   dbh        => $dbh,
+   quoter     => $q,
+   tbl_struct => $hist_struct,
+   col_pat    => qr/^(.*?)_($pat)$/,
+);
+eval {
+   $qv->set_review_history(
+      'foo',
+      'foo sample',
+      Query_time => {
+         pct    => 1/3,
+         sum    => '0.000682',
+         cnt    => 1,
+         min    => '0.000682',
+         max    => '0.000682',
+         avg    => '0.000682',
+         median => '0.000682',
+         stddev => 0,
+         pct_95 => '0.000682',
+      },
+      ts => {
+         min => '090101 12:39:12',
+         max => '090101 13:19:12',
+         cnt => 1,
+      },
+   );
+};
+is(
+   $EVAL_ERROR,
+   "",
+   "Minimum 2-column review history table (issue 1265)"
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $qv->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 $sb->wipe_clean($dbh);
+exit;
