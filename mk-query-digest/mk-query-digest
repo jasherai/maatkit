@@ -8519,7 +8519,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 6937
+# QueryReview package 7342
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryReview.pm
@@ -8621,7 +8621,8 @@ sub set_history_options {
    my $sql = "REPLACE INTO $args{table}("
       . join(', ',
          map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
-      . ') VALUES (CONV(?, 16, 10), ?, '
+      . ') VALUES (CONV(?, 16, 10), ?'
+      . (@cols ? ', ' : '')  # issue 1265
       . join(', ', map {
          $_ eq 'ts_min' || $_ eq 'ts_max'
             ? "COALESCE(?, $self->{ts_default})"
@@ -8630,8 +8631,9 @@ sub set_history_options {
    MKDEBUG && _d($sql);
 
    $self->{history_sth}     = $args{dbh}->prepare($sql);
-   $self->{history_cols}    = \@cols;
    $self->{history_metrics} = \@metrics;
+
+   return;
 }
 
 sub set_review_history {

@@ -369,11 +369,10 @@ $output = output(
    stderr => 1,
 );
 
-# stub: this do repro the error
-# print $output;
-ok(
-   1,
-   "issue 1265"
+unlike(
+   $output,
+   qr/error/,
+   "No error using minimum 2-column query review history table (issue 1265)",
 );
 
 # #############################################################################

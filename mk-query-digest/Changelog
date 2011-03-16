@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Minimum 2-column query review history table did not work (issue 1265).
+
 2011-03-12: version 0.9.27
 
    * --processlist did not work well (issue 1252).
