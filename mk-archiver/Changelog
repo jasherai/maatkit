@@ -1,5 +1,8 @@
 Changelog for mk-archiver:
 
+   * Different character sets could have caused data loss (issue 1225).
+   * Added --[no]check-charset (issue 1225).
+
 2010-12-11: version 1.0.26
 
    * Added -q short form for --quiet option.

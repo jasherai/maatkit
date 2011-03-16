@@ -37,7 +37,7 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 1
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-   $output = `$cmd --source F=$cnf,h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff $trunk/mk-archiver/t/samples/issue-248.txt -`;
+   $output = `$cmd --source F=$cnf,h=127.1,D=sakila,t=film --no-check-charset  --where "film_id < 100" --purge --dry-run --port 12345 | diff $trunk/mk-archiver/t/samples/issue-248.txt -`;
    is(
       $output,
       '',

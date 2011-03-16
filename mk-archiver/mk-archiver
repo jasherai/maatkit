@@ -3727,6 +3727,22 @@ sub main {
 
       $table->{info} = $tp->parse(
          $du->get_create_table($dbh, $q, $table->{D}, $table->{t}));
+
+      if ( $o->get('check-charset') ) {
+         my $sql = 'SELECT CONCAT(/*!40100 @@session.character_set_connection, */ "")';
+         MKDEBUG && _d($sql);
+         my ($dbh_charset) =  $table->{dbh}->selectrow_array($sql);
+         if ( ($dbh_charset || "") ne ($table->{info}->{charset} || "") ) {
+            $src->{dbh}->disconnect() if $src && $src->{dbh};
+            $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
+            die "Character set mismatch: "
+               . ($src && $table eq $src ? "--source " : "--dest ")
+               . "DSN uses "     . ($dbh_charset || "")
+               . ", table uses " . ($table->{info}->{charset} || "")
+               . ".  You can disable this check by specifying "
+               . "--no-check-charset.\n";
+         }
+      }
    }
 
    if ( $o->get('primary-key-only')
@@ -4788,6 +4804,18 @@ Default character set.  If the value is utf8, sets Perl's binmode on
 STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
 without the utf8 layer, and runs SET NAMES after connecting to MySQL.
+
+See also L<"--[no]check-charset">.
+
+=item --[no]check-charset
+
+default: yes
+
+Ensure connection and table character sets are the same.  Disabling this check
+may cause text to be erroneously converted from one character set to another
+(usually from utf8 to latin1) which may cause data loss or mojibake.  Disabling
+this check may be useful or necessary when character set conversions are
+intended.
 
 =item --[no]check-columns
 
