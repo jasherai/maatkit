@@ -36,7 +36,9 @@ $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
 
 # Archive to a file.
 `rm -f archive.test.table_1`;
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --file 'archive.%D.%t' 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "D=test,t=table_1,F=$cnf", "--file", 'archive.%D.%t') },
+);
 is($output, '', 'No output for archiving to a file');
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
@@ -55,7 +57,9 @@ EOF
 # Archive to a file, but specify only some columns.
 $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
 `rm -f archive.test.table_1`;
-$output = `$cmd -c b,c --where 1=1 --header --source D=test,t=table_1,F=$cnf --file 'archive.%D.%t' 2>&1`;
+$output = output(
+   sub { mk_archiver::main("-c", "b,c", qw(--where 1=1 --header), "--source", "D=test,t=table_1,F=$cnf", "--file", 'archive.%D.%t') },
+);
 $output = `cat archive.test.table_1`;
 is($output, <<EOF
 b\tc

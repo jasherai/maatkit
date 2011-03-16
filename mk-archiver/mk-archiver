@@ -4388,6 +4388,7 @@ sub main {
       }
    }
 
+   $get_sth->finish() if $get_sth;
    $src->{dbh}->disconnect();
    $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
 

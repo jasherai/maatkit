@@ -35,21 +35,27 @@ $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
 
 # Test basic functionality with defaults
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "D=test,t=table_1,F=$cnf", qw(--purge)) },
+);
 is($output, '', 'Basic test run did not die');
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok');
 
 # Test basic functionality with --commit-each
 $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --commit-each --limit 1 --purge 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "D=test,t=table_1,F=$cnf", qw(--commit-each --limit 1 --purge)) },
+);
 is($output, '', 'Commit-each did not die');
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok with --commit-each');
 
 # Archive only part of the table
 $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --where 'a<4' --purge 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "D=test,t=table_1,F=$cnf", qw(--where a<4 --purge)) },
+);
 is($output, '', 'No output for archiving only part of a table');
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 1, 'Purged some rows ok');

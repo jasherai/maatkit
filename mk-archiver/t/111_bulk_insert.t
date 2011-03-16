@@ -38,7 +38,12 @@ $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'mk-archiver/t/samples/table5.sql');
 $dbh->do('INSERT INTO `test`.`table_5_copy` SELECT * FROM `test`.`table_5`');
 
-$output = `$cmd --no-ascend --limit 50 --bulk-insert --bulk-delete --where 1=1 --source D=test,t=table_5,F=$cnf --statistics --dest t=table_5_dest 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--no-ascend --limit 50 --bulk-insert),
+      qw(--bulk-delete --where 1=1 --statistics),
+      '--source', "D=test,t=table_5,F=$cnf",
+      '--dest',   "t=table_5_dest") },
+);
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
 like($output, qr/INSERT 105/, 'Inserted 105 rows');

@@ -38,7 +38,9 @@ my $cmd = "perl -I $trunk/mk-archiver/t/samples $trunk/mk-archiver/mk-archiver";
 $sb->load_file('master', "mk-archiver/t/samples/bulk_regular_insert.sql");
 $dbh->do('use bri');
 
-`$cmd --source F=$cnf,D=bri,t=t --dest t=t_arch --where "1=1" --bulk-insert --limit 3`;
+output(
+   sub { mk_archiver::main("--source", "F=$cnf,D=bri,t=t", qw(--dest t=t_arch --where 1=1 --bulk-insert --limit 3)) },
+);
 
 my $t_rows      = $dbh->selectall_arrayref('select * from t order by id');
 my $t_arch_rows = $dbh->selectall_arrayref('select * from t_arch order by id');

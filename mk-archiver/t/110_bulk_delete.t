@@ -47,13 +47,17 @@ $output = `mysql --defaults-file=$cnf -N -e "select a from test.stat_test"`;
 is($output + 0, 105, 'Generic plugin worked');
 
 # Test --bulk-delete jails the WHERE safely in parens.
-$output = `$cmd --dry-run --no-ascend --limit 50 --bulk-delete --purge --where 1=1 --source D=test,t=table_5,F=$cnf --statistics 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--dry-run --no-ascend --limit 50 --bulk-delete --purge --where 1=1), "--source", "D=test,t=table_5,F=$cnf", qw(--statistics)) },
+);
 like($output, qr/\(1=1\)/, 'WHERE clause is jailed');
 unlike($output, qr/[^(]1=1/, 'WHERE clause is jailed');
 
 # Test --bulk-delete works ok with a destination table
 $sb->load_file('master', 'mk-archiver/t/samples/table5.sql');
-$output = `$cmd --no-ascend --limit 50 --bulk-delete --where 1=1 --source D=test,t=table_5,F=$cnf --statistics --dest t=table_5_dest 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--no-ascend --limit 50 --bulk-delete --where 1=1), "--source", "D=test,t=table_5,F=$cnf", qw(--statistics --dest t=table_5_dest)) },
+);
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
 like($output, qr/INSERT 105/, 'Inserted 105 rows');

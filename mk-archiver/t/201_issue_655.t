@@ -29,7 +29,6 @@ else {
 my $output;
 my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-archiver/mk-archiver";
 
 $sb->create_dbs($dbh, ['test']);
 
@@ -38,7 +37,9 @@ $sb->create_dbs($dbh, ['test']);
 # perl error
 # #############################################################################
 $dbh->do('CREATE TABLE test.t (i int)');
-$output = `$cmd --where 1=1 --source F=$cnf,D=test,t=t --purge --primary-key-only 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "F=$cnf,D=test,t=t", qw(--purge --primary-key-only)) },
+);
 unlike(
    $output,
    qr/undefined value/,

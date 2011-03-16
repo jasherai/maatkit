@@ -29,7 +29,6 @@ else {
 my $output;
 my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-archiver/mk-archiver";
 
 $sb->create_dbs($dbh, ['test']);
 

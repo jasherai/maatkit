@@ -49,14 +49,18 @@ SKIP: {
 # Test with a sentinel file
 $sb->load_file('master', 'mk-archiver/t/samples/table1.sql');
 diag(`touch sentinel`);
-$output = `$cmd --where 1=1 --why-quit --sentinel sentinel --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1 --why-quit --sentinel sentinel), "--source", "D=test,t=table_1,F=$cnf", qw(--purge)) },
+);
 like($output, qr/because sentinel/, 'Exits because of sentinel');
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'No rows were deleted');
 `rm sentinel`;
 
 # Test --stop, which sets the sentinel
-$output = `$cmd --sentinel sentinel --stop`;
+$output = output(
+   sub { mk_archiver::main(qw(--sentinel sentinel --stop)) },
+);
 like($output, qr/Successfully created file sentinel/, 'Created the sentinel OK');
 diag(`rm -f sentinel >/dev/null`);
 

@@ -29,7 +29,6 @@ else {
 my $output;
 my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-archiver/mk-archiver";
 
 $sb->load_file('master', 'mk-archiver/t/samples/issue_1152.sql');
 
@@ -46,7 +45,6 @@ $output = output(
       '--columns', 'a,b,c',
       '--where',   'id = 5')},
 );
-print $output;
 ok(1, "Issue 1152 test stub");
 
 # #############################################################################

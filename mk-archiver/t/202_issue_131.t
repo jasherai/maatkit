@@ -29,7 +29,6 @@ else {
 my $output;
 my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-archiver/mk-archiver";
 
 $sb->create_dbs($dbh, ['test']);
 
@@ -38,7 +37,9 @@ $sb->create_dbs($dbh, ['test']);
 # in different order than source table
 # #############################################################################
 $sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
-$output = `$cmd --where 1=1 --source F=$cnf,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
+$output = output(
+   sub { mk_archiver::main(qw(--where 1=1), "--source", "F=$cnf,D=test,t=issue_131_src", qw(--statistics --dest t=issue_131_dst)) },
+);
 $rows = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
 is_deeply(
    $rows,

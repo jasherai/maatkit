@@ -1,5 +1,5 @@
 File                           stmt   bran   cond    sub    pod   time  total
-...t/mk-archiver/mk-archiver   46.9   32.9   29.0   51.9    n/a  100.0   41.2
+...k/mk-archiver/mk-archiver   50.5   38.1   31.6   55.3    n/a  100.0   44.9
 ...logger/mk-deadlock-logger   15.2    3.1    8.5   36.7    n/a  100.0   12.3
 .../mk-duplicate-key-checker   53.2   33.2   30.6   62.1    n/a  100.0   45.9
 ...mk-error-log/mk-error-log   59.8   42.7   38.7   69.4    n/a  100.0   53.7
