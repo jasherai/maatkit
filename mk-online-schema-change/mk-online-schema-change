@@ -3903,7 +3903,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CopyRowsInsertSelect package 7312
+# CopyRowsInsertSelect package 7349
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/CopyRowsInsertSelect.pm
@@ -3920,7 +3920,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(Retry);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -3960,7 +3960,30 @@ sub copy {
          $msg->($sql);
       }
       else {
-         $dbh->do($sql);
+         my $error;
+         $self->{Retry}->retry(
+            wait  => sub { sleep 1; },
+            tries => 3,
+            try   => sub {
+               my ( %args ) = @_;
+                  eval {
+                     $dbh->do($sql);
+                  };
+                  if ( $EVAL_ERROR ) {
+                     MKDEBUG && _d($EVAL_ERROR);
+                     if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded/ ) {
+                        $error = $EVAL_ERROR;
+                        if ( $args{tryno} > 1 ) {
+                           $msg->("Lock wait timeout exceeded; retrying $sql");
+                        }
+                        return;
+                     }
+                     die $EVAL_ERROR;
+                  }
+                  return 1;
+            },
+            on_failure => sub { die $error; },
+         );
       }
 
       $pr->update(sub { return $chunkno + 1; }) if $pr;
@@ -3988,6 +4011,90 @@ sub _d {
 
 # ###########################################################################
 # End CopyRowsInsertSelect package
+# ###########################################################################
+
+# ###########################################################################
+# Retry package 7096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Retry.pm
+#   trunk/common/t/Retry.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
+# ###########################################################################
+
+package Retry;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub retry {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(try wait);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   };
+   my ($try, $wait) = @args{@required_args};
+   my $tries = $args{tries} || 3;
+
+   my $tryno = 0;
+   while ( ++$tryno <= $tries ) {
+      MKDEBUG && _d("Retry", $tryno, "of", $tries);
+      my $result;
+      eval {
+         $result = $try->(tryno=>$tryno);
+      };
+
+      if ( defined $result ) {
+         MKDEBUG && _d("Try code succeeded");
+         if ( my $on_success = $args{on_success} ) {
+            MKDEBUG && _d("Calling on_success code");
+            $on_success->(tryno=>$tryno, result=>$result);
+         }
+         return $result;
+      }
+
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d("Try code died:", $EVAL_ERROR);
+         return unless $args{retry_on_die};
+      }
+
+      if ( $tryno < $tries ) {
+         MKDEBUG && _d("Try code failed, calling wait code");
+         $wait->(tryno=>$tryno);
+      }
+   }
+
+   MKDEBUG && _d("Try code did not succeed");
+   if ( my $on_failure = $args{on_failure} ) {
+      MKDEBUG && _d("Calling on_failure code");
+      $on_failure->();
+   }
+
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Retry package
 # ###########################################################################
 
 # ###########################################################################
@@ -4133,7 +4240,7 @@ sub main {
    # one method for each.
    # ########################################################################
    my $capture_sync = new OSCCaptureSync();
-   my $copy_rows    = new CopyRowsInsertSelect();
+   my $copy_rows    = new CopyRowsInsertSelect(Retry => new Retry());
 
    # More values are added later.  These are the minimum need to do --cleanup.
    my %plugin_args = (
@@ -4165,14 +4272,8 @@ sub main {
       msg("Calling " . (ref $capture_sync) . "::cleanup()");
       $capture_sync->cleanup(%plugin_args);
 
-#      if ( $o->get('drop-old-table') ) {
-#         my $sql = "DROP TABLE IF EXISTS $tables{old_table_renamed}";
-#         msg($sql);
-#         $dbh->do($sql) unless $o->get('print');
-#      }
-
       msg("$PROGRAM_NAME ending for --cleanup-and-exit");
-      exit 0;
+      return 0;
    }
 
    # ########################################################################
@@ -4183,7 +4284,7 @@ sub main {
    $plugin_args{chunk_index}  = $chunk->{index};
    if ( $o->get('exit-after-checks') ) {
       msg("$PROGRAM_NAME ending for --exit-after-checks; all checks passed");
-      exit 0;
+      return 0;
    }
 
    # #####################################################################
@@ -4331,7 +4432,7 @@ sub main {
 # ############################################################################
 sub checks {
    my ( %args ) = @_;
-   my @required_args = qw(dbh old_table old_table_renamed old_tbl_struct new_table VersionParser Quoter TableParser OptionParser);
+   my @required_args = qw(dbh old_table old_table_renamed old_tbl_struct new_table VersionParser Quoter TableParser OptionParser TableChunker);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -4429,6 +4530,11 @@ sub msg {
    print '# ', ts(time), " $msg\n" unless $quiet;
    MKDEBUG && _d($msg);
    return;
+}
+
+# Only for tests which may not call main().
+sub __set_quiet {
+   $quiet = $_[0];
 }
 
 sub _d {
