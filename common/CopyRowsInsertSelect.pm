@@ -37,7 +37,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   CopyRowsInsertSelect object
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(Retry);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -79,7 +79,26 @@ sub copy {
          $msg->($sql);
       }
       else {
-         $dbh->do($sql);
+         my $error;
+         $self->{Retry}->retry(
+            wait  => sub { sleep 1; },
+            tries => 3,
+            try   => sub {
+               my ( %args ) = @_;
+                  eval {
+                     $dbh->do($sql);
+                  };
+                  if ( $EVAL_ERROR ) {
+                     if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded/ ) {
+                        $error = $EVAL_ERROR;
+                        return;
+                     }
+                     die $EVAL_ERROR;
+                  }
+                  return 1;
+            },
+            on_failure => sub { die $error; },
+         );
       }
 
       # Update Progress (if there is one) with the chunkno just finished.

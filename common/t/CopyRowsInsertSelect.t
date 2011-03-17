@@ -16,6 +16,7 @@ use Sandbox;
 use MaatkitTest;
 use Progress;
 use Transformers;
+use Retry;
 use CopyRowsInsertSelect;
 
 Transformers->import(qw(secs_to_time));
@@ -40,7 +41,8 @@ else {
    plan tests => 8;
 }
 
-my $osc    = new CopyRowsInsertSelect();
+my $rr     = new Retry();
+my $osc    = new CopyRowsInsertSelect(Retry => $rr);
 my $msg    = sub { print "$_[0]\n"; };
 my $output = "";
 
