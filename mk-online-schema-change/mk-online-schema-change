@@ -4353,6 +4353,8 @@ sub main {
       my @columns;
       # If --print is in effect, then chances are the new table wasn't
       # created above, so we can't get it's struct.
+      # TODO: check if the new table exists because user might have created
+      # it manually.
       if ( !$o->get('print') ) {
          $tables{new_tbl_struct} = $tp->parse(
                $du->get_create_table($dbh, $q, $db, $new_tbl));
@@ -4465,9 +4467,11 @@ sub checks {
       }
    }
 
-   # The new table should not exist.  This could be an option, but for now
-   # we'll demand a clean slate.
-   if ( $tp->check_table(dbh=>$dbh, db=>$db, tbl=>$new_tbl) ) {
+   # The new table should not exist if we're supposed to create it.
+   # Else, if user specifies --no-create-new-table, they should ensure
+   # that it exists.
+   if ( $o->get('create-new-table')
+        && $tp->check_table(dbh=>$dbh, db=>$db, tbl=>$new_tbl) ) {
       die "The new table already exists.  Drop it and try again.\n";
    }
 
@@ -4566,8 +4570,20 @@ mk-online-schema-change - Perform online, non-blocking schema changes to tables.
 Usage: mk-online-schema-change [OPTION...] DSN [FILE...]
 
 mk-online-schema-change performs online, non-blocking schema changes to tables.
+The table to change must be specified in the DSN C<t> part, like C<t=my_table>.
+The table can be database-qualified, or the database can be specified with the
+L<"--database"> option.
 
-  mk-online-schema-change h=localhost,D=db,t=tbl
+Change the table's engine to InnoDB:
+
+  mk-online-schema-change             \
+    h=127.1,t=db.tbl                  \
+    --alter-new-table "ENGINE=InnoDB" \
+    --drop-old-table
+
+Rebuild but do not alter the table, and keep the old (original) table:
+
+  mk-online-schema-change h=127.1,t=db.tbl
 
 =head1 RISKS
 
@@ -4575,6 +4591,9 @@ The following section is included to inform users about the potential risks,
 whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
+
+Tables with foreign key constraints are not currently supported/tested.
+This tool has not been tested with replication; it may break replication.
 
 At the time of this release there are no known bugs that pose a serious risk.
 
@@ -4588,6 +4607,64 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 =head1 DESCRIPTION
 
 mk-online-schema-change performs online, non-blocking schema changes to tables.
+Only one table can be altered at a time because triggers are used to track
+and synchronize changes between the old (original) table and the new table
+that will take its place once it has been altered.  The table to modify is
+specified in DSN C<t> part as show in the L<"SYNOPSIS"> examples.  The old
+and new tables must be contained in the same database, on the same server.
+By default, the new table is renamed to the old table using C<RENAME TABLE>.
+
+For example, if you alter table C<foo>, the tool by default will create
+table C<__new_foo> in the same database.  C<foo> is the "old" table and
+C<__new_foo> is the "new" table.  After the new table is altered and
+synchronized with the old table, the two are swapped: C<foo> is renamed
+to C<__old_foo> by default, and C<__new_foo> becomes C<foo>.  C<__old_foo>
+is not dropped unless L<"--drop-old-table"> is specified.
+
+The tool preforms the following steps:
+
+  1. Sanity checks
+  2. Chunking
+  3. Online schema change
+
+The first two steps cannot be skipped.  The sanity checks help ensure that
+running the tool will work and not encounter problems half way through the
+whole process.  Chunk is required during the third step when rows from the
+old table are copied to the new table.  Currently, only table with a
+single-column unique index can be chunked.  If there is any problem in these
+two steps, the tool will die.
+
+Most of the tool's work is done in the third step which has 6 phases:
+
+  1. Create and alter the new table
+  2. Capture changes from the old table to the new table
+  3. Copy rows from the old table to the new table
+  4. Synchronize the old and new tables
+  5. Rename the new table to the old table
+  6. Cleanup
+
+There are several ways to accomplish an online schema change which differ
+in how changes are captured and synced (phases 2 and 4), how rows are copied
+(phase 3), and how the tables are swapped (phase 5).  Currently, this tool
+employs sychronous triggers (Shlomi's method), C<INSERT-SELECT>, and
+C<RENAME TABLE> respectively for these phases.
+
+Here are options related to each phase:
+
+  1. L<"--[no]create-new-table">, C<"--alter-new-table">, L<"--new-table">
+  2. (none)
+  3. L<"--chunk-size">, L<"--sleep">
+  4. (none)
+  5. L<"--[no]rename-tables">
+  6. L<"--drop-old-table">
+
+Options L<"--exit-after-checks"> and L<"--print"> are helpful to see what
+the tool might do before actually doing it.
+
+=head1 OUTPUT
+
+Output to STDOUT is very verbose and should tell you everything that the
+tool is doing.  Warnings, errors, and L<"--progress"> are printed to STDERR.
 
 =head1 OPTIONS
 
@@ -4600,7 +4677,14 @@ L<"SYNOPSIS"> and usage information for details.
 
 type: string
 
-Semicolon-separated list of ALTER TABLE statments to execute on the new table.
+Semicolon-separated list of C<ALTER TABLE> statments to apply to the new table.
+The statements should not contain C<ALTER TABLE>, just what would follow that
+clause.  For example, if you want to C<ALTER TABLE ENGINE=InnoDB>, the value
+would be C<ENGINE=InnoDB>.
+
+The value can also be a filename which contains statements, one per line
+with no blank lines.  Each statement will be applied in the order it appears
+in the file.
 
 =item --ask-pass
 
@@ -4623,13 +4707,17 @@ without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --chunk-size
 
-type: size; default: 1000
+type: string; default: 1000
 
-Chunk size.
+Number of rows or data size per chunk.  Data sizes are specified with a
+suffix of k=kibibytes, M=mebibytes, G=gibibytes.  Data sizes are converted
+to a number of rows by dividing by the average row length.
 
 =item --cleanup-and-exit
 
-Cleanup and exit;
+Cleanup and exit; do not alter the table.  If a previous run fails, you
+may need to use this option to remove any temp tables, triggers,
+outfiles, etc. that where left behind before another run will succeed.
 
 =item --config
 
@@ -4642,7 +4730,11 @@ first option on the command line.
 
 default: yes
 
-Create the new table with C<CREATE TABLE LIKE>.
+Create the new table with C<CREATE TABLE LIKE>.  The new table to which
+the L<"--alter-new-table"> statements are applied is automatically created
+by default.  If you want to create it manually before running this tool,
+then you need to specify C<--no-create-new-table> B<and> L<"--new-table">
+so the tool will use your new table.
 
 =item --daemonize
 
@@ -4653,7 +4745,8 @@ only.
 
 short form: -D; type: string
 
-Default database.
+Database for the old and new table.  The new table can only be created
+inside the same database as the old (original) table.
 
 =item --defaults-file
 
@@ -4664,11 +4757,18 @@ pathname.
 
 =item --drop-old-table
 
-Drop the old table once the new table has been successfully synchronized.
+Drop the old (original) table.  By default, the old table is not dropped
+after the new table has taken its place.  In case of problems, the old
+table may be needed.  When this option is specified, the old table is dropped
+after (if) everything finishes successfully.  If there is a problem,
+both table (old/original and new/altered) will probably be left.
 
 =item --exit-after-checks
 
-Run all checks then exit; do not begin online schema change.
+Run all checks then exit; do not alter the table.  If you just want to see
+that the tool can/will work for the given table, specify this option.  Even
+if all checks pass, the tool may still encounter problems if, for example,
+one of the L<"--alter-new-table"> statements uses incorrect syntax.
 
 =item --[no]foreign-key-checks
 
@@ -4696,7 +4796,13 @@ Print all output to this file when daemonized.
 
 type: string
 
-Table name for new table.
+Table name for new table until renamed to old (original) table name.
+If you specify C<--no-create-new-table>, then you must also use this option
+to specify the name of the new table.  By default, when the tool automatically
+creates the new table, the new table name is C<__new_OLD_TABLE_NAME> where
+C<OLD_TABLE_NAME> is the old (original) table named specified by the DSN's
+C<t> part.  The new and old tables are eventually swapped, if
+C<"--[no]rename-tables"> is specified (it is by default).
 
 =item --password
 
@@ -4721,7 +4827,8 @@ Port number to use for connection.
 
 =item --print
 
-Don't execute SQL statements, just print them to STDOUT.
+Print SQL statements to STDOUT instead of executing them.  Specifying this
+option allows you to see most of the statements that the tool would execute.
 
 =item --progress
 
@@ -4737,7 +4844,8 @@ should be printed, in percentage, seconds, or number of iterations.
 
 short form: -q
 
-Do not print messages to STDOUT.
+Do not print messages to STDOUT.  Errors and warnings are still printed to
+STDERR.
 
 =item --[no]rename-tables
 
@@ -4756,7 +4864,8 @@ will be appended to SET and executed.
 
 type: float; default: 0
 
-How long to sleep between chunks while copying rows.
+How long to sleep between chunks while copying rows.  The time has micro-second
+precision, so you can specify fractions of seconds like C<0.1>.
 
 =item --socket
 
@@ -4778,7 +4887,7 @@ Show version and exit.
 
 type: string
 
-WHERE condition to limit chunking range.
+WHERE condition to limit chunking range.  See also L<"--chunk-size">.
 
 =back
 
@@ -4802,7 +4911,7 @@ Default character set.
 
 dsn: database; copy: yes
 
-Default database.
+Database for the old and new table.
 
 =item * F
 
@@ -4922,14 +5031,13 @@ relevant pages about this concept.
 
 This implementation, C<mk-online-schema-change>, is a hybrid of Shlomi's
 and Facebook's approach.  Shlomi's code is a full-featured tool with command
-line options, documenation, etc., but at the time of writing it has a bug and
-its continued support is not assured.  Facebook's tool has certain technical
-advantages, but it's not a full-featured tool; it's more a custom job by
-Facebook for Facebook.  C<mk-online-schema-change> is a full-featured tool
-with stable development and support that largely employes Facebook's technical
-approach.
+line options, documentation, etc., but its continued development/support is
+not assured.  Facebook's tool has certain technical advantages, but it's not
+a full-featured tool; it's more a custom job by Facebook for Facebook.  And
+neither of those tools is tested.  C<mk-online-schema-change> is a
+full-featured, tested tool with stable development and support.
 
-This implementation was made possible by a generous client of Percona Inc.
+This tool was made possible by a generous client of Percona Inc.
 
 =head1 ABOUT MAATKIT
 
