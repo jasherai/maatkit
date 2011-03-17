@@ -92,6 +92,9 @@ sub copy {
                      MKDEBUG && _d($EVAL_ERROR);
                      if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded/ ) {
                         $error = $EVAL_ERROR;
+                        if ( $args{tryno} > 1 ) {
+                           $msg->("Lock wait timeout exceeded; retrying $sql");
+                        }
                         return;
                      }
                      die $EVAL_ERROR;
