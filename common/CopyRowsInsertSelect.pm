@@ -89,6 +89,7 @@ sub copy {
                      $dbh->do($sql);
                   };
                   if ( $EVAL_ERROR ) {
+                     MKDEBUG && _d($EVAL_ERROR);
                      if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded/ ) {
                         $error = $EVAL_ERROR;
                         return;
