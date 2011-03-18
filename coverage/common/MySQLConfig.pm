@@ -1,23 +1,23 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...unk/common/MySQLConfig.pm   91.7   67.9   58.1   91.7    0.0   97.2   79.4
-MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    2.8   94.5
-Total                          93.8   66.7   55.9   94.4    0.0  100.0   82.5
+...unk/common/MySQLConfig.pm   94.7   69.0   58.1   95.8    0.0   96.5   81.7
+MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    3.5   95.0
+Total                          96.1   67.8   55.9   97.3    0.0  100.0   84.6
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Mar 18 19:14:58 2011
-Finish:       Fri Mar 18 19:14:58 2011
+Start:        Fri Mar 18 19:19:43 2011
+Finish:       Fri Mar 18 19:19:43 2011
 
 Run:          MySQLConfig.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Mar 18 19:15:00 2011
-Finish:       Fri Mar 18 19:15:00 2011
+Start:        Fri Mar 18 19:19:45 2011
+Finish:       Fri Mar 18 19:19:45 2011
 
 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm
 
@@ -49,18 +49,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 25                                                    # parses the config into a common data struct, then MySQLConfig objects
 26                                                    # are passed to other modules like MySQLConfigComparer.
 27                                                    
-28             1                    1             5   use strict;
-               1                                  2   
+28             1                    1             4   use strict;
+               1                                  3   
                1                                  7   
-29             1                    1             5   use warnings FATAL => 'all';
+29             1                    1            10   use warnings FATAL => 'all';
                1                                  3   
                1                                  5   
-30             1                    1             5   use English qw(-no_match_vars);
-               1                                  3   
+30             1                    1             6   use English qw(-no_match_vars);
+               1                                  2   
                1                                  7   
 31             1                    1             6   use Data::Dumper;
                1                                  3   
-               1                                  7   
+               1                                  6   
 32                                                    $Data::Dumper::Indent    = 1;
 33                                                    $Data::Dumper::Sortkeys  = 1;
 34                                                    $Data::Dumper::Quotekeys = 0;
@@ -92,97 +92,97 @@ line  err   stmt   bran   cond    sub    pod   time   code
 58                                                    );
 59                                                    
 60                                                    sub new {
-61    ***      6                    6      0     43      my ( $class, %args ) = @_;
+61    ***      6                    6      0     42      my ( $class, %args ) = @_;
 62             6                                 29      my @required_args = qw(source TextResultSetParser);
-63             6                                 23      foreach my $arg ( @required_args ) {
-64    ***     12     50                          61         die "I need a $arg arugment" unless $args{$arg};
+63             6                                 22      foreach my $arg ( @required_args ) {
+64    ***     12     50                          62         die "I need a $arg arugment" unless $args{$arg};
 65                                                       }
 66                                                    
-67             6                                 32      my %config_data = parse_config(%args);
+67             6                                 36      my %config_data = parse_config(%args);
 68                                                    
-69             5                                 36      my $self = {
+69             5                                 35      my $self = {
 70                                                          %args,
 71                                                          %config_data,
 72                                                       };
 73                                                    
-74             5                                 53      return bless $self, $class;
+74             5                                 56      return bless $self, $class;
 75                                                    }
 76                                                    
 77                                                    sub parse_config {
-78    ***      6                    6      0     32      my ( %args ) = @_;
-79             6                                 25      my @required_args = qw(source TextResultSetParser);
+78    ***      6                    6      0     28      my ( %args ) = @_;
+79             6                                 27      my @required_args = qw(source TextResultSetParser);
 80             6                                 21      foreach my $arg ( @required_args ) {
-81    ***     12     50                          57         die "I need a $arg arugment" unless $args{$arg};
+81    ***     12     50                          55         die "I need a $arg arugment" unless $args{$arg};
 82                                                       }
-83             6                                 28      my ($source) = @args{@required_args};
+83             6                                 26      my ($source) = @args{@required_args};
 84                                                    
-85             6                                 13      my %config_data;
-86             6    100    100                  148      if ( -f $source ) {
+85             6                                 16      my %config_data;
+86             6    100    100                  159      if ( -f $source ) {
       ***           100     66                        
                     100                               
-87             3                                 17         %config_data = parse_config_from_file(%args);
+87             3                                 21         %config_data = parse_config_from_file(%args);
 88                                                       }
 89                                                       elsif ( ref $source && ref $source eq 'ARRAY' ) {
-90             1                                  4         $config_data{type} = 'show_variables';
+90             1                                  5         $config_data{type} = 'show_variables';
 91             1                                  4         $config_data{vars} = { map { @$_ } @$source };
-               2                                 10   
+               2                                 11   
 92                                                       }
 93                                                       elsif ( ref $source && (ref $source) =~ m/DBI/i ) {
-94             1                                  4         $config_data{type} = 'show_variables';
+94             1                                  5         $config_data{type} = 'show_variables';
 95             1                                  3         my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
 96             1                                  2         MKDEBUG && _d($source, $sql);
-97             1                                  3         my $rows = $source->selectall_arrayref($sql);
-98             1                               1779         $config_data{vars} = { map { @$_ } @$rows };
-             270                               1019   
-99             1                                 29         $config_data{mysql_version} = _get_version($source);
+97             1                                  2         my $rows = $source->selectall_arrayref($sql);
+98             1                               1798         $config_data{vars} = { map { @$_ } @$rows };
+             270                               1014   
+99             1                                 31         $config_data{mysql_version} = _get_version($source);
 100                                                      }
 101                                                      else {
 102            1                                  3         die "Unknown or invalid source: $source";
 103                                                      }
 104                                                   
-105            5                                 51      return %config_data;
+105            5                                 52      return %config_data;
 106                                                   }
 107                                                   
 108                                                   sub parse_config_from_file {
-109   ***      3                    3      0     15      my ( %args ) = @_;
-110            3                                 14      my @required_args = qw(source TextResultSetParser);
+109   ***      3                    3      0     16      my ( %args ) = @_;
+110            3                                 15      my @required_args = qw(source TextResultSetParser);
 111            3                                 10      foreach my $arg ( @required_args ) {
-112   ***      6     50                          30         die "I need a $arg arugment" unless $args{$arg};
+112   ***      6     50                          29         die "I need a $arg arugment" unless $args{$arg};
 113                                                      }
 114            3                                 14      my ($source) = @args{@required_args};
 115                                                   
-116   ***      3            33                   32      my $type = $args{type} || detect_source_type(%args);
-117   ***      3     50                          38      if ( !$type ) {
+116   ***      3            33                   27      my $type = $args{type} || detect_source_type(%args);
+117   ***      3     50                          39      if ( !$type ) {
 118   ***      0                                  0         die "Cannot auto-detect the type of MySQL config data in $source"
 119                                                      }
 120                                                   
-121            3                                  8      my $vars;      # variables hashref
-122            3                                  7      my $dupes;     # duplicate vars hashref
-123            3                                  6      my $opt_files; # option files arrayref
-124   ***      3     50                          23      if ( $type eq 'show_variables' ) {
+121            3                                  7      my $vars;      # variables hashref
+122            3                                  6      my $dupes;     # duplicate vars hashref
+123            3                                  9      my $opt_files; # option files arrayref
+124   ***      3     50                          21      if ( $type eq 'show_variables' ) {
                     100                               
                     100                               
       ***            50                               
 125   ***      0                                  0         $vars = parse_show_variables(%args);
 126                                                      }
 127                                                      elsif ( $type eq 'mysqld' ) {
-128            1                                  8         ($vars, $opt_files) = parse_mysqld(%args);
+128            1                                 19         ($vars, $opt_files) = parse_mysqld(%args);
 129                                                      }
 130                                                      elsif ( $type eq 'my_print_defaults' ) {
-131            1                                  8         ($vars, $dupes) = parse_my_print_defaults(%args);
+131            1                                 22         ($vars, $dupes) = parse_my_print_defaults(%args);
 132                                                      }
 133                                                      elsif ( $type eq 'option_file' ) {
-134            1                                  9         ($vars, $dupes) = parse_option_file(%args);
+134            1                                  8         ($vars, $dupes) = parse_option_file(%args);
 135                                                      }
 136                                                      else {
 137   ***      0                                  0         die "Invalid type of MySQL config data in $source: $type"
 138                                                      }
 139                                                   
-140   ***      3     50     33                   57      die "Failed to parse MySQL config data from $source"
+140   ***      3     50     33                   55      die "Failed to parse MySQL config data from $source"
 141                                                         unless $vars && keys %$vars;
 142                                                   
 143                                                      return (
-144            3                                 31         type           => $type,
+144            3                                 34         type           => $type,
 145                                                         vars           => $vars,
 146                                                         option_files   => $opt_files,
 147                                                         duplicate_vars => $dupes,
@@ -190,19 +190,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 149                                                   }
 150                                                   
 151                                                   sub detect_source_type {
-152   ***      3                    3      0     17      my ( %args ) = @_;
-153            3                                 13      my @required_args = qw(source);
+152   ***      3                    3      0     16      my ( %args ) = @_;
+153            3                                 15      my @required_args = qw(source);
 154            3                                 12      foreach my $arg ( @required_args ) {
 155   ***      3     50                          17         die "I need a $arg arugment" unless $args{$arg};
 156                                                      }
-157            3                                 12      my ($source) = @args{@required_args};
+157            3                                 13      my ($source) = @args{@required_args};
 158                                                   
-159            3                                  7      MKDEBUG && _d("Detecting type of output in", $source);
-160   ***      3     50                          96      open my $fh, '<', $source or die "Cannot open $source: $OS_ERROR";
-161            3                                  7      my $type;
-162            3                                 66      while ( defined(my $line = <$fh>) ) {
-163           26                                 58         MKDEBUG && _d($line);
-164   ***     26     50     33                  585         if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
+159            3                                  8      MKDEBUG && _d("Detecting type of output in", $source);
+160   ***      3     50                          91      open my $fh, '<', $source or die "Cannot open $source: $OS_ERROR";
+161            3                                  8      my $type;
+162            3                                 68      while ( defined(my $line = <$fh>) ) {
+163           26                                 56         MKDEBUG && _d($line);
+164   ***     26     50     33                  594         if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
       ***           100     33                        
       ***           100     66                        
       ***           100     66                        
@@ -214,43 +214,43 @@ line  err   stmt   bran   cond    sub    pod   time   code
 170   ***      0                                  0            last;
 171                                                         }
 172                                                         elsif ( $line =~ m/^--\w+/ ) {
-173            1                                 10            MKDEBUG && _d('my_print_defaults config line');
-174            1                                  4            $type = 'my_print_defaults';
-175            1                                  4            last;
+173            1                                  4            MKDEBUG && _d('my_print_defaults config line');
+174            1                                  3            $type = 'my_print_defaults';
+175            1                                  3            last;
 176                                                         }
 177                                                         elsif ( $line =~ m/^\s*\[[a-zA-Z]+\]\s*$/ ) {
 178            1                                  3            MKDEBUG && _d('option file config line');
-179            1                                  5            $type = 'option_file',
+179            1                                  4            $type = 'option_file',
 180                                                            last;
 181                                                         }
 182                                                         elsif (    $line =~ m/Starts the MySQL database server/
 183                                                                 || $line =~ m/Default options are read from /
 184                                                                 || $line =~ m/^help\s+TRUE / )
 185                                                         {
-186            1                                  3            MKDEBUG && _d('mysqld config line');
-187            1                                  3            $type = 'mysqld';
+186            1                                  2            MKDEBUG && _d('mysqld config line');
+187            1                                  4            $type = 'mysqld';
 188            1                                  4            last;
 189                                                         }
 190                                                      }
-191            3                                 26      close $fh;
-192            3                                 10      return $type;
+191            3                                 28      close $fh;
+192            3                                  9      return $type;
 193                                                   }
 194                                                   
 195                                                   sub parse_show_variables {
-196   ***      1                    1      0      7      my ( %args ) = @_;
-197            1                                 11      my @required_args = qw(source TextResultSetParser);
+196   ***      1                    1      0      8      my ( %args ) = @_;
+197            1                                  7      my @required_args = qw(source TextResultSetParser);
 198            1                                  4      foreach my $arg ( @required_args ) {
 199   ***      2     50                          11         die "I need a $arg arugment" unless $args{$arg};
 200                                                      }
 201            1                                  5      my ($source, $trp) = @args{@required_args};
-202            1                                  4      my $output         = _slurp_file($source);
+202            1                                  5      my $output         = _slurp_file($source);
 203   ***      1     50                          11      return unless $output;
 204                                                   
-205          240                              15403      my %config = map {
-206            1                                  6         $_->{Variable_name} => $_->{Value}
-207            1                                  4      } @{ $trp->parse($output) };
+205          240                              15454      my %config = map {
+206            1                                  7         $_->{Variable_name} => $_->{Value}
+207            1                                  3      } @{ $trp->parse($output) };
 208                                                   
-209            1                                307      return \%config;
+209            1                                304      return \%config;
 210                                                   }
 211                                                   
 212                                                   # Parse "mysqld --help --verbose" and return a hashref of variable=>values
@@ -259,23 +259,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 215                                                   # defaults file is explicitly given by --default-file.
 216                                                   sub parse_mysqld {
 217   ***      1                    1      0      6      my ( %args ) = @_;
-218            1                                  4      my @required_args = qw(source);
+218            1                                  5      my @required_args = qw(source);
 219            1                                  4      foreach my $arg ( @required_args ) {
-220   ***      1     50                           7         die "I need a $arg arugment" unless $args{$arg};
+220   ***      1     50                           6         die "I need a $arg arugment" unless $args{$arg};
 221                                                      }
-222            1                                  4      my ($source) = @args{@required_args};
-223            1                                  4      my $output   = _slurp_file($source);
-224   ***      1     50                           9      return unless $output;
+222            1                                  6      my ($source) = @args{@required_args};
+223            1                                  5      my $output   = _slurp_file($source);
+224   ***      1     50                          10      return unless $output;
 225                                                   
 226                                                      # First look for the list of option files like
 227                                                      #   Default options are read from the following files in the given order:
 228                                                      #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
-229            1                                  3      my @opt_files;
-230   ***      1     50                          11      if ( $output =~ m/^Default options are read.+\n/mg ) {
-231            1                                 57         my ($opt_files) = $output =~ m/\G^(.+)\n/m;
-232            1                                  3         my %seen;
-233            1                                  8         my @opt_files = grep { !$seen{$_} } split(' ', $opt_files);
-               3                                 13   
+229            1                                  2      my @opt_files;
+230   ***      1     50                          12      if ( $output =~ m/^Default options are read.+\n/mg ) {
+231            1                                 51         my ($opt_files) = $output =~ m/\G^(.+)\n/m;
+232            1                                  4         my %seen;
+233            1                                  7         my @opt_files = grep { !$seen{$_} } split(' ', $opt_files);
+               3                                 14   
 234            1                                  4         MKDEBUG && _d('Option files:', @opt_files);
 235                                                      }
 236                                                      else {
@@ -289,27 +289,27 @@ line  err   stmt   bran   cond    sub    pod   time   code
 244                                                      #   help                              TRUE
 245                                                      #   abort-slave-event-count           0
 246                                                      # So we search for that line of hypens.
-247   ***      1     50                         688      if ( $output !~ m/^-+ -+$/mg ) {
+247   ***      1     50                         735      if ( $output !~ m/^-+ -+$/mg ) {
 248   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list vars and vals");
 249   ***      0                                  0         return;
 250                                                      }
 251                                                   
 252                                                      # Cut off everything before the list of vars and vals.
-253            1                                 12      my $varvals = substr($output, (pos $output) + 1, length $output);
+253            1                                 13      my $varvals = substr($output, (pos $output) + 1, length $output);
 254                                                   
 255                                                      # Parse the "var  val" lines.  2nd retval is duplicates but there
 256                                                      # shouldn't be any with mysqld.
-257            1                                246      my ($config, undef) = _parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+257            1                                247      my ($config, undef) = _parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
 258                                                   
-259            1                                 42      return $config, \@opt_files;
+259            1                                 46      return $config, \@opt_files;
 260                                                   }
 261                                                   
 262                                                   # Parse "my_print_defaults" output and return a hashref of variable=>values
 263                                                   # and a hashref of any duplicated variables.
 264                                                   sub parse_my_print_defaults {
-265   ***      1                    1      0      6      my ( %args ) = @_;
+265   ***      1                    1      0      7      my ( %args ) = @_;
 266            1                                  5      my @required_args = qw(source);
-267            1                                  7      foreach my $arg ( @required_args ) {
+267            1                                  6      foreach my $arg ( @required_args ) {
 268   ***      1     50                           6         die "I need a $arg arugment" unless $args{$arg};
 269                                                      }
 270            1                                  4      my ($source) = @args{@required_args};
@@ -317,7 +317,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 272   ***      1     50                           9      return unless $output;
 273                                                   
 274                                                      # Parse the "--var=val" lines.
-275           18                                 87      my ($config, $dupes) = _parse_varvals(
+275           18                                 88      my ($config, $dupes) = _parse_varvals(
 276            1                                 10         map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
 277                                                      );
 278                                                   
@@ -327,22 +327,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 282                                                   # Parse the [mysqld] section of an option file and return a hashref of
 283                                                   # variable=>values and a hashref of any duplicated variables.
 284                                                   sub parse_option_file {
-285   ***      1                    1      0      6      my ( %args ) = @_;
+285   ***      1                    1      0      5      my ( %args ) = @_;
 286            1                                  5      my @required_args = qw(source);
-287            1                                  3      foreach my $arg ( @required_args ) {
+287            1                                  5      foreach my $arg ( @required_args ) {
 288   ***      1     50                           7         die "I need a $arg arugment" unless $args{$arg};
 289                                                      }
 290            1                                  5      my ($source) = @args{@required_args};
-291            1                                  5      my $output   = _slurp_file($source);
+291            1                                  4      my $output   = _slurp_file($source);
 292   ***      1     50                           9      return unless $output;
 293                                                   
-294            1                                141      my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)^(?:\[\w+\]|\Z)/xms;
-295   ***      1     50                           6      die "Failed to parse the [mysqld] section from $source"
+294            1                                146      my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)^(?:\[\w+\]|\Z)/xms;
+295   ***      1     50                           5      die "Failed to parse the [mysqld] section from $source"
 296                                                         unless $mysqld_section;
 297                                                   
 298                                                      # Parse the "var=val" lines.
 299           22                                103      my ($config, $dupes) = _parse_varvals(
-300           89                                335         map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
+300           89                                333         map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
 301            1                                 27         grep { $_ !~ m/^\s*#/ }  # no # comment lines
 302                                                         split("\n", $mysqld_section)
 303                                                      );
@@ -355,72 +355,72 @@ line  err   stmt   bran   cond    sub    pod   time   code
 310                                                   # vars.  The varvals list should start with a var at index 0 and its value
 311                                                   # at index 1 then repeat for the next var-val pair.  
 312                                                   sub _parse_varvals {
-313            3                    3           209      my ( @varvals ) = @_;
+313            3                    3           210      my ( @varvals ) = @_;
 314                                                   
 315                                                      # Config built from parsing the given varvals.
 316            3                                 38      my %config;
 317                                                   
 318                                                      # Discover duplicate vars.  
 319            3                                 10      my $duplicate_var = 0;
-320            3                                  7      my %duplicates;
+320            3                                  8      my %duplicates;
 321                                                   
 322                                                      # Keep track if item is var or val because each needs special modifications.
-323            3                                  9      my $var      = 1;
-324            3                                  8      my $last_var = undef;
+323            3                                  7      my $var      = 1;
+324            3                                 10      my $last_var = undef;
 325            3                                 12      foreach my $item ( @varvals ) {
-326          590    100                        2003         if ( $item ) {
-327          587                               1759            $item =~ s/^\s+//;  # strip leading whitespace
-328          587                               1664            $item =~ s/\s+$//;  # strip trailing whitespace
+326          590    100                        1978         if ( $item ) {
+327          587                               1755            $item =~ s/^\s+//;  # strip leading whitespace
+328          587                               1657            $item =~ s/\s+$//;  # strip trailing whitespace
 329                                                         }
 330                                                   
-331          590    100                        1743         if ( $var ) {
+331          590    100                        1724         if ( $var ) {
 332                                                            # Variable names via config files are like "log-bin" but
 333                                                            # via SHOW VARIABLES they're like "log_bin".
-334          295                                914            $item =~ s/-/_/g;
+334          295                                893            $item =~ s/-/_/g;
 335                                                   
 336                                                            # If this var exists in the offline config already, then
 337                                                            # its a duplicate.  Its original value will be saved before
 338                                                            # being overwritten with the new value.
-339   ***    295    100     66                 1430            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
-340            4                                 58               MKDEBUG && _d("Duplicate var:", $item);
+339   ***    295    100     66                 1414            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
+340            4                                  9               MKDEBUG && _d("Duplicate var:", $item);
 341            4                                 12               $duplicate_var = 1;
 342                                                            }
 343                                                   
-344          295                                731            $var      = 0;  # next item should be the val for this var
-345          295                                924            $last_var = $item;
+344          295                                726            $var      = 0;  # next item should be the val for this var
+345          295                                902            $last_var = $item;
 346                                                         }
 347                                                         else {
-348          295    100                         973            if ( $item ) {
-349          266                                731               $item =~ s/^\s+//;
+348          295    100                         965            if ( $item ) {
+349          266                                709               $item =~ s/^\s+//;
 350                                                   
-351          266    100                        1580               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
+351          266    100                        1604               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
                     100                               
-352            9                                 41                  my %factor_for = (
+352            9                                 43                  my %factor_for = (
 353                                                                     k => 1_024,
 354                                                                     m => 1_048_576,
 355                                                                     g => 1_073_741_824,
 356                                                                     t => 1_099_511_627_776,
 357                                                                  );
-358            9                                 46                  $item = $num * $factor_for{lc $factor};
+358            9                                 43                  $item = $num * $factor_for{lc $factor};
 359                                                               }
 360                                                               elsif ( $item =~ m/No default/ ) {
 361           37                                111                  $item = undef;
 362                                                               }
 363                                                            }
 364                                                   
-365          295    100    100                 1183            $item = $undef_for{$last_var} || '' unless defined $item;
+365          295    100    100                 1172            $item = $undef_for{$last_var} || '' unless defined $item;
 366                                                   
-367          295    100                         959            if ( $duplicate_var ) {
+367          295    100                         944            if ( $duplicate_var ) {
 368                                                               # Save var's original value before overwritng with this new value.
 369            4                                 10               push @{$duplicates{$last_var}}, $config{$last_var};
-               4                                 22   
+               4                                 20   
 370            4                                 13               $duplicate_var = 0;
 371                                                            }
 372                                                   
 373                                                            # Save this var-val.
-374          295                               1050            $config{$last_var} = $item;
+374          295                               1068            $config{$last_var} = $item;
 375                                                   
-376          295                                916            $var = 1;  # next item should be a var
+376          295                                902            $var = 1;  # next item should be a var
 377                                                         }
 378                                                      }
 379                                                   
@@ -429,22 +429,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 382                                                   
 383                                                   sub _slurp_file {
 384            4                    4            18      my ( $file ) = @_;
-385   ***      4     50                          17      die "I need a file argument" unless $file;
-386   ***      4     50                         113      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+385   ***      4     50                          16      die "I need a file argument" unless $file;
+386   ***      4     50                         118      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 387            4                                 12      my $contents = do { local $/ = undef; <$fh> };
-               4                                 23   
-               4                                276   
-388            4                                 28      close $fh;
-389            4                                 11      return $contents;
+               4                                 24   
+               4                                307   
+388            4                                 30      close $fh;
+389            4                                 10      return $contents;
 390                                                   }
 391                                                   
 392                                                   sub _get_version {
-393            1                    1             4      my ( $dbh ) = @_;
-394   ***      1     50                           5      return unless $dbh;
-395            1                                  3      my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
-396            1                                249      $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
-397            1                                  4      MKDEBUG && _d('MySQL version', $version);
-398            1                                 65      return $version;
+393            1                    1             5      my ( $dbh ) = @_;
+394   ***      1     50                           6      return unless $dbh;
+395            1                                  2      my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
+396            1                                229      $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
+397            1                                  2      MKDEBUG && _d('MySQL version', $version);
+398            1                                 69      return $version;
 399                                                   }
 400                                                   
 401                                                   # #############################################################################
@@ -453,26 +453,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 404                                                   
 405                                                   # Returns true if this MySQLConfig obj has the given variable.
 406                                                   sub has {
-407   ***      3                    3      0     13      my ( $self, $var ) = @_;
-408            3                                 21      return exists $self->{vars}->{$var};
+407   ***      3                    3      0     14      my ( $self, $var ) = @_;
+408            3                                 19      return exists $self->{vars}->{$var};
 409                                                   }
 410                                                   
 411                                                   # Returns the value for the given variable.
 412                                                   sub get {
-413   ***      5                    5      0     23      my ( $self, $var ) = @_;
-414   ***      5     50                          22      return unless $var;
+413   ***      5                    5      0     25      my ( $self, $var ) = @_;
+414   ***      5     50                          21      return unless $var;
 415            5                                 34      return $self->{vars}->{$var};
 416                                                   }
 417                                                   
 418                                                   # Returns all variables-values.
 419                                                   sub get_variables {
-420   ***      3                    3      0     14      my ( $self, %args ) = @_;
-421            3                                204      return $self->{vars};
+420   ***      3                    3      0     12      my ( $self, %args ) = @_;
+421            3                                205      return $self->{vars};
 422                                                   }
 423                                                   
 424                                                   sub get_duplicate_variables {
-425   ***      1                    1      0      4      my ( $self ) = @_;
-426            1                                  8      return $self->{duplicate_vars};
+425   ***      1                    1      0      5      my ( $self ) = @_;
+426            1                                  9      return $self->{duplicate_vars};
 427                                                   }
 428                                                   
 429                                                   sub get_option_files {
@@ -481,23 +481,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 432                                                   }
 433                                                   
 434                                                   sub get_mysql_version {
-435   ***      1                    1      0      4      my ( $self ) = @_;
-436            1                                 11      return $self->{mysql_version};
+435   ***      1                    1      0      5      my ( $self ) = @_;
+436            1                                 12      return $self->{mysql_version};
 437                                                   }
 438                                                   
 439                                                   sub get_type {
-440   ***      5                    5      0     21      my ( $self ) = @_;
-441            5                                 36      return $self->{type};
+440   ***      5                    5      0     20      my ( $self ) = @_;
+441            5                                 37      return $self->{type};
 442                                                   }
 443                                                   
 444                                                   sub _d {
-445   ***      0                    0                    my ($package, undef, $line) = caller 0;
-446   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-447   ***      0                                              map { defined $_ ? $_ : 'undef' }
+445            1                    1             8      my ($package, undef, $line) = caller 0;
+446   ***      2     50                           8      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  8   
+               2                                 13   
+447            1                                  5           map { defined $_ ? $_ : 'undef' }
 448                                                           @_;
-449   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+449            1                                  4      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 450                                                   }
 451                                                   
 452                                                   1;
@@ -553,7 +553,7 @@ line  err      %   true  false   branch
 386   ***     50      0      4   unless open my $fh, '<', $file
 394   ***     50      0      1   unless $dbh
 414   ***     50      0      5   unless $var
-446   ***      0      0      0   defined $_ ? :
+446   ***     50      2      0   defined $_ ? :
 
 
 Conditions
@@ -596,6 +596,7 @@ BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLCon
 BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:30 
 BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:31 
 BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:36 
+_d                          1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:445
 _get_version                1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:393
 _parse_varvals              3     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:313
 _slurp_file                 4     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:384
@@ -619,7 +620,6 @@ Uncovered Subroutines
 
 Subroutine              Count Pod Location                                                
 ----------------------- ----- --- --------------------------------------------------------
-_d                          0     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:445
 get_option_files            0   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:430
 
 
@@ -629,70 +629,70 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     #!/usr/bin/perl
 2                                                     
 3                                                     BEGIN {
-4     ***      1     50     33      1            32      die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+4     ***      1     50     33      1            31      die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 5                                                           unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
-6              1                                  8      unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
+6              1                                  7      unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 7                                                     };
 8                                                     
 9              1                    1            12   use strict;
                1                                  2   
                1                                  6   
-10             1                    1             6   use warnings FATAL => 'all';
+10             1                    1             7   use warnings FATAL => 'all';
                1                                  3   
-               1                                  5   
-11             1                    1            12   use English qw(-no_match_vars);
-               1                                  2   
-               1                                  8   
-12             1                    1            10   use Test::More tests => 20;
-               1                                  4   
+               1                                  6   
+11             1                    1            11   use English qw(-no_match_vars);
+               1                                  3   
+               1                                  9   
+12             1                    1            10   use Test::More tests => 21;
+               1                                  3   
                1                                  9   
 13                                                    
 14             1                    1            12   use MySQLConfig;
                1                                  3   
-               1                                107   
-15             1                    1            11   use DSNParser;
-               1                                  3   
+               1                                115   
+15             1                    1            10   use DSNParser;
+               1                                  4   
                1                                 12   
 16             1                    1            14   use Sandbox;
-               1                                  3   
-               1                                  9   
-17             1                    1            10   use TextResultSetParser;
                1                                  2   
+               1                                 10   
+17             1                    1            11   use TextResultSetParser;
+               1                                  4   
                1                                 16   
 18             1                    1            10   use MaatkitTest;
-               1                                  4   
+               1                                  5   
                1                                 37   
 19                                                    
-20             1                                 12   my $dp  = new DSNParser(opts=>$dsn_opts);
-21             1                                251   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-22             1                                 55   my $dbh = $sb->get_dbh_for('master');
+20             1                                 10   my $dp  = new DSNParser(opts=>$dsn_opts);
+21             1                                233   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+22             1                                 52   my $dbh = $sb->get_dbh_for('master');
 23                                                    
-24             1                    1             7   use Data::Dumper;
-               1                                  2   
+24             1                    1             6   use Data::Dumper;
+               1                                  3   
                1                                  6   
 25             1                                  4   $Data::Dumper::Indent    = 1;
-26             1                                  4   $Data::Dumper::Sortkeys  = 1;
-27             1                                  4   $Data::Dumper::Quotekeys = 0;
+26             1                                  3   $Data::Dumper::Sortkeys  = 1;
+27             1                                  3   $Data::Dumper::Quotekeys = 0;
 28                                                    
-29             1                                  3   my $output;
-30             1                                  4   my $sample = "common/t/samples/configs/";
-31             1                                  9   my $trp    = new TextResultSetParser();
+29             1                                  4   my $output;
+30             1                                  3   my $sample = "common/t/samples/configs/";
+31             1                                  8   my $trp    = new TextResultSetParser();
 32                                                    
 33                                                    throws_ok(
 34                                                       sub {
-35             1                    1            28         my $config = new MySQLConfig(
+35             1                    1            24         my $config = new MySQLConfig(
 36                                                             source              => 'fooz',
 37                                                             TextResultSetParser => $trp,
 38                                                          );
 39                                                       },
-40             1                                 67      qr/invalid source/,
+40             1                                 61      qr/invalid source/,
 41                                                       'Dies if source cannot be opened'
 42                                                    );
 43                                                    
 44                                                    # #############################################################################
 45                                                    # parse_show_variables()
 46                                                    # #############################################################################
-47             1                                 19   is_deeply(
+47             1                                 18   is_deeply(
 48                                                       MySQLConfig::parse_show_variables(
 49                                                          source => "$trunk/common/t/samples/show-variables/vars003.txt",
 50                                                          TextResultSetParser => $trp,
@@ -945,12 +945,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 297                                                   # #############################################################################
 298                                                   # Config from mysqld --help --verbose
 299                                                   # #############################################################################
-300            1                                 95   my $config = new MySQLConfig(
+300            1                                 96   my $config = new MySQLConfig(
 301                                                      source              => "$trunk/$sample/mysqldhelp001.txt",
 302                                                      TextResultSetParser => $trp,
 303                                                   );
 304                                                   
-305            1                                  9   is(
+305            1                                  8   is(
 306                                                      $config->get_type(),
 307                                                      'mysqld',
 308                                                      "Detect mysqld type"
@@ -1218,18 +1218,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 570                                                      'mysqldhelp001.txt'
 571                                                   );
 572                                                   
-573            1                                 35   is(
+573            1                                 36   is(
 574                                                      $config->get('wait_timeout', offline=>1),
 575                                                      28800,
 576                                                      'get() from mysqld'
 577                                                   );
 578                                                   
-579            1                                 10   ok(
+579            1                                  7   ok(
 580                                                      $config->has('wait_timeout'),
 581                                                      'has() from mysqld'
 582                                                   );
 583                                                   
-584            1                                  7   ok(
+584            1                                  6   ok(
 585                                                     !$config->has('foo'),
 586                                                     "has(), doesn't have it"
 587                                                   );
@@ -1242,13 +1242,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 594                                                      TextResultSetParser => $trp,
 595                                                   );
 596                                                   
-597            1                                 56   is(
+597            1                                 58   is(
 598                                                      $config->get_type(),
 599                                                      'show_variables',
 600                                                      "Detect show_variables type (arrayref)"
 601                                                   );
 602                                                   
-603            1                                  7   is_deeply(
+603            1                                  6   is_deeply(
 604                                                      $config->get_variables(),
 605                                                      {
 606                                                         foo => 'bar',
@@ -1276,7 +1276,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 628                                                      TextResultSetParser => $trp,
 629                                                   );
 630                                                   
-631            1                                  9   is(
+631            1                                  8   is(
 632                                                      $config->get_type(),
 633                                                      'my_print_defaults',
 634                                                      "Detect my_print_defaults type"
@@ -1288,13 +1288,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 640                                                      "Duplicate var's last value used"
 641                                                   );
 642                                                   
-643            1                                  7   is(
+643            1                                  5   is(
 644                                                      $config->get('innodb_buffer_pool_size', offline=>1),
 645                                                      '16777216',
 646                                                      'Converted size char to int'
 647                                                   );
 648                                                   
-649            1                                  6   is_deeply(
+649            1                                  5   is_deeply(
 650                                                      $config->get_duplicate_variables(),
 651                                                      {
 652                                                         'port' => [12345],
@@ -1346,20 +1346,20 @@ line  err   stmt   bran   cond    sub    pod   time   code
 698                                                   # Online test.
 699                                                   # #############################################################################
 700   ***      1     50                           5   SKIP: {
-701            1                                 11      skip 'Cannot connect to sandbox master', 3 unless $dbh;
+701            1                                 13      skip 'Cannot connect to sandbox master', 3 unless $dbh;
 702                                                   
-703            1                                  8      $config = new MySQLConfig(
+703            1                                  9      $config = new MySQLConfig(
 704                                                         source              => $dbh,
 705                                                         TextResultSetParser => $trp,
 706                                                      );
 707                                                   
-708            1                                 14      is(
+708            1                                 12      is(
 709                                                         $config->get_type(),
 710                                                         "show_variables",
 711                                                         "Detect show_variables type (dbh)"
 712                                                      );
 713                                                   
-714            1                                  7      is(
+714            1                                  9      is(
 715                                                         $config->get('datadir'),
 716                                                         '/tmp/12345/data/',
 717                                                         "Vars from dbh"
@@ -1375,7 +1375,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 727                                                   # #############################################################################
 728                                                   # Done.
 729                                                   # #############################################################################
-730            1                                  4   exit;
+730                                                   {
+731            1                                  6      local *STDERR;
+               1                                  7   
+732            1                    1             2      open STDERR, '>', \$output;
+               1                                314   
+               1                                  3   
+               1                                  7   
+733            1                                 20      $config->_d('Complete test coverage');
+734                                                   }
+735                                                   like(
+736            1                                 13      $output,
+737                                                      qr/Complete test coverage/,
+738                                                      '_d() works'
+739                                                   );
+740            1                                  4   exit;
 
 
 Branches
@@ -1401,19 +1415,20 @@ line  err      %     !l  l&&!r   l&&r   expr
 Covered Subroutines
 -------------------
 
-Subroutine Count Location        
----------- ----- ----------------
-BEGIN          1 MySQLConfig.t:10
-BEGIN          1 MySQLConfig.t:11
-BEGIN          1 MySQLConfig.t:12
-BEGIN          1 MySQLConfig.t:14
-BEGIN          1 MySQLConfig.t:15
-BEGIN          1 MySQLConfig.t:16
-BEGIN          1 MySQLConfig.t:17
-BEGIN          1 MySQLConfig.t:18
-BEGIN          1 MySQLConfig.t:24
-BEGIN          1 MySQLConfig.t:4 
-BEGIN          1 MySQLConfig.t:9 
-__ANON__       1 MySQLConfig.t:35
+Subroutine Count Location         
+---------- ----- -----------------
+BEGIN          1 MySQLConfig.t:10 
+BEGIN          1 MySQLConfig.t:11 
+BEGIN          1 MySQLConfig.t:12 
+BEGIN          1 MySQLConfig.t:14 
+BEGIN          1 MySQLConfig.t:15 
+BEGIN          1 MySQLConfig.t:16 
+BEGIN          1 MySQLConfig.t:17 
+BEGIN          1 MySQLConfig.t:18 
+BEGIN          1 MySQLConfig.t:24 
+BEGIN          1 MySQLConfig.t:4  
+BEGIN          1 MySQLConfig.t:732
+BEGIN          1 MySQLConfig.t:9  
+__ANON__       1 MySQLConfig.t:35 
 
 

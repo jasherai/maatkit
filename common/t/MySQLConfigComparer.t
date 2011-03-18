@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -256,4 +256,14 @@ is_deeply(
 # #############################################################################
 # Done.
 # #############################################################################
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $cc->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

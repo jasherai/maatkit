@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 use MySQLConfig;
 use DSNParser;
@@ -727,4 +727,14 @@ SKIP: {
 # #############################################################################
 # Done.
 # #############################################################################
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $config->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

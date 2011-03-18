@@ -1,23 +1,23 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...on/MySQLConfigComparer.pm   87.3   57.1   32.4   86.7    0.0   49.4   69.7
-MySQLConfigComparer.t         100.0   50.0   33.3  100.0    n/a   50.6   95.9
-Total                          92.5   56.5   32.5   93.1    0.0  100.0   78.0
+...on/MySQLConfigComparer.pm   92.7   59.5   32.4   93.3    0.0   48.6   73.6
+MySQLConfigComparer.t         100.0   50.0   33.3  100.0    n/a   51.4   96.2
+Total                          95.9   58.7   32.5   96.7    0.0  100.0   81.2
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Mar 18 19:15:07 2011
-Finish:       Fri Mar 18 19:15:07 2011
+Start:        Fri Mar 18 19:19:51 2011
+Finish:       Fri Mar 18 19:19:51 2011
 
 Run:          MySQLConfigComparer.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Mar 18 19:15:09 2011
-Finish:       Fri Mar 18 19:15:09 2011
+Start:        Fri Mar 18 19:19:53 2011
+Finish:       Fri Mar 18 19:19:53 2011
 
 /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm
 
@@ -43,25 +43,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package MySQLConfigComparer;
 21                                                    
-22             1                    1             6   use strict;
-               1                                  2   
-               1                                  5   
-23             1                    1             6   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  5   
-24             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
-               1                                 88   
-25             1                    1             6   use Data::Dumper;
+22             1                    1             8   use strict;
                1                                  2   
                1                                  7   
+23             1                    1             6   use warnings FATAL => 'all';
+               1                                  3   
+               1                                  7   
+24             1                    1             7   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  7   
+25             1                    1           123   use Data::Dumper;
+               1                                  3   
+               1                                  9   
 26                                                    $Data::Dumper::Indent    = 1;
 27                                                    $Data::Dumper::Sortkeys  = 1;
 28                                                    $Data::Dumper::Quotekeys = 0;
 29                                                    
-30    ***      1            50      1             5   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               1                                  3   
-               1                                 11   
+30    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               1                                  2   
+               1                                 14   
 31                                                    
 32                                                    # Alternate values because offline/config my-var=ON is shown
 33                                                    # online as my_var=TRUE.
@@ -108,10 +108,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 74                                                    );
 75                                                    
 76                                                    sub new {
-77    ***      1                    1      0      6      my ( $class, %args ) = @_;
-78             1                                  3      my $self = {
+77    ***      1                    1      0      5      my ( $class, %args ) = @_;
+78             1                                  4      my $self = {
 79                                                       };
-80             1                                 10      return bless $self, $class;
+80             1                                 11      return bless $self, $class;
 81                                                    }
 82                                                    
 83                                                    # Takes an arrayref of MySQLConfig objects and compares the first to the others.
@@ -127,113 +127,113 @@ line  err   stmt   bran   cond    sub    pod   time   code
 93                                                    # has var "bar" but $configs[0] does not, then the var is not compared.
 94                                                    # Called missing() to discover which vars are missing in the configs.
 95                                                    sub diff {
-96    ***      4                    4      0     20      my ( $self, %args ) = @_;
+96    ***      4                    4      0     21      my ( $self, %args ) = @_;
 97             4                                 16      my @required_args = qw(configs);
-98             4                                 19      foreach my $arg( @required_args ) {
-99    ***      4     50                          35         die "I need a $arg argument" unless $args{$arg};
+98             4                                 21      foreach my $arg( @required_args ) {
+99    ***      4     50                          25         die "I need a $arg argument" unless $args{$arg};
 100                                                      }
-101            4                                 17      my ($config_objs) = @args{@required_args};
+101            4                                 19      my ($config_objs) = @args{@required_args};
 102                                                   
-103            4                                 21      my @diffs;
+103            4                                 11      my @diffs;
 104   ***      4     50                          19      return @diffs if @$config_objs < 2;  # nothing to compare
-105            4                                  9      MKDEBUG && _d('diff configs:', Dumper($config_objs));
+105            4                                  8      MKDEBUG && _d('diff configs:', Dumper($config_objs));
 106                                                   
-107            4                                 16      my $vars     = [ map { $_->get_variables() }     @$config_objs ];
-               8                                 81   
+107            4                                 14      my $vars     = [ map { $_->get_variables() }     @$config_objs ];
+               8                                 80   
 108            4                                 50      my $versions = [ map { $_->get_mysql_version() } @$config_objs ];
-               8                                152   
+               8                                 69   
 109                                                   
 110                                                      # Get list of vars that exist in all configs (intersection of their keys).
-111            4                                 79      my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
-             497                               1773   
+111            4                                 54      my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
+             497                               1776   
 112                                                   
 113                                                      # Make a list of values from each config for all the common vars.  So,
 114                                                      #   %vals = {
 115                                                      #     var1 => [ config0-var1-val, config1-var1-val ],
 116                                                      #     var2 => [ config0-var2-val, config1-var2-val ],
 117                                                      #   }
-118          491                               1253      my %vals = map {
-119            4                                 93         my $var  = $_;
-120          982                               2416         my $vals = [
+118          491                               1246      my %vals = map {
+119            4                                 88         my $var  = $_;
+120          982                               2418         my $vals = [
 121                                                            map {
-122          491                               1406               my $config = $_;
-123   ***    982     50                        4334               my $val    = defined $config->{$var} ? $config->{$var} : '';
-124          982    100                        3731               $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
-125          982                               3102               $val;
+122          491                               1393               my $config = $_;
+123   ***    982     50                        4293               my $val    = defined $config->{$var} ? $config->{$var} : '';
+124          982    100                        3748               $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
+125          982                               3079               $val;
 126                                                            } @$vars
 127                                                         ];
-128          491                               1904         $var => $vals;
+128          491                               1913         $var => $vals;
 129                                                      } @vars;
 130                                                   
 131                                                      VAR:
-132            4                                454      foreach my $var ( sort keys %vals ) {
-133          491                               1409         my $vals     = $vals{$var};
-134          491                               1439         my $last_val = scalar @$vals - 1;
+132            4                                443      foreach my $var ( sort keys %vals ) {
+133          491                               1417         my $vals     = $vals{$var};
+134          491                               1479         my $last_val = scalar @$vals - 1;
 135                                                   
-136          491                               1126         eval {
+136          491                               1103         eval {
 137                                                            # Compare config0 val to other configs' val.
 138                                                            # Stop when a difference is found.
 139                                                            VAL:
-140          491                               1483            for my $i ( 1..$last_val ) {
+140          491                               1498            for my $i ( 1..$last_val ) {
 141                                                               # First try straight string equality comparison.  If the vals
 142                                                               # are equal, stop.  If not, try a special eq_for comparison.
-143          491    100                        2623               if ( $vals->[0] ne $vals->[$i] ) {
+143          491    100                        2642               if ( $vals->[0] ne $vals->[$i] ) {
 144           30    100    100                  177                  if (    !$eq_for{$var}
 145                                                                       || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
-146           58                                251                     push @diffs, {
+146           58                                256                     push @diffs, {
 147                                                                        var  => $var,
-148           29                                109                        vals => [ map { $_->{$var} } @$vars ],  # original vals
+148           29                                103                        vals => [ map { $_->{$var} } @$vars ],  # original vals
 149                                                                     };
-150           29                                 90                     last VAL;
+150           29                                 91                     last VAL;
 151                                                                  }
 152                                                               }
 153                                                            } # VAL
 154                                                         };
-155   ***    491     50                        1891         if ( $EVAL_ERROR ) {
+155   ***    491     50                        1920         if ( $EVAL_ERROR ) {
 156   ***      0      0                           0            my $vals = join(', ', map { defined $_ ? $_ : 'undef' } @$vals);
       ***      0                                  0   
 157   ***      0                                  0            warn "Comparing $var values ($vals) caused an error: $EVAL_ERROR";
 158                                                         }
 159                                                      } # VAR
 160                                                   
-161            4                                226      return @diffs;
+161            4                                242      return @diffs;
 162                                                   }
 163                                                   
 164                                                   sub missing {
-165   ***      3                    3      0     16      my ( $self, %args ) = @_;
-166            3                                  9      my @required_args = qw(configs);
-167            3                                 18      foreach my $arg( @required_args ) {
+165   ***      3                    3      0     13      my ( $self, %args ) = @_;
+166            3                                 12      my @required_args = qw(configs);
+167            3                                 15      foreach my $arg( @required_args ) {
 168   ***      3     50                          18         die "I need a $arg argument" unless $args{$arg};
 169                                                      }
-170            3                                 11      my ($config_objs) = @args{@required_args};
+170            3                                 10      my ($config_objs) = @args{@required_args};
 171                                                   
-172            3                                  8      my @missing;
-173   ***      3     50                          15      return @missing if @$config_objs < 2;  # nothing to compare
-174            3                                  6      MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
+172            3                                  9      my @missing;
+173   ***      3     50                          12      return @missing if @$config_objs < 2;  # nothing to compare
+174            3                                  7      MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
 175                                                   
-176            3                                 11      my @configs = map { $_->get_variables() } @$config_objs;
-               6                                 57   
+176            3                                 10      my @configs = map { $_->get_variables() } @$config_objs;
+               6                                 56   
 177                                                   
 178                                                      # Get all unique vars and how many times each exists.
-179            3                                 34      my %vars;
-180            3                                 21      map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
-               6                                 21   
-               6                                 15   
-               6                                 29   
+179            3                                 35      my %vars;
+180            3                                 20      map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
+               6                                 20   
+               6                                 14   
+               6                                 27   
 181                                                   
 182                                                      # If a var exists less than the number of configs then it is
 183                                                      # missing from at least one of the configs.
-184            3                                 11      my $n_configs = scalar @configs;
-185            3                                 12      foreach my $var ( keys %vars ) {
-186            4    100                          19         if ( $vars{$var} < $n_configs ) {
-187            4    100                          27            push @missing, {
+184            3                                 12      my $n_configs = scalar @configs;
+185            3                                 10      foreach my $var ( keys %vars ) {
+186            4    100                          20         if ( $vars{$var} < $n_configs ) {
+187            4    100                          26            push @missing, {
 188                                                               var     => $var,
 189            2                                  8               missing => [ map { exists $_->{$var} ? 0 : 1 } @configs ],
 190                                                            };
 191                                                         }
 192                                                      }
 193                                                   
-194            3                                 21      return @missing;
+194            3                                 20      return @missing;
 195                                                   }
 196                                                   
 197                                                   # True if x is val1 or val2 and y is val1 or val2.
@@ -247,9 +247,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 203                                                   
 204                                                   # True if paths are equal; adds trailing / to x or y if missing.
 205                                                   sub _patheq {
-206            2                    2            10      my ( $x, $y ) = @_;
-207            2    100                          14      $x .= '/' if $x !~ m/\/$/;
-208   ***      2     50                          12      $y .= '/' if $y !~ m/\/$/;
+206            2                    2            11      my ( $x, $y ) = @_;
+207            2    100                          13      $x .= '/' if $x !~ m/\/$/;
+208   ***      2     50                          10      $y .= '/' if $y !~ m/\/$/;
 209            2                                 16      return $x eq $y;
 210                                                   }
 211                                                   
@@ -257,9 +257,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 213                                                   # This is for cases like log-bin=file (offline) == log_bin=ON (offline).
 214                                                   sub _eqifon { 
 215            1                    1             5      my ( $x, $y ) = @_;
-216   ***      1     50     33                   15      return 1 if ( ($x && $x eq '1' ) && $y );
+216   ***      1     50     33                   13      return 1 if ( ($x && $x eq '1' ) && $y );
       ***                   33                        
-217   ***      1     50     33                   10      return 1 if ( ($y && $y eq '1' ) && $x );
+217   ***      1     50     33                   11      return 1 if ( ($y && $y eq '1' ) && $x );
       ***                   33                        
 218            1                                  7      return 0;
 219                                                   }
@@ -267,20 +267,20 @@ line  err   stmt   bran   cond    sub    pod   time   code
 221                                                   # True if offline value not set/configured (so online vals is
 222                                                   # some built-in default).
 223                                                   sub _eqifnoconf {
-224            1                    1             7      my ( $online_val, $conf_val ) = @_;
+224            1                    1             4      my ( $online_val, $conf_val ) = @_;
 225   ***      1     50                          11      return $conf_val == 0 ? 1 : 0;
 226                                                   }
 227                                                   
 228                                                   sub _eqdatadir {
 229            1                    1             6      my ( $online_val, $conf_val, $versions ) = @_;
-230   ***      1     50     50                   16      if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
+230   ***      1     50     50                   29      if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
       ***                    0                        
       ***                   33                        
 231   ***      0                                  0         MKDEBUG && _d('MySQL 5.1 datadir conf val bug;',
 232                                                            'online val:', $online_val, 'offline val:', $conf_val);
 233   ***      0                                  0         return 1;
 234                                                      }
-235   ***      1     50     50                   23      return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
+235   ***      1     50     50                   25      return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
       ***                   50                        
 236                                                   }
 237                                                   
@@ -292,26 +292,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 243                                                   #   my @a   = ( $foo, $bar, $zap );
 244                                                   # key_intersect(\@a) return ['foo'].
 245                                                   sub key_intersect {
-246   ***      4                    4      0     15      my ( $self, $hashes ) = @_;
-247            4                                 14      my %keys  = map { $_ => 1 } keys %{$hashes->[0]};
-             766                               2588   
-               4                                104   
+246   ***      4                    4      0     16      my ( $self, $hashes ) = @_;
+247            4                                 12      my %keys  = map { $_ => 1 } keys %{$hashes->[0]};
+             766                               2546   
+               4                                103   
 248            4                                160      my $n_hashes = (scalar @$hashes) - 1;
-249            4                                 23      my @isect = grep { $keys{$_} } map { keys %{$hashes->[$_]} } 1..$n_hashes;
-             505                               1577   
+249            4                                 24      my @isect = grep { $keys{$_} } map { keys %{$hashes->[$_]} } 1..$n_hashes;
+             505                               1587   
                4                                 11   
-               4                                 68   
-250            4                                222      return @isect;
+               4                                 65   
+250            4                                218      return @isect;
 251                                                   }
 252                                                   
 253                                                   sub _d {
-254   ***      0                    0                    my ($package, undef, $line) = caller 0;
-255   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-256   ***      0                                              map { defined $_ ? $_ : 'undef' }
+254            1                    1             8      my ($package, undef, $line) = caller 0;
+255   ***      2     50                          11      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  9   
+               2                                 10   
+256            1                                  6           map { defined $_ ? $_ : 'undef' }
 257                                                           @_;
-258   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+258            1                                  3      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 259                                                   }
 260                                                   
 261                                                   1;
@@ -346,7 +346,7 @@ line  err      %   true  false   branch
 225   ***     50      1      0   $conf_val == 0 ? :
 230   ***     50      0      1   if (($$versions[0] || '') gt '5.1.0' and ($conf_val || '') eq '.')
 235   ***     50      0      1   ($online_val || '') eq ($conf_val || '') ? :
-255   ***      0      0      0   defined $_ ? :
+255   ***     50      2      0   defined $_ ? :
 
 
 Conditions
@@ -392,6 +392,7 @@ BEGIN             1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigCompare
 BEGIN             1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:24 
 BEGIN             1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:25 
 BEGIN             1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:30 
+_d                1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:254
 _eqdatadir        1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:229
 _eqifnoconf       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:224
 _eqifon           1     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:215
@@ -406,7 +407,6 @@ Uncovered Subroutines
 
 Subroutine    Count Pod Location                                                        
 ------------- ----- --- ----------------------------------------------------------------
-_d                0     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:254
 _veq              0     /home/daniel/dev/maatkit/trunk/common/MySQLConfigComparer.pm:199
 
 
@@ -416,106 +416,106 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     #!/usr/bin/perl
 2                                                     
 3                                                     BEGIN {
-4     ***      1     50     33      1            32      die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+4     ***      1     50     33      1            31      die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
 5                                                           unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
-6              1                                  8      unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
+6              1                                  7      unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 7                                                     };
 8                                                     
-9              1                    1            12   use strict;
+9              1                    1            11   use strict;
                1                                  2   
                1                                  6   
-10             1                    1             7   use warnings FATAL => 'all';
-               1                                  2   
+10             1                    1             5   use warnings FATAL => 'all';
+               1                                  4   
                1                                  6   
 11             1                    1            11   use English qw(-no_match_vars);
                1                                  3   
-               1                                  6   
-12             1                    1            10   use Test::More tests => 7;
-               1                                  3   
-               1                                 12   
+               1                                  9   
+12             1                    1            11   use Test::More tests => 8;
+               1                                  2   
+               1                                 11   
 13                                                    
 14             1                    1            12   use TextResultSetParser();
                1                                  3   
-               1                                  4   
-15             1                    1            12   use MySQLConfigComparer;
-               1                                  2   
-               1                                 11   
-16             1                    1            11   use MySQLConfig;
-               1                                  2   
-               1                                 11   
-17             1                    1            11   use DSNParser;
+               1                                749   
+15             1                    1            20   use MySQLConfigComparer;
+               1                                  3   
+               1                                 17   
+16             1                    1            15   use MySQLConfig;
+               1                                  3   
+               1                                 10   
+17             1                    1            10   use DSNParser;
                1                                  3   
                1                                 12   
-18             1                    1            13   use Sandbox;
+18             1                    1            14   use Sandbox;
                1                                  2   
                1                                 11   
-19             1                    1            11   use MaatkitTest;
-               1                                  4   
-               1                                 43   
+19             1                    1            12   use MaatkitTest;
+               1                                  3   
+               1                                 42   
 20                                                    
 21             1                                 11   my $dp  = new DSNParser(opts=>$dsn_opts);
-22             1                                242   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-23             1                                 57   my $dbh = $sb->get_dbh_for('master');
+22             1                                243   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+23             1                                 59   my $dbh = $sb->get_dbh_for('master');
 24                                                    
 25             1                    1             7   use Data::Dumper;
-               1                                  3   
-               1                                  6   
-26             1                                  5   $Data::Dumper::Indent    = 1;
+               1                                  2   
+               1                                  8   
+26             1                                  4   $Data::Dumper::Indent    = 1;
 27             1                                  4   $Data::Dumper::Sortkeys  = 1;
-28             1                                  3   $Data::Dumper::Quotekeys = 0;
+28             1                                  4   $Data::Dumper::Quotekeys = 0;
 29                                                    
 30             1                                 14   my $trp = new TextResultSetParser();
 31             1                                 49   my $cc  = new MySQLConfigComparer();
-32             1                                  3   my $c1;
-33             1                                  3   my $c2;
+32             1                                  4   my $c1;
+33             1                                  2   my $c2;
 34                                                    
 35             1                                  3   my $diff;
-36             1                                 17   my $missing;
+36             1                                  3   my $missing;
 37             1                                  3   my $output;
-38             1                                  5   my $sample = "common/t/samples/configs/";
+38             1                                  3   my $sample = "common/t/samples/configs/";
 39                                                    
 40                                                    sub diff {
 41             4                    4            19      my ( @configs ) = @_;
-42             4                                 29      my @diffs = $cc->diff(
+42             4                                 31      my @diffs = $cc->diff(
 43                                                          configs => \@configs,
 44                                                       );
-45             4                                 37      return \@diffs;
+45             4                                103      return \@diffs;
 46                                                    }
 47                                                    
 48                                                    sub missing {
-49             3                    3            14      my ( @configs ) = @_;
-50             3                                 22      my @missing= $cc->missing(
+49             3                    3            13      my ( @configs ) = @_;
+50             3                                 32      my @missing= $cc->missing(
 51                                                          configs => \@configs,
 52                                                       );
-53             3                                 14      return \@missing;
+53             3                                 13      return \@missing;
 54                                                    }
 55                                                    
-56             1                                 15   $c1 = new MySQLConfig(
+56             1                                 14   $c1 = new MySQLConfig(
 57                                                       source              => "$trunk/$sample/mysqldhelp001.txt",
 58                                                       TextResultSetParser => $trp,
 59                                                    );
-60             1                              12560   is_deeply(
+60             1                              12636   is_deeply(
 61                                                       diff($c1, $c1),
 62                                                       [],
 63                                                       "mysqld config does not differ with itself"
 64                                                    );
 65                                                    
-66             1                                 18   $c2 = new MySQLConfig(
+66             1                                 20   $c2 = new MySQLConfig(
 67                                                       source              => [['query_cache_size', 0]],
 68                                                       TextResultSetParser => $trp,
 69                                                    );
-70             1                                125   is_deeply(
+70             1                                123   is_deeply(
 71                                                       diff($c2, $c2),
 72                                                       [],
 73                                                       "SHOW VARS config does not differ with itself"
 74                                                    );
 75                                                    
 76                                                    
-77             1                                 12   $c2 = new MySQLConfig(
+77             1                                 13   $c2 = new MySQLConfig(
 78                                                       source              => [['query_cache_size', 1024]],
 79                                                       TextResultSetParser => $trp,
 80                                                    );
-81             1                                106   is_deeply(
+81             1                                105   is_deeply(
 82                                                       diff($c1, $c2),
 83                                                       [
 84                                                          {
@@ -533,13 +533,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 96                                                       source              => "$trunk/$sample/mysqldhelp001.txt",
 97                                                       TextResultSetParser => $trp,
 98                                                    );
-99             1                              12059   $c2 = new MySQLConfig(
+99             1                              12116   $c2 = new MySQLConfig(
 100                                                      source              => "$trunk/$sample/mysqldhelp002.txt",
 101                                                      TextResultSetParser => $trp,
 102                                                   );
 103                                                   
-104            1                              11594   $diff = diff($c1, $c2);
-105   ***      1     50                          70   is_deeply(
+104            1                              11660   $diff = diff($c1, $c2);
+105   ***      1     50                          72   is_deeply(
 106                                                      $diff,
 107                                                      [
 108                                                         { var  => 'basedir',
@@ -648,7 +648,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 211                                                   # #############################################################################
 212                                                   # Missing vars.
 213                                                   # #############################################################################
-214            1                                 50   $c1 = new MySQLConfig(
+214            1                                 54   $c1 = new MySQLConfig(
 215                                                      source              => [['query_cache_size', 1024]],
 216                                                      TextResultSetParser => $trp,
 217                                                   );
@@ -657,8 +657,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 220                                                      TextResultSetParser => $trp,
 221                                                   );
 222                                                   
-223            1                                236   $missing = missing($c1, $c2);
-224            1                                  9   is_deeply(
+223            1                                144   $missing = missing($c1, $c2);
+224            1                                  8   is_deeply(
 225                                                      $missing,
 226                                                      [
 227                                                         { var=>'query_cache_size', missing=>[qw(0 1)] },
@@ -670,8 +670,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 233                                                      source              => [['query_cache_size', 1024]],
 234                                                      TextResultSetParser => $trp,
 235                                                   );
-236            1                                114   $missing = missing($c1, $c2);
-237            1                                  8   is_deeply(
+236            1                                104   $missing = missing($c1, $c2);
+237            1                                  9   is_deeply(
 238                                                      $missing,
 239                                                      [],
 240                                                      "No missing vars"
@@ -681,8 +681,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 244                                                      source              => [['query_cache_size', 1024], ['foo', 1]],
 245                                                      TextResultSetParser => $trp,
 246                                                   );
-247            1                                107   $missing = missing($c1, $c2);
-248            1                                  9   is_deeply(
+247            1                                110   $missing = missing($c1, $c2);
+248            1                                 11   is_deeply(
 249                                                      $missing,
 250                                                      [
 251                                                         { var=>'foo', missing=>[qw(1 0)] },
@@ -693,7 +693,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 256                                                   # #############################################################################
 257                                                   # Done.
 258                                                   # #############################################################################
-259            1                                  3   exit;
+259                                                   {
+260            1                                 10      local *STDERR;
+               1                                  8   
+261            1                    1             2      open STDERR, '>', \$output;
+               1                                305   
+               1                                  3   
+               1                                  7   
+262            1                                 18      $cc->_d('Complete test coverage');
+263                                                   }
+264                                                   like(
+265            1                                 21      $output,
+266                                                      qr/Complete test coverage/,
+267                                                      '_d() works'
+268                                                   );
+269            1                                  3   exit;
 
 
 Branches
@@ -718,21 +732,22 @@ line  err      %     !l  l&&!r   l&&r   expr
 Covered Subroutines
 -------------------
 
-Subroutine Count Location                
----------- ----- ------------------------
-BEGIN          1 MySQLConfigComparer.t:10
-BEGIN          1 MySQLConfigComparer.t:11
-BEGIN          1 MySQLConfigComparer.t:12
-BEGIN          1 MySQLConfigComparer.t:14
-BEGIN          1 MySQLConfigComparer.t:15
-BEGIN          1 MySQLConfigComparer.t:16
-BEGIN          1 MySQLConfigComparer.t:17
-BEGIN          1 MySQLConfigComparer.t:18
-BEGIN          1 MySQLConfigComparer.t:19
-BEGIN          1 MySQLConfigComparer.t:25
-BEGIN          1 MySQLConfigComparer.t:4 
-BEGIN          1 MySQLConfigComparer.t:9 
-diff           4 MySQLConfigComparer.t:41
-missing        3 MySQLConfigComparer.t:49
+Subroutine Count Location                 
+---------- ----- -------------------------
+BEGIN          1 MySQLConfigComparer.t:10 
+BEGIN          1 MySQLConfigComparer.t:11 
+BEGIN          1 MySQLConfigComparer.t:12 
+BEGIN          1 MySQLConfigComparer.t:14 
+BEGIN          1 MySQLConfigComparer.t:15 
+BEGIN          1 MySQLConfigComparer.t:16 
+BEGIN          1 MySQLConfigComparer.t:17 
+BEGIN          1 MySQLConfigComparer.t:18 
+BEGIN          1 MySQLConfigComparer.t:19 
+BEGIN          1 MySQLConfigComparer.t:25 
+BEGIN          1 MySQLConfigComparer.t:261
+BEGIN          1 MySQLConfigComparer.t:4  
+BEGIN          1 MySQLConfigComparer.t:9  
+diff           4 MySQLConfigComparer.t:41 
+missing        3 MySQLConfigComparer.t:49 
 
 
