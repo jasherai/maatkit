@@ -1734,7 +1734,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 7352
+# MySQLConfig package 7357
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
@@ -1988,7 +1988,7 @@ sub parse_option_file {
    my $output   = _slurp_file($source);
    return unless $output;
 
-   my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)^(?:\[\w+\]|\Z)/xms;
+   my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
    die "Failed to parse the [mysqld] section from $source"
       unless $mysqld_section;
 
@@ -2132,7 +2132,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 7096
+# MySQLConfigComparer package 7360
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
@@ -2176,14 +2176,13 @@ my %eq_for = (
    log_bin                   => sub { return _eqifon(@_);               },
    log_slow_queries          => sub { return _eqifon(@_);               },
 
-   general_log_file          => sub { return _eqifnoconf(@_);           },
-   innodb_data_file_path     => sub { return _eqifnoconf(@_);           },
-   innodb_log_group_home_dir => sub { return _eqifnoconf(@_);           },
-   log_error                 => sub { return _eqifnoconf(@_);           },
-   open_files_limit          => sub { return _eqifnoconf(@_);           },
-   slow_query_log_file       => sub { return _eqifnoconf(@_);           },
-   tmpdir                    => sub { return _eqifnoconf(@_);           },
-   binlog_format             => sub { return _eqifnoconf(@_);           },
+   general_log_file          => sub { return _optvaleq(@_);             },
+   innodb_data_file_path     => sub { return _optvaleq(@_);             },
+   innodb_log_group_home_dir => sub { return _optvaleq(@_);             },
+   log_error                 => sub { return _optvaleq(@_);             },
+   slow_query_log_file       => sub { return _optvaleq(@_);             },
+   tmpdir                    => sub { return _optvaleq(@_);             },
+   binlog_format             => sub { return _optvaleq(@_);             },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
 
@@ -2209,10 +2208,10 @@ sub diff {
    return @diffs if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('diff configs:', Dumper($config_objs));
 
-   my $configs  = [ map { $_->get_config() } @$config_objs ];
-   my $versions = [ map { $_->version() }    @$config_objs ];
+   my $vars     = [ map { $_->get_variables() }     @$config_objs ];
+   my $versions = [ map { $_->get_mysql_version() } @$config_objs ];
 
-   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
 
    my %vals = map {
       my $var  = $_;
@@ -2222,7 +2221,7 @@ sub diff {
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
             $val;
-         } @$configs 
+         } @$vars
       ];
       $var => $vals;
    } @vars;
@@ -2240,7 +2239,7 @@ sub diff {
                     || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
                   push @diffs, {
                      var  => $var,
-                     vals => [ map { $_->{$var} } @$configs ],  # original vals
+                     vals => [ map { $_->{$var} } @$vars ],  # original vals
                   };
                   last VAL;
                }
@@ -2268,7 +2267,7 @@ sub missing {
    return @missing if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
 
-   my @configs = map { $_->get_config() } @$config_objs;
+   my @configs = map { $_->get_variables() } @$config_objs;
 
    my %vars;
    map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
@@ -2299,6 +2298,15 @@ sub _patheq {
    return $x eq $y;
 }
 
+sub _eqdatadir {
+   my ( $x, $y, $versions ) = @_;
+   if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
+      MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
+      return 1;
+   }
+   return _patheq(@_);
+}
+
 sub _eqifon { 
    my ( $x, $y ) = @_;
    return 1 if ( ($x && $x eq '1' ) && $y );
@@ -2306,19 +2314,15 @@ sub _eqifon {
    return 0;
 }
 
-sub _eqifnoconf {
-   my ( $online_val, $conf_val ) = @_;
-   return $conf_val == 0 ? 1 : 0;
-}
-
-sub _eqdatadir {
-   my ( $online_val, $conf_val, $versions ) = @_;
-   if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
-      MKDEBUG && _d('MySQL 5.1 datadir conf val bug;',
-         'online val:', $online_val, 'offline val:', $conf_val);
+sub _optvaleq {
+   my ( $x, $y ) = @_;  
+   if (    (!$x &&  $y)   # x=, y=default val
+        || ( $x && !$y) ) # x=default val, y=
+   {
       return 1;
    }
-   return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
+   
+   return $x eq $y ? 1 : 0;
 }
 
 sub key_intersect {
@@ -2344,7 +2348,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 7128
+# ReportFormatter package 7359
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -2492,11 +2496,11 @@ sub add_line {
 }
 
 sub get_report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
 
    $self->_calculate_column_widths();
    $self->_truncate_headers() if $self->{truncate_headers};
-   $self->_truncate_line_values();
+   $self->_truncate_line_values(%args);
 
    my @col_fmts = $self->_make_column_formats();
    my $fmt      = ($self->{line_prefix} || '')
@@ -2615,7 +2619,7 @@ sub _truncate_headers {
 }
 
 sub _truncate_line_values {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $n_vals = $self->{n_cols} - 1;
    foreach my $vals ( @{$self->{lines}} ) {
       for my $i ( 0..$n_vals ) {
@@ -2629,7 +2633,7 @@ sub _truncate_line_values {
                   . $col->{name});
             }
 
-            my $callback  = $self->{truncate_callback};
+            my $callback    = $args{truncate_callback};
             my $print_width = $col->{print_width};
             $val = $callback ? $callback->($col, $val, $print_width)
                  :             $self->truncate_value($col, $val, $print_width);
@@ -2754,9 +2758,6 @@ sub main {
    my @configs;       # MySQLConfig objects
    my @config_names;  # Human-readable names for those ^ objs
    foreach my $config_src ( @ARGV ) {
-      my $config = new MySQLConfig();
-      my $config_name;
-
       if ( -f $config_src ) {
          MKDEBUG && _d('Config source', $config_src, 'is a file');
          push @configs, new MySQLConfig(
@@ -2800,22 +2801,39 @@ sub main {
    # #########################################################################
    # Diff the given configs.
    # #########################################################################
-   my $report = new ReportFormatter(
-      line_prefix => '',
-      line_width  => $o->get('report-width'),
-   );
-   $report->set_title('MySQL config diff');
-   $report->set_columns(
-      { name => 'Variable', width=>25, },
-      map { { name => $_ } } @config_names,
-   );
+   my $report;
+   my $truncate_callback;
+   if ( $o->get('report') ) {
+      $report = new ReportFormatter(
+         line_prefix => '',
+         line_width  => $o->get('report-width'),
+      ); 
+      $report->set_columns(
+         { name => 'Variable', width=>25, },
+         map { { name => $_ } } @config_names,
+      );
+
+      # This is difficult.  Ideally, we want to know which var this
+      # val applies to (i.e. first column, same row).  But that's
+      # not how ReportFormatter works.  Plus, even if we truncate a
+      # path on the left side, that might be where the difference is.
+      # So there's no easy solution here.
+      # $truncate_callback = sub {
+      # };
+   }
 
    my @diffs = $config_cmp->diff(configs=>\@configs);
    foreach my $diff ( @diffs ) {
       $report->add_line($diff->{var}, @{$diff->{vals}});
    }
 
-   print $report->get_report();
+   if ( @diffs && $o->get('report') ) {
+      $report->set_title(
+         scalar @diffs . ' config difference' . (@diffs > 1 ? 's' : ''));
+      print $report->get_report(
+         truncate_callback => $truncate_callback,
+      );
+   }
 
    return @diffs ? 1 : 0;
 }
@@ -2851,12 +2869,15 @@ mk-config-diff - Diff MySQL configurations.
 
 =head1 SYNOPSIS
 
-Usage: mk-config-diff [OPTION...] FILE|DSN [FILE|DSN...]
+Usage: mk-config-diff [OPTION...] CONFIG CONFIG [CONFIG...]
 
-mk-config-diff diffs MySQL configurations.
+mk-config-diff diffs MySQL configurations.  CONFIG can be either a filename
+or a DSN.  Use - to read from STDIN.  At least two CONFIG sources must be
+given.  Like standard Unix diff, there is no output if there are no differences.
 
-   # Diff SHOW VARIABLES output saved in each file, print differences.
-   mk-config-diff config-1.txt config-2.txt
+Diff host1 config from SHOW VARIABLES against host2:
+
+  mk-config-diff h=host1 h=host2
 
 =head1 RISKS
 
@@ -2880,6 +2901,14 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 =head1 DESCRIPTION
 
 mk-config-diff diffs MySQL configs.
+
+=head1 OUTPUT
+
+=head2 WARNINGS
+
+  Comparing log_error values (mysqld.log, /tmp/12345/data/mysqld.log)
+  caused an error: Argument "/tmp/12345/data/mysqld.log" isn't numeric
+  in numeric eq (==) at ./mk-config-diff line 2311.
 
 =head1 OPTIONS
 
@@ -2953,11 +2982,22 @@ short form: -P; type: int
 
 Port number to use for connection.
 
+=item --[no]report
+
+default: yes
+
+Print the MySQL config diff report to STDOUT.  If you just want to check
+if the given configs are different or not by examining the tool's exit
+status (0=no difference, 1=configs are different), then specify
+C<--no-report> to suppress the report.
+
 =item --report-width
 
 type: int; default: 78
 
-Truncate report lines to this many characters.
+Truncate report lines to this many characters.  Since some variable values can
+be long, or when comparining multiple configs, it may help to increase the
+report width so values are not truncated beyond readability.
 
 =item --set-vars
 
