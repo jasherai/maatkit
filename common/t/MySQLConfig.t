@@ -9,11 +9,12 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 19;
 
 use MySQLConfig;
 use DSNParser;
 use Sandbox;
+use TextResultSetParser;
 use MaatkitTest;
 
 my $dp  = new DSNParser(opts=>$dsn_opts);
@@ -25,26 +26,37 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-my $config = new MySQLConfig();
-
 my $output;
 my $sample = "common/t/samples/configs/";
+my $trp    = new TextResultSetParser();
 
 throws_ok(
    sub {
-      $config->set_config(from=>'mysqld', file=>"fooz");
+      my $config = new MySQLConfig(
+         source              => 'fooz',
+         TextResultSetParser => $trp,
+      );
    },
-   qr/Cannot open /,
-   'set_config() dies if the file cannot be opened'
+   qr/invalid source/,
+   'Dies if source cannot be opened'
 );
 
 # #############################################################################
 # Config from mysqld --help --verbose
 # #############################################################################
+my $config = new MySQLConfig(
+   source              => "$trunk/$sample/mysqldhelp001.txt",
+   TextResultSetParser => $trp,
+);
 
-$config->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
+is(
+   $config->get_type(),
+   'mysqld',
+   "Detect mysqld type"
+);
+
 is_deeply(
-   $config->get_config(offline=>1),
+   $config->get_variables(),
    {
       abort_slave_event_count => '0',
       allow_suspicious_udfs => 'FALSE',
@@ -302,7 +314,7 @@ is_deeply(
       wait_timeout => '28800',
       warnings => '1'
    },
-   'set_config(from=>mysqld, file=>mysqldhelp001.txt)'
+   'mysqldhelp001.txt'
 );
 
 is(
@@ -324,34 +336,50 @@ ok(
 # #############################################################################
 # Config from SHOW VARIABLES
 # #############################################################################
+$config = new MySQLConfig(
+   source              => [ [qw(foo bar)], [qw(a z)] ],
+   TextResultSetParser => $trp,
+);
 
-$config->set_config(from=>'show_variables', rows=>[ [qw(foo bar)], [qw(a z)] ]);
+is(
+   $config->get_type(),
+   'show_variables',
+   "Detect show_variables type (arrayref)"
+);
+
 is_deeply(
-   $config->get_config(),
+   $config->get_variables(),
    {
       foo => 'bar',
       a   => 'z',
    },
-   'set_config(from=>show_variables, rows=>...)'
+   'Variables from arrayref'
 );
 
 is(
    $config->get('foo'),
    'bar',
-   'get() from show variables'
+   'get() from arrayref',
 );
 
 ok(
    $config->has('foo'),
-   'has() from show variables'
+   'has() from arrayref',
 );
 
 # #############################################################################
 # Config from my_print_defaults
 # #############################################################################
+$config = new MySQLConfig(
+   source              => "$trunk/$sample/myprintdef001.txt",
+   TextResultSetParser => $trp,
+);
 
-$config->set_config(from=>'my_print_defaults',
-   file=>"$trunk/$sample/myprintdef001.txt");
+is(
+   $config->get_type(),
+   'my_print_defaults',
+   "Detect my_print_defaults type"
+);
 
 is(
    $config->get('port', offline=>1),
@@ -374,26 +402,72 @@ is_deeply(
 );
 
 # #############################################################################
+# Config from option file (my.cnf)
+# #############################################################################
+$config = new MySQLConfig(
+   source              => "$trunk/$sample/mycnf001.txt",
+   TextResultSetParser => $trp,
+);
+
+is(
+   $config->get_type(),
+   'option_file',
+   "Detect option_file type"
+);
+
+is_deeply(
+   $config->get_variables(),
+   {
+      'user'                  => 'mysql',
+      'pid_file'              => '/var/run/mysqld/mysqld.pid',
+      'socket'                => '/var/run/mysqld/mysqld.sock',
+      'port'                  => 3306,
+      'basedir'               => '/usr',
+      'datadir'               => '/var/lib/mysql',
+      'tmpdir'		            => '/tmp',
+      'skip_external_locking' => 'ON',
+      'bind_address'		      => '127.0.0.1',
+      'key_buffer'		      => 16777216,
+      'max_allowed_packet'	   => 16777216,
+      'thread_stack'		      => 131072,
+      'thread_cache_size'	   => 8,
+      'myisam_recover'		   => 'BACKUP',
+      'query_cache_limit'     => 1048576,
+      'query_cache_size'      => 16777216,
+      'expire_logs_days'	   => 10,
+      'max_binlog_size'       => 104857600,
+      'skip_federated'        => '',
+   },
+   "Vars from option file"
+) or print Dumper($config->get_variables());
+
+# #############################################################################
 # Online tests.
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 2 unless $dbh;
+   skip 'Cannot connect to sandbox master', 3 unless $dbh;
 
-   $config = new MySQLConfig();
-   $config->set_config(from=>'show_variables', dbh=>$dbh);
-   is(
-      $config->get('datadir'),
-      '/tmp/12345/data/',
-      'set_config(from=>show_variables, dbh=>...)'
+   $config = new MySQLConfig(
+      source              => $dbh,
+      TextResultSetParser => $trp,
    );
 
-   $config  = new MySQLConfig();
-   my $rows = $dbh->selectall_arrayref('show variables');
-   $config->set_config(from=>'show_variables', rows=>$rows);
+   is(
+      $config->get_type(),
+      "show_variables",
+      "Detect show_variables type (dbh)"
+   );
+
    is(
       $config->get('datadir'),
       '/tmp/12345/data/',
-      'set_config(from=>show_variables, rows=>...)'
+      "Vars from dbh"
+   );
+
+   like(
+      $config->get_mysql_version(),
+      qr/5\.\d+\.\d+/,
+      "MySQL version from dbh"
    );
 }
 
