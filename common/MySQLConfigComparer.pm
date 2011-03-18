@@ -59,14 +59,13 @@ my %eq_for = (
    log_bin                   => sub { return _eqifon(@_);               },
    log_slow_queries          => sub { return _eqifon(@_);               },
 
-   general_log_file          => sub { return _eqifnoconf(@_);           },
-   innodb_data_file_path     => sub { return _eqifnoconf(@_);           },
-   innodb_log_group_home_dir => sub { return _eqifnoconf(@_);           },
-   log_error                 => sub { return _optfilevaleq(@_);         },
-   open_files_limit          => sub { return _eqifnoconf(@_);           },
-   slow_query_log_file       => sub { return _eqifnoconf(@_);           },
-   tmpdir                    => sub { return _eqifnoconf(@_);           },
-   binlog_format             => sub { return _eqifnoconf(@_);           },
+   general_log_file          => sub { return _optvaleq(@_);             },
+   innodb_data_file_path     => sub { return _optvaleq(@_);             },
+   innodb_log_group_home_dir => sub { return _optvaleq(@_);             },
+   log_error                 => sub { return _optvaleq(@_);             },
+   slow_query_log_file       => sub { return _optvaleq(@_);             },
+   tmpdir                    => sub { return _optvaleq(@_);             },
+   binlog_format             => sub { return _optvaleq(@_);             },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
 
@@ -209,6 +208,15 @@ sub _patheq {
    return $x eq $y;
 }
 
+sub _eqdatadir {
+   my ( $x, $y, $versions ) = @_;
+   if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
+      MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
+      return 1;
+   }
+   return _patheq(@_);
+}
+
 # True if x=1 (alt val for "ON") and y is true (any value), or vice-versa.
 # This is for cases like log-bin=file (offline) == log_bin=ON (offline).
 sub _eqifon { 
@@ -218,27 +226,10 @@ sub _eqifon {
    return 0;
 }
 
-# True if offline value not set/configured (so online vals is
-# some built-in default).
-sub _eqifnoconf {
-   my ( $online_val, $conf_val ) = @_;
-   return $conf_val == 0 ? 1 : 0;
-}
-
-sub _eqdatadir {
-   my ( $x, $y, $versions ) = @_;
-   if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
-      MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
-      return 1;
-   }
-   # Normalize trailing / because datadir values /dir and /dir/ are equal.
-   $x .= '/' unless $x =~ m/\/$/;
-   $y .= '/' unless $y =~ m/\/$/;
-   return ($x || '') eq ($y || '') ? 1 : 0;
-}
-
-# Optional file value equality.
-sub _optfilevaleq {
+# Optional value equality.  Equal if one val doesn't specify so other
+# value uses a default/built-in.  Or, if both specify something, standard
+# equality test.  This essentially a string version of _eqifon().
+sub _optvaleq {
    my ( $x, $y ) = @_;  
    if (    (!$x &&  $y)   # x=, y=default val
         || ( $x && !$y) ) # x=default val, y=
