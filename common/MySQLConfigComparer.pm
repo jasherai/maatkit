@@ -62,7 +62,7 @@ my %eq_for = (
    general_log_file          => sub { return _eqifnoconf(@_);           },
    innodb_data_file_path     => sub { return _eqifnoconf(@_);           },
    innodb_log_group_home_dir => sub { return _eqifnoconf(@_);           },
-   log_error                 => sub { return _eqifnoconf(@_);           },
+   log_error                 => sub { return _optfilevaleq(@_);         },
    open_files_limit          => sub { return _eqifnoconf(@_);           },
    slow_query_log_file       => sub { return _eqifnoconf(@_);           },
    tmpdir                    => sub { return _eqifnoconf(@_);           },
@@ -235,6 +235,19 @@ sub _eqdatadir {
    $x .= '/' unless $x =~ m/\/$/;
    $y .= '/' unless $y =~ m/\/$/;
    return ($x || '') eq ($y || '') ? 1 : 0;
+}
+
+# Optional file value equality.
+sub _optfilevaleq {
+   my ( $x, $y ) = @_;  
+   if (    (!$x &&  $y)   # x=, y=default val
+        || ( $x && !$y) ) # x=default val, y=
+   {
+      return 1;
+   }
+   
+   # Both x and y specify a value.  Are they the same?
+   return $x eq $y ? 1 : 0;
 }
 
 # Given an arrayref of hashes, returns an array of keys that

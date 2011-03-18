@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 11;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -255,12 +255,42 @@ is_deeply(
 
 
 # #############################################################################
-# _eqdatadir()
+# Special equality subs.
 # #############################################################################
 is(
    MySQLConfigComparer::_eqdatadir('/tmp/12345/data', '/tmp/12345/data/'),
    1,
    "datadir /dir == /dir/"
+);
+
+$c1 = new MySQLConfig(
+   source              => [['log_error', undef]],
+   TextResultSetParser => $trp,
+);
+$c2 = new MySQLConfig(
+   source              => [['log_error', '/tmp/12345/data/mysqld.log']],
+   TextResultSetParser => $trp,
+);
+$diff = diff($c1, $c2);
+is_deeply(
+   $diff,
+   [],
+   "log_error: undef, value"
+);
+
+$c2 = new MySQLConfig(
+   source              => [['log_error', undef]],
+   TextResultSetParser => $trp,
+);
+$c1 = new MySQLConfig(
+   source              => [['log_error', '/tmp/12345/data/mysqld.log']],
+   TextResultSetParser => $trp,
+);
+$diff = diff($c1, $c2);
+is_deeply(
+   $diff,
+   [],
+   "log_error: value, undef"
 );
 
 # #############################################################################
