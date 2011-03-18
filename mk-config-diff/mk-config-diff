@@ -2872,12 +2872,20 @@ mk-config-diff - Diff MySQL configurations.
 Usage: mk-config-diff [OPTION...] CONFIG CONFIG [CONFIG...]
 
 mk-config-diff diffs MySQL configurations.  CONFIG can be either a filename
-or a DSN.  Use - to read from STDIN.  At least two CONFIG sources must be
-given.  Like standard Unix diff, there is no output if there are no differences.
+or a DSN.  At least two CONFIG sources must be given.  Like standard Unix diff,
+there is no output if there are no differences.
 
 Diff host1 config from SHOW VARIABLES against host2:
 
   mk-config-diff h=host1 h=host2
+
+Diff config from [mysqld] section in my.cnf against host1 config:
+
+  mk-config-diff /etc/my.cnf h=host1
+
+Diff the [mysqld] section of two option files:
+
+   mk-config-diff /etc/my-small.cnf /etc/my-large.cnf
 
 =head1 RISKS
 
@@ -2900,15 +2908,36 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-config-diff diffs MySQL configs.
+mk-config-diff diffs MySQL configs.  The CONFIG sources specified on the
+command line can be either DSNs or files containing the output of
+C<mysqld --help --verbose>, C<my_print_defaults>, C<SHOW VARIABLES> or
+an option file (e.g. my.cnf).
 
 =head1 OUTPUT
 
+When there are difference, a reported is printed to STDOUT that lists them
+like:
+
+  2 config differences
+  Variable                  /tmp/12345/my.sandbox.cnf /tmp/12346/my.sandbox.cnf
+  ========================= ========================= =========================
+  datadir                   /tmp/12345/data           /tmp/12346/data
+  port                      12345                     12346
+
+There is no output when there are no differences.
+
 =head2 WARNINGS
+
+Comparing MySQL variables is difficult because there are many variations
+and subtlties across the many versions and distributions of MySQL.
+When a comparison fails, a warning like,
 
   Comparing log_error values (mysqld.log, /tmp/12345/data/mysqld.log)
   caused an error: Argument "/tmp/12345/data/mysqld.log" isn't numeric
   in numeric eq (==) at ./mk-config-diff line 2311.
+
+is printed to STDERR before the report.  Please report these warnings so
+the comparison functions can be improved.
 
 =head1 OPTIONS
 
