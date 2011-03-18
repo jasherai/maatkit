@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-
+# test 'x'
 BEGIN {
    die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
       unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
