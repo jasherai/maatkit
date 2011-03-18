@@ -104,11 +104,11 @@ sub diff {
    return @diffs if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('diff configs:', Dumper($config_objs));
 
-   my $configs  = [ map { $_->get_config() } @$config_objs ];
-   my $versions = [ map { $_->version() }    @$config_objs ];
+   my $vars     = [ map { $_->get_variables() }     @$config_objs ];
+   my $versions = [ map { $_->get_mysql_version() } @$config_objs ];
 
    # Get list of vars that exist in all configs (intersection of their keys).
-   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
 
    # Make a list of values from each config for all the common vars.  So,
    #   %vals = {
@@ -123,7 +123,7 @@ sub diff {
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
             $val;
-         } @$configs 
+         } @$vars
       ];
       $var => $vals;
    } @vars;
@@ -145,7 +145,7 @@ sub diff {
                     || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
                   push @diffs, {
                      var  => $var,
-                     vals => [ map { $_->{$var} } @$configs ],  # original vals
+                     vals => [ map { $_->{$var} } @$vars ],  # original vals
                   };
                   last VAL;
                }
@@ -173,7 +173,7 @@ sub missing {
    return @missing if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
 
-   my @configs = map { $_->get_config() } @$config_objs;
+   my @configs = map { $_->get_variables() } @$config_objs;
 
    # Get all unique vars and how many times each exists.
    my %vars;

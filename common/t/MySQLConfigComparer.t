@@ -9,8 +9,9 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 7;
 
+use TextResultSetParser();
 use MySQLConfigComparer;
 use MySQLConfig;
 use DSNParser;
@@ -26,9 +27,10 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-my $cc = new MySQLConfigComparer();
-my $c1 = new MySQLConfig();
-my $c2 = new MySQLConfig();
+my $trp = new TextResultSetParser();
+my $cc  = new MySQLConfigComparer();
+my $c1;
+my $c2;
 
 my $diff;
 my $missing;
@@ -51,14 +53,20 @@ sub missing {
    return \@missing;
 }
 
-$c1->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
+$c1 = new MySQLConfig(
+   source              => "$trunk/$sample/mysqldhelp001.txt",
+   TextResultSetParser => $trp,
+);
 is_deeply(
    diff($c1, $c1),
    [],
    "mysqld config does not differ with itself"
 );
 
-$c2->set_config(from=>'show_variables', rows=>[['query_cache_size', 0]]);
+$c2 = new MySQLConfig(
+   source              => [['query_cache_size', 0]],
+   TextResultSetParser => $trp,
+);
 is_deeply(
    diff($c2, $c2),
    [],
@@ -66,7 +74,10 @@ is_deeply(
 );
 
 
-$c2->set_config(from=>'show_variables', rows=>[['query_cache_size', 1024]]);
+$c2 = new MySQLConfig(
+   source              => [['query_cache_size', 1024]],
+   TextResultSetParser => $trp,
+);
 is_deeply(
    diff($c1, $c2),
    [
@@ -81,8 +92,14 @@ is_deeply(
 # #############################################################################
 # Compare one config against another.
 # #############################################################################
-$c1->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
-$c2->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp002.txt");
+$c1 = new MySQLConfig(
+   source              => "$trunk/$sample/mysqldhelp001.txt",
+   TextResultSetParser => $trp,
+);
+$c2 = new MySQLConfig(
+   source              => "$trunk/$sample/mysqldhelp002.txt",
+   TextResultSetParser => $trp,
+);
 
 $diff = diff($c1, $c2);
 is_deeply(
@@ -194,10 +211,15 @@ is_deeply(
 # #############################################################################
 # Missing vars.
 # #############################################################################
-$c1 = new MySQLConfig();
-$c2 = new MySQLConfig();
+$c1 = new MySQLConfig(
+   source              => [['query_cache_size', 1024]],
+   TextResultSetParser => $trp,
+);
+$c2 = new MySQLConfig(
+   source              => [],
+   TextResultSetParser => $trp,
+);
 
-$c1->set_config(from=>'show_variables', rows=>[['query_cache_size', 1024]]);
 $missing = missing($c1, $c2);
 is_deeply(
    $missing,
@@ -207,7 +229,10 @@ is_deeply(
    "Missing var, right"
 );
 
-$c2->set_config(from=>'show_variables', rows=>[['query_cache_size', 1024]]);
+$c2 = new MySQLConfig(
+   source              => [['query_cache_size', 1024]],
+   TextResultSetParser => $trp,
+);
 $missing = missing($c1, $c2);
 is_deeply(
    $missing,
@@ -215,12 +240,9 @@ is_deeply(
    "No missing vars"
 );
 
-$c2->set_config(
-   from =>'show_variables',
-   rows => [
-    ['query_cache_size', 1024],
-    ['foo', 1],
-   ]
+$c2 = new MySQLConfig(
+   source              => [['query_cache_size', 1024], ['foo', 1]],
+   TextResultSetParser => $trp,
 );
 $missing = missing($c1, $c2);
 is_deeply(
@@ -230,36 +252,6 @@ is_deeply(
    ],
    "Missing var, left"
 );
-
-# #############################################################################
-# Online tests.
-# #############################################################################
-SKIP: {
-   skip 'Cannot connect to sandbox master', 2 unless $dbh;
-
-   $c1 = new MySQLConfig();
-   $c2 = new MySQLConfig();
-
-   my $file = "$trunk/$sample/"
-            . ($sandbox_version eq '5.0' ? 'mysqldhelp001.txt'
-                                         : 'mysqldhelp003.txt');
-   $c1->set_config(from=>'show_variables', dbh=>$dbh);
-   $c2->set_config(from=>'mysqld',         file=>$file);
-
-   like(
-      $c1->version(),
-      qr/\d+.\d+.\d+/,
-      "Got version",
-   );
-
-   # If the sandbox master isn't borked then all its vars should be fresh.
-   $diff = diff($c1, $c2);
-   is_deeply(
-      $diff,
-      [],
-      "Sandbox has no different vars"
-   ) or print Dumper($diff);
-}
 
 # #############################################################################
 # Done.
