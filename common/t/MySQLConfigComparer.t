@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -251,6 +251,16 @@ is_deeply(
       { var=>'foo', missing=>[qw(1 0)] },
    ],
    "Missing var, left"
+);
+
+
+# #############################################################################
+# _eqdatadir()
+# #############################################################################
+is(
+   MySQLConfigComparer::_eqdatadir('/tmp/12345/data', '/tmp/12345/data/'),
+   1,
+   "datadir /dir == /dir/"
 );
 
 # #############################################################################

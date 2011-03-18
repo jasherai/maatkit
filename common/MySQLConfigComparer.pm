@@ -1,4 +1,4 @@
-# This program is copyright 2010 Percona Inc.
+# This program is copyright 2010-2011 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -226,13 +226,15 @@ sub _eqifnoconf {
 }
 
 sub _eqdatadir {
-   my ( $online_val, $conf_val, $versions ) = @_;
-   if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
-      MKDEBUG && _d('MySQL 5.1 datadir conf val bug;',
-         'online val:', $online_val, 'offline val:', $conf_val);
+   my ( $x, $y, $versions ) = @_;
+   if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
+      MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
       return 1;
    }
-   return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
+   # Normalize trailing / because datadir values /dir and /dir/ are equal.
+   $x .= '/' unless $x =~ m/\/$/;
+   $y .= '/' unless $y =~ m/\/$/;
+   return ($x || '') eq ($y || '') ? 1 : 0;
 }
 
 # Given an arrayref of hashes, returns an array of keys that

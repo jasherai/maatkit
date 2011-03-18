@@ -291,7 +291,7 @@ sub parse_option_file {
    my $output   = _slurp_file($source);
    return unless $output;
 
-   my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)^(?:\[\w+\]|\Z)/xms;
+   my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
    die "Failed to parse the [mysqld] section from $source"
       unless $mysqld_section;
 
