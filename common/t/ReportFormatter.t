@@ -9,16 +9,13 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 22;
 
 use Transformers;
 use ReportFormatter;
 use MaatkitTest;
 
-my $rf;
-
-$rf = new ReportFormatter();
-
+my $rf = new ReportFormatter();
 isa_ok($rf, 'ReportFormatter');
 
 # #############################################################################
@@ -64,9 +61,33 @@ is(
    "truncate_value(), max width > val width"
 );
 
+
+# #############################################################################
+# truncate_callback
+# #############################################################################
+$rf->set_columns(
+   { name => 'foo', width => 5, },
+   { name => 'bar', width => 5, },
+);
+
+$rf->add_line('1234567890', '1234567890');
+my $callback = sub {
+   my ($col, $val, $print_width) = @_;
+   return 'foo';
+};
+is(
+   $rf->get_report(truncate_callback=>$callback),
+"# foo   bar
+# ===== =====
+# foo   foo
+",
+   "Truncate callback"
+);
+
 # #############################################################################
 # Basic report.
 # #############################################################################
+$rf = new ReportFormatter();
 $rf->set_title('Checksum differences');
 $rf->set_columns(
    {

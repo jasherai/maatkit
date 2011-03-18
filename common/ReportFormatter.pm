@@ -125,7 +125,6 @@ sub set_title {
 #   * truncate           can truncate column (default yes)
 #   * truncate_mark      append string to truncate col vals (default ...)
 #   * truncate_side      truncate left or right side of value (default right)
-#   * truncate_callback  coderef to do truncation; overrides other truncate_*
 #   * undef_value        string for undef values (default '')
 sub set_columns {
    my ( $self, @cols ) = @_;
@@ -230,11 +229,11 @@ sub add_line {
 
 # Returns the formatted report for the columns and lines added earlier.
 sub get_report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
 
    $self->_calculate_column_widths();
    $self->_truncate_headers() if $self->{truncate_headers};
-   $self->_truncate_line_values();
+   $self->_truncate_line_values(%args);
 
    my @col_fmts = $self->_make_column_formats();
    my $fmt      = ($self->{line_prefix} || '')
@@ -357,7 +356,7 @@ sub _truncate_headers {
 }
 
 sub _truncate_line_values {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $n_vals = $self->{n_cols} - 1;
    foreach my $vals ( @{$self->{lines}} ) {
       for my $i ( 0..$n_vals ) {
@@ -374,7 +373,7 @@ sub _truncate_line_values {
             # If _column_error() dies then we never get here.  If it warns
             # then we truncate the value despite $col->{truncate} being
             # false so the user gets something rather than nothing.
-            my $callback  = $self->{truncate_callback};
+            my $callback    = $args{truncate_callback};
             my $print_width = $col->{print_width};
             $val = $callback ? $callback->($col, $val, $print_width)
                  :             $self->truncate_value($col, $val, $print_width);
