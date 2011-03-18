@@ -1,28 +1,28 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...kit/common/MySQLConfig.pm   90.8   70.0   63.2   88.9    0.0   91.5   79.7
-MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    8.5   95.1
-Total                          93.8   68.8   59.1   93.1    0.0  100.0   83.6
+...unk/common/MySQLConfig.pm   91.7   67.9   58.1   91.7    0.0   97.2   79.4
+MySQLConfig.t                 100.0   50.0   33.3  100.0    n/a    2.8   94.5
+Total                          93.8   66.7   55.9   94.4    0.0  100.0   82.5
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 19:35:13 2010
-Finish:       Thu Jun 24 19:35:13 2010
+Start:        Fri Mar 18 19:14:58 2011
+Finish:       Fri Mar 18 19:14:58 2011
 
 Run:          MySQLConfig.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jun 24 19:35:15 2010
-Finish:       Thu Jun 24 19:35:15 2010
+Start:        Fri Mar 18 19:15:00 2011
+Finish:       Fri Mar 18 19:15:00 2011
 
-/home/daniel/dev/maatkit/common/MySQLConfig.pm
+/home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm
 
 line  err   stmt   bran   cond    sub    pod   time   code
-1                                                     # This program is copyright 2010-@CURRENTYEAR@ Percona Inc.
+1                                                     # This program is copyright 2010-2011 Percona Inc.
 2                                                     # Feedback and improvements are welcome.
 3                                                     #
 4                                                     # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -39,7 +39,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # MySQLConfig package $Revision: 6397 $
+18                                                    # MySQLConfig package $Revision: 7352 $
 19                                                    # ###########################################################################
 20                                                    package MySQLConfig;
 21                                                    
@@ -51,23 +51,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 27                                                    
 28             1                    1             5   use strict;
                1                                  2   
-               1                                 11   
-29             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
+               1                                  7   
+29             1                    1             5   use warnings FATAL => 'all';
+               1                                  3   
                1                                  5   
 30             1                    1             5   use English qw(-no_match_vars);
-               1                                  2   
-               1                                  8   
+               1                                  3   
+               1                                  7   
 31             1                    1             6   use Data::Dumper;
-               1                                  2   
+               1                                  3   
                1                                  7   
 32                                                    $Data::Dumper::Indent    = 1;
 33                                                    $Data::Dumper::Sortkeys  = 1;
 34                                                    $Data::Dumper::Quotekeys = 0;
 35                                                    
-36    ***      1            50      1             7   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+36    ***      1            50      1             6   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                1                                  2   
-               1                                 18   
+               1                                 15   
 37                                                    
 38                                                    my %undef_for = (
 39                                                       'log'                         => 'OFF',
@@ -92,292 +92,419 @@ line  err   stmt   bran   cond    sub    pod   time   code
 58                                                    );
 59                                                    
 60                                                    sub new {
-61    ***      3                    3      0     16      my ( $class, %args ) = @_;
-62                                                    
-63             3                                 30      my $self = {
-64                                                          # defaults
-65                                                          defaults_file  => undef,
-66                                                          version        => '',
-67                                                    
-68                                                          # override defaults
-69                                                          %args,
-70                                                    
-71                                                          # private
-72                                                          default_defaults_files => [],
-73                                                          duplicate_vars         => {},
-74                                                          config                 => {},
-75                                                       };
+61    ***      6                    6      0     43      my ( $class, %args ) = @_;
+62             6                                 29      my @required_args = qw(source TextResultSetParser);
+63             6                                 23      foreach my $arg ( @required_args ) {
+64    ***     12     50                          61         die "I need a $arg arugment" unless $args{$arg};
+65                                                       }
+66                                                    
+67             6                                 32      my %config_data = parse_config(%args);
+68                                                    
+69             5                                 36      my $self = {
+70                                                          %args,
+71                                                          %config_data,
+72                                                       };
+73                                                    
+74             5                                 53      return bless $self, $class;
+75                                                    }
 76                                                    
-77             3                                 27      return bless $self, $class;
-78                                                    }
-79                                                    
-80                                                    # Returns true if the MySQL config has the given system variable.
-81                                                    sub has {
-82    ***      3                    3      0     12      my ( $self, $var ) = @_;
-83             3                                 22      return exists $self->{config}->{$var};
-84                                                    }
-85                                                    
-86                                                    # Returns the value for the given system variable.  Returns its
-87                                                    # online/effective value by default.
-88                                                    sub get {
-89    ***      6                    6      0     30      my ( $self, $var ) = @_;
-90    ***      6     50                          27      return unless $var;
-91             6                                 44      return $self->{config}->{$var};
-92                                                    }
-93                                                    
-94                                                    # Returns the whole hashref of config vals.
-95                                                    sub get_config {
-96    ***      2                    2      0     12      my ( $self, %args ) = @_;
-97             2                                194      return $self->{config};
-98                                                    }
-99                                                    
-100                                                   sub get_duplicate_variables {
-101   ***      1                    1      0      4      my ( $self ) = @_;
-102            1                                  9      return $self->{duplicate_vars};
-103                                                   }
-104                                                   
-105                                                   sub version {
-106   ***      0                    0      0      0      my ( $self ) = @_;
-107   ***      0                                  0      return $self->{version};
-108                                                   }
-109                                                   
-110                                                   # Arguments:
-111                                                   #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
-112                                                   #   when from=mysqld or my_print_defaults:
-113                                                   #     * file    scalar: get output from file, or
-114                                                   #     * fh      scalar: get output from fh
-115                                                   #   when from=show_variables:
-116                                                   #     * dbh     obj: get SHOW VARIABLES from dbh, or
-117                                                   #     * rows    arrayref: get SHOW VARIABLES from rows
-118                                                   # Sets the offline or online config values from the given source.
-119                                                   # Returns nothing.
-120                                                   sub set_config {
-121   ***      6                    6      0     42      my ( $self, %args ) = @_;
-122            6                                 27      foreach my $arg ( qw(from) ) {
-123   ***      6     50                          35         die "I need a $arg argument" unless $args{$arg};
-124                                                      }
-125            6                                 21      my $from = $args{from};
-126            6                                 21      MKDEBUG && _d('Set config', Dumper(\%args));
-127                                                   
-128            6    100    100                   77      if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
-      ***            50                               
-129   ***      3     50     33                   34         die "Setting the MySQL config from $from requires a "
-      ***                   33                        
-130                                                               . "cmd, file, or fh argument"
-131                                                            unless $args{cmd} || $args{file} || $args{fh};
-132                                                   
-133            3                                  9         my $output;
-134            3                                  9         my $fh = $args{fh};
-135   ***      3     50                          13         if ( $args{file} ) {
-136            3    100                          88            open $fh, '<', $args{file}
-137                                                               or die "Cannot open $args{file}: $OS_ERROR";
-138                                                         }
-139   ***      2     50                           9         if ( $fh ) {
-140            2                                  6            $output = do { local $/ = undef; <$fh> };
-               2                                 10   
-               2                              11898   
-141                                                         }
-142                                                   
-143            2                                  9         my ($config, $dupes, $ddf);
-144            2    100                          22         if ( $from eq 'mysqld' ) {
-      ***            50                               
-145            1                                  5            ($config, $ddf) = $self->parse_mysqld($output);
-146                                                         }
-147                                                         elsif ( $from eq 'my_print_defaults' ) {
-148            1                                 11            ($config, $dupes) = $self->parse_my_print_defaults($output);
-149                                                         }
-150                                                   
-151   ***      2     50                          10         die "Failed to parse MySQL config from $from" unless $config;
-152            2                                  8         $self->{config}                 = $config;
-153            2    100                          12         $self->{default_defaults_files} = $ddf   if $ddf;
-154            2    100                           7         $self->{duplicate_vars}         = $dupes if $dupes;
-155                                                      }
-156                                                      elsif ( $args{from} eq 'show_variables' ) {
-157   ***      3     50     66                   26         die "Setting the MySQL config from $from requires a "
-158                                                               . "dbh or rows argument"
-159                                                            unless $args{dbh} || $args{rows};
-160                                                   
-161            3                                 10         my $rows = $args{rows};
-162            3    100                          13         if ( $args{dbh} ) {
-163            1                                  6            $rows = $self->_show_variables($args{dbh});
-164   ***      1     50                          15            $self->_set_version($args{dbh}) unless $self->{version};
-165                                                         }
-166   ***      3     50                          15         if ( $rows ) {
-167            3                                 15            my %config = map { @$_ } @$rows;
-             542                               2474   
-168            3                                185            $self->{config} = \%config;
-169                                                         }
-170                                                      }
-171                                                      else {
-172   ***      0                                  0         die "I don't know how to set the MySQL config from $from";
-173                                                      }
-174            5                                124      return;
-175                                                   }
-176                                                   
-177                                                   # Parse "mysqld --help --verbose" and return a hashref of variable=>values
-178                                                   # and an arrayref of default defaults files if possible.  The "default
-179                                                   # defaults files" are the defaults file that mysqld reads by default if no
-180                                                   # defaults file is explicitly given by --default-file.
-181                                                   sub parse_mysqld {
-182   ***      1                    1      0     94      my ( $self, $output ) = @_;
-183   ***      1     50                           5      return unless $output;
-184                                                   
-185                                                      # First look for the list of default defaults files like
-186                                                      #   Default options are read from the following files in the given order:
-187                                                      #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
-188            1                                  3      my @ddf;
-189   ***      1     50                          11      if ( $output =~ m/^Default options are read.+\n/mg ) {
-190            1                                 54         my ($ddf) = $output =~ m/\G^(.+)\n/m;
-191            1                                  3         my %seen;
-192            1                                  7         my @ddf = grep { !$seen{$_} } split(' ', $ddf);
-               3                                 13   
-193            1                                  4         MKDEBUG && _d('Default defaults files:', @ddf);
-194                                                      }
-195                                                      else {
-196   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list default defaults files");
-197                                                      }
-198                                                   
-199                                                      # The list of sys vars and their default vals begins like:
-200                                                      #   Variables (--variable-name=value)
-201                                                      #   and boolean options {FALSE|TRUE}  Value (after reading options)
-202                                                      #   --------------------------------- -----------------------------
-203                                                      #   help                              TRUE
-204                                                      #   abort-slave-event-count           0
-205                                                      # So we search for that line of hypens.
-206   ***      1     50                         711      if ( $output !~ m/^-+ -+$/mg ) {
-207   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list vars and vals");
-208   ***      0                                  0         return;
-209                                                      }
-210                                                   
-211                                                      # Cut off everything before the list of vars and vals.
-212            1                                 10      my $varvals = substr($output, (pos $output) + 1, length $output);
-213                                                   
-214                                                      # Parse the "var  val" lines.  2nd retval is duplicates but there
-215                                                      # shouldn't be any with mysqld.
-216            1                                236      my ($config, undef) = $self->_parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
-217                                                   
-218            1                                 35      return $config, \@ddf;
-219                                                   }
-220                                                   
-221                                                   # Parse "my_print_defaults" output and return a hashref of variable=>values
-222                                                   # and a hashref of any duplicated variables.
-223                                                   sub parse_my_print_defaults {
-224   ***      1                    1      0      9      my ( $self, $output ) = @_;
-225   ***      1     50                           9      return unless $output;
-226                                                   
-227                                                      # Parse the "--var=val" lines.
-228           18                                122      my ($config, $dupes) = $self->_parse_varvals(
-229            1                                 19         map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
-230                                                      );
-231                                                   
-232            1                                  9      return $config, $dupes;
-233                                                   }
-234                                                   
-235                                                   # Parses a list of variables and their values ("varvals"), returns two
-236                                                   # hashrefs: one with normalized variable=>value, the other with duplicate
-237                                                   # vars.  The varvals list should start with a var at index 0 and its value
-238                                                   # at index 1 then repeat for the next var-val pair.  
-239                                                   sub _parse_varvals {
-240            2                    2           249      my ( $self, @varvals ) = @_;
-241                                                   
-242                                                      # Config built from parsing the given varvals.
-243            2                                 34      my %config;
-244                                                   
-245                                                      # Discover duplicate vars.  
-246            2                                  6      my $duplicate_var = 0;
-247            2                                  5      my %duplicates;
-248                                                   
-249                                                      # Keep track if item is var or val because each needs special modifications.
-250            2                                  6      my $var      = 1;
-251            2                                  6      my $last_var = undef;
-252            2                                  8      foreach my $item ( @varvals ) {
-253          552    100                        1599         if ( $var ) {
-254                                                            # Variable names via config files are like "log-bin" but
-255                                                            # via SHOW VARIABLES they're like "log_bin".
-256          276                                987            $item =~ s/-/_/g;
-257                                                   
-258                                                            # If this var exists in the offline config already, then
-259                                                            # its a duplicate.  Its original value will be saved before
-260                                                            # being overwritten with the new value.
-261   ***    276    100     66                 1301            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
-262            4                                  9               MKDEBUG && _d("Duplicate var:", $item);
-263            4                                 10               $duplicate_var = 1;
-264                                                            }
-265                                                   
-266          276                                688            $var      = 0;  # next item should be the val for this var
-267          276                                845            $last_var = $item;
-268                                                         }
-269                                                         else {
-270          276    100                         910            if ( $item ) {
-271          275                                858               $item =~ s/^\s+//;
-272                                                   
-273          275    100                        1595               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
+77                                                    sub parse_config {
+78    ***      6                    6      0     32      my ( %args ) = @_;
+79             6                                 25      my @required_args = qw(source TextResultSetParser);
+80             6                                 21      foreach my $arg ( @required_args ) {
+81    ***     12     50                          57         die "I need a $arg arugment" unless $args{$arg};
+82                                                       }
+83             6                                 28      my ($source) = @args{@required_args};
+84                                                    
+85             6                                 13      my %config_data;
+86             6    100    100                  148      if ( -f $source ) {
+      ***           100     66                        
                     100                               
-274            3                                 16                  my %factor_for = (
-275                                                                     k => 1_024,
-276                                                                     m => 1_048_576,
-277                                                                     g => 1_073_741_824,
-278                                                                     t => 1_099_511_627_776,
-279                                                                  );
-280            3                                 17                  $item = $num * $factor_for{lc $factor};
-281                                                               }
-282                                                               elsif ( $item =~ m/No default/ ) {
-283           37                                113                  $item = undef;
-284                                                               }
-285                                                            }
-286                                                   
-287          276    100    100                 1117            $item = $undef_for{$last_var} || '' unless defined $item;
-288                                                   
-289          276    100                         953            if ( $duplicate_var ) {
-290                                                               # Save var's original value before overwritng with this new value.
-291            4                                  8               push @{$duplicates{$last_var}}, $config{$last_var};
-               4                                 22   
-292            4                                 12               $duplicate_var = 0;
-293                                                            }
-294                                                   
-295                                                            # Save this var-val.
-296          276                               1024            $config{$last_var} = $item;
+87             3                                 17         %config_data = parse_config_from_file(%args);
+88                                                       }
+89                                                       elsif ( ref $source && ref $source eq 'ARRAY' ) {
+90             1                                  4         $config_data{type} = 'show_variables';
+91             1                                  4         $config_data{vars} = { map { @$_ } @$source };
+               2                                 10   
+92                                                       }
+93                                                       elsif ( ref $source && (ref $source) =~ m/DBI/i ) {
+94             1                                  4         $config_data{type} = 'show_variables';
+95             1                                  3         my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
+96             1                                  2         MKDEBUG && _d($source, $sql);
+97             1                                  3         my $rows = $source->selectall_arrayref($sql);
+98             1                               1779         $config_data{vars} = { map { @$_ } @$rows };
+             270                               1019   
+99             1                                 29         $config_data{mysql_version} = _get_version($source);
+100                                                      }
+101                                                      else {
+102            1                                  3         die "Unknown or invalid source: $source";
+103                                                      }
+104                                                   
+105            5                                 51      return %config_data;
+106                                                   }
+107                                                   
+108                                                   sub parse_config_from_file {
+109   ***      3                    3      0     15      my ( %args ) = @_;
+110            3                                 14      my @required_args = qw(source TextResultSetParser);
+111            3                                 10      foreach my $arg ( @required_args ) {
+112   ***      6     50                          30         die "I need a $arg arugment" unless $args{$arg};
+113                                                      }
+114            3                                 14      my ($source) = @args{@required_args};
+115                                                   
+116   ***      3            33                   32      my $type = $args{type} || detect_source_type(%args);
+117   ***      3     50                          38      if ( !$type ) {
+118   ***      0                                  0         die "Cannot auto-detect the type of MySQL config data in $source"
+119                                                      }
+120                                                   
+121            3                                  8      my $vars;      # variables hashref
+122            3                                  7      my $dupes;     # duplicate vars hashref
+123            3                                  6      my $opt_files; # option files arrayref
+124   ***      3     50                          23      if ( $type eq 'show_variables' ) {
+                    100                               
+                    100                               
+      ***            50                               
+125   ***      0                                  0         $vars = parse_show_variables(%args);
+126                                                      }
+127                                                      elsif ( $type eq 'mysqld' ) {
+128            1                                  8         ($vars, $opt_files) = parse_mysqld(%args);
+129                                                      }
+130                                                      elsif ( $type eq 'my_print_defaults' ) {
+131            1                                  8         ($vars, $dupes) = parse_my_print_defaults(%args);
+132                                                      }
+133                                                      elsif ( $type eq 'option_file' ) {
+134            1                                  9         ($vars, $dupes) = parse_option_file(%args);
+135                                                      }
+136                                                      else {
+137   ***      0                                  0         die "Invalid type of MySQL config data in $source: $type"
+138                                                      }
+139                                                   
+140   ***      3     50     33                   57      die "Failed to parse MySQL config data from $source"
+141                                                         unless $vars && keys %$vars;
+142                                                   
+143                                                      return (
+144            3                                 31         type           => $type,
+145                                                         vars           => $vars,
+146                                                         option_files   => $opt_files,
+147                                                         duplicate_vars => $dupes,
+148                                                      );
+149                                                   }
+150                                                   
+151                                                   sub detect_source_type {
+152   ***      3                    3      0     17      my ( %args ) = @_;
+153            3                                 13      my @required_args = qw(source);
+154            3                                 12      foreach my $arg ( @required_args ) {
+155   ***      3     50                          17         die "I need a $arg arugment" unless $args{$arg};
+156                                                      }
+157            3                                 12      my ($source) = @args{@required_args};
+158                                                   
+159            3                                  7      MKDEBUG && _d("Detecting type of output in", $source);
+160   ***      3     50                          96      open my $fh, '<', $source or die "Cannot open $source: $OS_ERROR";
+161            3                                  7      my $type;
+162            3                                 66      while ( defined(my $line = <$fh>) ) {
+163           26                                 58         MKDEBUG && _d($line);
+164   ***     26     50     33                  585         if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
+      ***           100     33                        
+      ***           100     66                        
+      ***           100     66                        
+165                                                              || $line =~ m/\*+ \d/
+166                                                              || $line =~ m/Variable_name:\s+\w+/ )
+167                                                         {
+168   ***      0                                  0            MKDEBUG && _d('show variables config line');
+169   ***      0                                  0            $type = 'show_variables';
+170   ***      0                                  0            last;
+171                                                         }
+172                                                         elsif ( $line =~ m/^--\w+/ ) {
+173            1                                 10            MKDEBUG && _d('my_print_defaults config line');
+174            1                                  4            $type = 'my_print_defaults';
+175            1                                  4            last;
+176                                                         }
+177                                                         elsif ( $line =~ m/^\s*\[[a-zA-Z]+\]\s*$/ ) {
+178            1                                  3            MKDEBUG && _d('option file config line');
+179            1                                  5            $type = 'option_file',
+180                                                            last;
+181                                                         }
+182                                                         elsif (    $line =~ m/Starts the MySQL database server/
+183                                                                 || $line =~ m/Default options are read from /
+184                                                                 || $line =~ m/^help\s+TRUE / )
+185                                                         {
+186            1                                  3            MKDEBUG && _d('mysqld config line');
+187            1                                  3            $type = 'mysqld';
+188            1                                  4            last;
+189                                                         }
+190                                                      }
+191            3                                 26      close $fh;
+192            3                                 10      return $type;
+193                                                   }
+194                                                   
+195                                                   sub parse_show_variables {
+196   ***      1                    1      0      7      my ( %args ) = @_;
+197            1                                 11      my @required_args = qw(source TextResultSetParser);
+198            1                                  4      foreach my $arg ( @required_args ) {
+199   ***      2     50                          11         die "I need a $arg arugment" unless $args{$arg};
+200                                                      }
+201            1                                  5      my ($source, $trp) = @args{@required_args};
+202            1                                  4      my $output         = _slurp_file($source);
+203   ***      1     50                          11      return unless $output;
+204                                                   
+205          240                              15403      my %config = map {
+206            1                                  6         $_->{Variable_name} => $_->{Value}
+207            1                                  4      } @{ $trp->parse($output) };
+208                                                   
+209            1                                307      return \%config;
+210                                                   }
+211                                                   
+212                                                   # Parse "mysqld --help --verbose" and return a hashref of variable=>values
+213                                                   # and an arrayref of default defaults files if possible.  The "default
+214                                                   # defaults files" are the defaults file that mysqld reads by default if no
+215                                                   # defaults file is explicitly given by --default-file.
+216                                                   sub parse_mysqld {
+217   ***      1                    1      0      6      my ( %args ) = @_;
+218            1                                  4      my @required_args = qw(source);
+219            1                                  4      foreach my $arg ( @required_args ) {
+220   ***      1     50                           7         die "I need a $arg arugment" unless $args{$arg};
+221                                                      }
+222            1                                  4      my ($source) = @args{@required_args};
+223            1                                  4      my $output   = _slurp_file($source);
+224   ***      1     50                           9      return unless $output;
+225                                                   
+226                                                      # First look for the list of option files like
+227                                                      #   Default options are read from the following files in the given order:
+228                                                      #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
+229            1                                  3      my @opt_files;
+230   ***      1     50                          11      if ( $output =~ m/^Default options are read.+\n/mg ) {
+231            1                                 57         my ($opt_files) = $output =~ m/\G^(.+)\n/m;
+232            1                                  3         my %seen;
+233            1                                  8         my @opt_files = grep { !$seen{$_} } split(' ', $opt_files);
+               3                                 13   
+234            1                                  4         MKDEBUG && _d('Option files:', @opt_files);
+235                                                      }
+236                                                      else {
+237   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list option files");
+238                                                      }
+239                                                   
+240                                                      # The list of sys vars and their default vals begins like:
+241                                                      #   Variables (--variable-name=value)
+242                                                      #   and boolean options {FALSE|TRUE}  Value (after reading options)
+243                                                      #   --------------------------------- -----------------------------
+244                                                      #   help                              TRUE
+245                                                      #   abort-slave-event-count           0
+246                                                      # So we search for that line of hypens.
+247   ***      1     50                         688      if ( $output !~ m/^-+ -+$/mg ) {
+248   ***      0                                  0         MKDEBUG && _d("mysqld help output doesn't list vars and vals");
+249   ***      0                                  0         return;
+250                                                      }
+251                                                   
+252                                                      # Cut off everything before the list of vars and vals.
+253            1                                 12      my $varvals = substr($output, (pos $output) + 1, length $output);
+254                                                   
+255                                                      # Parse the "var  val" lines.  2nd retval is duplicates but there
+256                                                      # shouldn't be any with mysqld.
+257            1                                246      my ($config, undef) = _parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+258                                                   
+259            1                                 42      return $config, \@opt_files;
+260                                                   }
+261                                                   
+262                                                   # Parse "my_print_defaults" output and return a hashref of variable=>values
+263                                                   # and a hashref of any duplicated variables.
+264                                                   sub parse_my_print_defaults {
+265   ***      1                    1      0      6      my ( %args ) = @_;
+266            1                                  5      my @required_args = qw(source);
+267            1                                  7      foreach my $arg ( @required_args ) {
+268   ***      1     50                           6         die "I need a $arg arugment" unless $args{$arg};
+269                                                      }
+270            1                                  4      my ($source) = @args{@required_args};
+271            1                                  5      my $output   = _slurp_file($source);
+272   ***      1     50                           9      return unless $output;
+273                                                   
+274                                                      # Parse the "--var=val" lines.
+275           18                                 87      my ($config, $dupes) = _parse_varvals(
+276            1                                 10         map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
+277                                                      );
+278                                                   
+279            1                                  8      return $config, $dupes;
+280                                                   }
+281                                                   
+282                                                   # Parse the [mysqld] section of an option file and return a hashref of
+283                                                   # variable=>values and a hashref of any duplicated variables.
+284                                                   sub parse_option_file {
+285   ***      1                    1      0      6      my ( %args ) = @_;
+286            1                                  5      my @required_args = qw(source);
+287            1                                  3      foreach my $arg ( @required_args ) {
+288   ***      1     50                           7         die "I need a $arg arugment" unless $args{$arg};
+289                                                      }
+290            1                                  5      my ($source) = @args{@required_args};
+291            1                                  5      my $output   = _slurp_file($source);
+292   ***      1     50                           9      return unless $output;
+293                                                   
+294            1                                141      my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)^(?:\[\w+\]|\Z)/xms;
+295   ***      1     50                           6      die "Failed to parse the [mysqld] section from $source"
+296                                                         unless $mysqld_section;
 297                                                   
-298          276                                848            $var = 1;  # next item should be a var
-299                                                         }
-300                                                      }
-301                                                   
-302            2                                 50      return \%config, \%duplicates;
-303                                                   }
+298                                                      # Parse the "var=val" lines.
+299           22                                103      my ($config, $dupes) = _parse_varvals(
+300           89                                335         map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
+301            1                                 27         grep { $_ !~ m/^\s*#/ }  # no # comment lines
+302                                                         split("\n", $mysqld_section)
+303                                                      );
 304                                                   
-305                                                   sub _show_variables {
-306            1                    1             5      my ( $self, $dbh ) = @_;
-307            1                                  3      my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
-308            1                                  3      MKDEBUG && _d($dbh, $sql);
-309            1                                  2      my $rows = $dbh->selectall_arrayref($sql);
-310            1                               1776      return $rows;
-311                                                   }
-312                                                   
-313                                                   sub _set_version {
-314            1                    1             4      my ( $self, $dbh ) = @_;
-315            1                                  3      my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
-316   ***      1     50                         151      return unless $version;
-317            1                                 26      $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
-318            1                                  4      MKDEBUG && _d('MySQL version', $version);
-319            1                                  4      $self->{version} = $version;
-320            1                                  4      return;
-321                                                   }
-322                                                   
-323                                                   sub _d {
-324   ***      0                    0                    my ($package, undef, $line) = caller 0;
-325   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-326   ***      0                                              map { defined $_ ? $_ : 'undef' }
-327                                                           @_;
-328   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-329                                                   }
+305            1                                 17      return $config, $dupes;
+306                                                   }
+307                                                   
+308                                                   # Parses a list of variables and their values ("varvals"), returns two
+309                                                   # hashrefs: one with normalized variable=>value, the other with duplicate
+310                                                   # vars.  The varvals list should start with a var at index 0 and its value
+311                                                   # at index 1 then repeat for the next var-val pair.  
+312                                                   sub _parse_varvals {
+313            3                    3           209      my ( @varvals ) = @_;
+314                                                   
+315                                                      # Config built from parsing the given varvals.
+316            3                                 38      my %config;
+317                                                   
+318                                                      # Discover duplicate vars.  
+319            3                                 10      my $duplicate_var = 0;
+320            3                                  7      my %duplicates;
+321                                                   
+322                                                      # Keep track if item is var or val because each needs special modifications.
+323            3                                  9      my $var      = 1;
+324            3                                  8      my $last_var = undef;
+325            3                                 12      foreach my $item ( @varvals ) {
+326          590    100                        2003         if ( $item ) {
+327          587                               1759            $item =~ s/^\s+//;  # strip leading whitespace
+328          587                               1664            $item =~ s/\s+$//;  # strip trailing whitespace
+329                                                         }
 330                                                   
-331                                                   1;
-332                                                   
-333                                                   # ###########################################################################
-334                                                   # End MySQLConfig package
-335                                                   # ###########################################################################
+331          590    100                        1743         if ( $var ) {
+332                                                            # Variable names via config files are like "log-bin" but
+333                                                            # via SHOW VARIABLES they're like "log_bin".
+334          295                                914            $item =~ s/-/_/g;
+335                                                   
+336                                                            # If this var exists in the offline config already, then
+337                                                            # its a duplicate.  Its original value will be saved before
+338                                                            # being overwritten with the new value.
+339   ***    295    100     66                 1430            if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
+340            4                                 58               MKDEBUG && _d("Duplicate var:", $item);
+341            4                                 12               $duplicate_var = 1;
+342                                                            }
+343                                                   
+344          295                                731            $var      = 0;  # next item should be the val for this var
+345          295                                924            $last_var = $item;
+346                                                         }
+347                                                         else {
+348          295    100                         973            if ( $item ) {
+349          266                                731               $item =~ s/^\s+//;
+350                                                   
+351          266    100                        1580               if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
+                    100                               
+352            9                                 41                  my %factor_for = (
+353                                                                     k => 1_024,
+354                                                                     m => 1_048_576,
+355                                                                     g => 1_073_741_824,
+356                                                                     t => 1_099_511_627_776,
+357                                                                  );
+358            9                                 46                  $item = $num * $factor_for{lc $factor};
+359                                                               }
+360                                                               elsif ( $item =~ m/No default/ ) {
+361           37                                111                  $item = undef;
+362                                                               }
+363                                                            }
+364                                                   
+365          295    100    100                 1183            $item = $undef_for{$last_var} || '' unless defined $item;
+366                                                   
+367          295    100                         959            if ( $duplicate_var ) {
+368                                                               # Save var's original value before overwritng with this new value.
+369            4                                 10               push @{$duplicates{$last_var}}, $config{$last_var};
+               4                                 22   
+370            4                                 13               $duplicate_var = 0;
+371                                                            }
+372                                                   
+373                                                            # Save this var-val.
+374          295                               1050            $config{$last_var} = $item;
+375                                                   
+376          295                                916            $var = 1;  # next item should be a var
+377                                                         }
+378                                                      }
+379                                                   
+380            3                                 62      return \%config, \%duplicates;
+381                                                   }
+382                                                   
+383                                                   sub _slurp_file {
+384            4                    4            18      my ( $file ) = @_;
+385   ***      4     50                          17      die "I need a file argument" unless $file;
+386   ***      4     50                         113      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+387            4                                 12      my $contents = do { local $/ = undef; <$fh> };
+               4                                 23   
+               4                                276   
+388            4                                 28      close $fh;
+389            4                                 11      return $contents;
+390                                                   }
+391                                                   
+392                                                   sub _get_version {
+393            1                    1             4      my ( $dbh ) = @_;
+394   ***      1     50                           5      return unless $dbh;
+395            1                                  3      my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
+396            1                                249      $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
+397            1                                  4      MKDEBUG && _d('MySQL version', $version);
+398            1                                 65      return $version;
+399                                                   }
+400                                                   
+401                                                   # #############################################################################
+402                                                   # Accessor methods.
+403                                                   # #############################################################################
+404                                                   
+405                                                   # Returns true if this MySQLConfig obj has the given variable.
+406                                                   sub has {
+407   ***      3                    3      0     13      my ( $self, $var ) = @_;
+408            3                                 21      return exists $self->{vars}->{$var};
+409                                                   }
+410                                                   
+411                                                   # Returns the value for the given variable.
+412                                                   sub get {
+413   ***      5                    5      0     23      my ( $self, $var ) = @_;
+414   ***      5     50                          22      return unless $var;
+415            5                                 34      return $self->{vars}->{$var};
+416                                                   }
+417                                                   
+418                                                   # Returns all variables-values.
+419                                                   sub get_variables {
+420   ***      3                    3      0     14      my ( $self, %args ) = @_;
+421            3                                204      return $self->{vars};
+422                                                   }
+423                                                   
+424                                                   sub get_duplicate_variables {
+425   ***      1                    1      0      4      my ( $self ) = @_;
+426            1                                  8      return $self->{duplicate_vars};
+427                                                   }
+428                                                   
+429                                                   sub get_option_files {
+430   ***      0                    0      0      0      my ( $self ) = @_;
+431   ***      0                                  0      return $self->{option_files};
+432                                                   }
+433                                                   
+434                                                   sub get_mysql_version {
+435   ***      1                    1      0      4      my ( $self ) = @_;
+436            1                                 11      return $self->{mysql_version};
+437                                                   }
+438                                                   
+439                                                   sub get_type {
+440   ***      5                    5      0     21      my ( $self ) = @_;
+441            5                                 36      return $self->{type};
+442                                                   }
+443                                                   
+444                                                   sub _d {
+445   ***      0                    0                    my ($package, undef, $line) = caller 0;
+446   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+      ***      0                                      
+      ***      0                                      
+447   ***      0                                              map { defined $_ ? $_ : 'undef' }
+448                                                           @_;
+449   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+450                                                   }
+451                                                   
+452                                                   1;
+453                                                   
+454                                                   # ###########################################################################
+455                                                   # End MySQLConfig package
+456                                                   # ###########################################################################
 
 
 Branches
@@ -385,36 +512,48 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-90    ***     50      0      6   unless $var
-123   ***     50      0      6   unless $args{$arg}
-128          100      3      3   if ($from eq 'mysqld' or $from eq 'my_print_defaults') { }
-      ***     50      3      0   elsif ($args{'from'} eq 'show_variables') { }
-129   ***     50      0      3   unless $args{'cmd'} or $args{'file'} or $args{'fh'}
-135   ***     50      3      0   if ($args{'file'})
-136          100      1      2   unless open $fh, '<', $args{'file'}
-139   ***     50      2      0   if ($fh)
-144          100      1      1   if ($from eq 'mysqld') { }
-      ***     50      1      0   elsif ($from eq 'my_print_defaults') { }
-151   ***     50      0      2   unless $config
-153          100      1      1   if $ddf
-154          100      1      1   if $dupes
-157   ***     50      0      3   unless $args{'dbh'} or $args{'rows'}
-162          100      1      2   if ($args{'dbh'})
-164   ***     50      1      0   unless $$self{'version'}
-166   ***     50      3      0   if ($rows)
-183   ***     50      0      1   unless $output
-189   ***     50      1      0   if ($output =~ /^Default options are read.+\n/gm) { }
-206   ***     50      0      1   if (not $output =~ /^-+ -+$/gm)
-225   ***     50      0      1   unless $output
-253          100    276    276   if ($var) { }
-261          100      4    272   if (exists $config{$item} and not $can_be_duplicate{$item})
-270          100    275      1   if ($item)
-273          100      3    272   if (my($num, $factor) = $item =~ /(\d+)([kmgt])$/i) { }
-             100     37    235   elsif ($item =~ /No default/) { }
-287          100     38    238   unless defined $item
-289          100      4    272   if ($duplicate_var)
-316   ***     50      0      1   unless $version
-325   ***      0      0      0   defined $_ ? :
+64    ***     50      0     12   unless $args{$arg}
+81    ***     50      0     12   unless $args{$arg}
+86           100      3      3   if (-f $source) { }
+             100      1      2   elsif (ref $source and ref $source eq 'ARRAY') { }
+             100      1      1   elsif (ref $source and ref($source) =~ /DBI/i) { }
+112   ***     50      0      6   unless $args{$arg}
+117   ***     50      0      3   if (not $type)
+124   ***     50      0      3   if ($type eq 'show_variables') { }
+             100      1      2   elsif ($type eq 'mysqld') { }
+             100      1      1   elsif ($type eq 'my_print_defaults') { }
+      ***     50      1      0   elsif ($type eq 'option_file') { }
+140   ***     50      0      3   unless $vars and keys %$vars
+155   ***     50      0      3   unless $args{$arg}
+160   ***     50      0      3   unless open my $fh, '<', $source
+164   ***     50      0     26   if ($line =~ /\|\s+\w+\s+\|\s+.+?\|/ or $line =~ /\*+ \d/ or $line =~ /Variable_name:\s+\w+/) { }
+             100      1     25   elsif ($line =~ /^--\w+/) { }
+             100      1     24   elsif ($line =~ /^\s*\[[a-zA-Z]+\]\s*$/) { }
+             100      1     23   elsif ($line =~ /Starts the MySQL database server/ or $line =~ /Default options are read from / or $line =~ /^help\s+TRUE /) { }
+199   ***     50      0      2   unless $args{$arg}
+203   ***     50      0      1   unless $output
+220   ***     50      0      1   unless $args{$arg}
+224   ***     50      0      1   unless $output
+230   ***     50      1      0   if ($output =~ /^Default options are read.+\n/gm) { }
+247   ***     50      0      1   if (not $output =~ /^-+ -+$/gm)
+268   ***     50      0      1   unless $args{$arg}
+272   ***     50      0      1   unless $output
+288   ***     50      0      1   unless $args{$arg}
+292   ***     50      0      1   unless $output
+295   ***     50      0      1   unless $mysqld_section
+326          100    587      3   if ($item)
+331          100    295    295   if ($var) { }
+339          100      4    291   if (exists $config{$item} and not $can_be_duplicate{$item})
+348          100    266     29   if ($item)
+351          100      9    257   if (my($num, $factor) = $item =~ /(\d+)([kmgt])$/i) { }
+             100     37    220   elsif ($item =~ /No default/) { }
+365          100     40    255   unless defined $item
+367          100      4    291   if ($duplicate_var)
+385   ***     50      0      4   unless $file
+386   ***     50      0      4   unless open my $fh, '<', $file
+394   ***     50      0      1   unless $dbh
+414   ***     50      0      5   unless $var
+446   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -424,54 +563,64 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-261   ***     66    272      0      4   exists $config{$item} and not $can_be_duplicate{$item}
+86           100      1      1      1   ref $source and ref $source eq 'ARRAY'
+      ***     66      1      0      1   ref $source and ref($source) =~ /DBI/i
+140   ***     33      0      0      3   $vars and keys %$vars
+339   ***     66    291      0      4   exists $config{$item} and not $can_be_duplicate{$item}
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
 36    ***     50      0      1   $ENV{'MKDEBUG'} || 0
-287          100      4     34   $undef_for{$last_var} || ''
+365          100      5     35   $undef_for{$last_var} || ''
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-128          100      2      1      3   $from eq 'mysqld' or $from eq 'my_print_defaults'
-129   ***     33      0      3      0   $args{'cmd'} or $args{'file'}
-      ***     33      3      0      0   $args{'cmd'} or $args{'file'} or $args{'fh'}
-157   ***     66      1      2      0   $args{'dbh'} or $args{'rows'}
+116   ***     33      0      3      0   $args{'type'} || detect_source_type(%args)
+164   ***     33      0      0     26   $line =~ /\|\s+\w+\s+\|\s+.+?\|/ or $line =~ /\*+ \d/
+      ***     33      0      0     26   $line =~ /\|\s+\w+\s+\|\s+.+?\|/ or $line =~ /\*+ \d/ or $line =~ /Variable_name:\s+\w+/
+      ***     66      1      0     23   $line =~ /Starts the MySQL database server/ or $line =~ /Default options are read from /
+      ***     66      1      0     23   $line =~ /Starts the MySQL database server/ or $line =~ /Default options are read from / or $line =~ /^help\s+TRUE /
 
 
 Covered Subroutines
 -------------------
 
-Subroutine              Count Pod Location                                          
------------------------ ----- --- --------------------------------------------------
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:28 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:29 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:30 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:31 
-BEGIN                       1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:36 
-_parse_varvals              2     /home/daniel/dev/maatkit/common/MySQLConfig.pm:240
-_set_version                1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:314
-_show_variables             1     /home/daniel/dev/maatkit/common/MySQLConfig.pm:306
-get                         6   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:89 
-get_config                  2   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:96 
-get_duplicate_variables     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:101
-has                         3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:82 
-new                         3   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:61 
-parse_my_print_defaults     1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:224
-parse_mysqld                1   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:182
-set_config                  6   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:121
+Subroutine              Count Pod Location                                                
+----------------------- ----- --- --------------------------------------------------------
+BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:28 
+BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:29 
+BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:30 
+BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:31 
+BEGIN                       1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:36 
+_get_version                1     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:393
+_parse_varvals              3     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:313
+_slurp_file                 4     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:384
+detect_source_type          3   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:152
+get                         5   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:413
+get_duplicate_variables     1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:425
+get_mysql_version           1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:435
+get_type                    5   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:440
+get_variables               3   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:420
+has                         3   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:407
+new                         6   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:61 
+parse_config                6   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:78 
+parse_config_from_file      3   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:109
+parse_my_print_defaults     1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:265
+parse_mysqld                1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:217
+parse_option_file           1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:285
+parse_show_variables        1   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:196
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine              Count Pod Location                                          
------------------------ ----- --- --------------------------------------------------
-_d                          0     /home/daniel/dev/maatkit/common/MySQLConfig.pm:324
-version                     0   0 /home/daniel/dev/maatkit/common/MySQLConfig.pm:106
+Subroutine              Count Pod Location                                                
+----------------------- ----- --- --------------------------------------------------------
+_d                          0     /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:445
+get_option_files            0   0 /home/daniel/dev/maatkit/trunk/common/MySQLConfig.pm:430
 
 
 MySQLConfig.t
@@ -480,424 +629,753 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     #!/usr/bin/perl
 2                                                     
 3                                                     BEGIN {
-4     ***      1     50     33      1            33      die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
-5                                                           unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
-6              1                                  8      unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+4     ***      1     50     33      1            32      die "The MAATKIT_WORKING_COPY environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+5                                                           unless $ENV{MAATKIT_WORKING_COPY} && -d $ENV{MAATKIT_WORKING_COPY};
+6              1                                  8      unshift @INC, "$ENV{MAATKIT_WORKING_COPY}/common";
 7                                                     };
 8                                                     
-9              1                    1            11   use strict;
+9              1                    1            12   use strict;
                1                                  2   
+               1                                  6   
+10             1                    1             6   use warnings FATAL => 'all';
+               1                                  3   
                1                                  5   
-10             1                    1             7   use warnings FATAL => 'all';
-               1                                  2   
-               1                                  5   
-11             1                    1            11   use English qw(-no_match_vars);
+11             1                    1            12   use English qw(-no_match_vars);
                1                                  2   
                1                                  8   
-12             1                    1            11   use Test::More tests => 13;
-               1                                  3   
-               1                                 10   
+12             1                    1            10   use Test::More tests => 20;
+               1                                  4   
+               1                                  9   
 13                                                    
-14             1                    1            13   use MySQLConfig;
-               1                                 91   
-               1                                 12   
+14             1                    1            12   use MySQLConfig;
+               1                                  3   
+               1                                107   
 15             1                    1            11   use DSNParser;
                1                                  3   
                1                                 12   
 16             1                    1            14   use Sandbox;
                1                                  3   
-               1                                 10   
-17             1                    1            12   use MaatkitTest;
-               1                                  5   
-               1                                 39   
-18                                                    
-19             1                                 11   my $dp  = new DSNParser(opts=>$dsn_opts);
-20             1                                239   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-21             1                                 61   my $dbh = $sb->get_dbh_for('master');
-22                                                    
-23             1                    1             6   use Data::Dumper;
-               1                                  3   
-               1                                 22   
-24             1                                396   $Data::Dumper::Indent    = 1;
-25             1                                  4   $Data::Dumper::Sortkeys  = 1;
-26             1                                  3   $Data::Dumper::Quotekeys = 0;
-27                                                    
-28             1                                 13   my $config = new MySQLConfig();
-29                                                    
-30             1                                  3   my $output;
-31             1                                  3   my $sample = "common/t/samples/configs/";
+               1                                  9   
+17             1                    1            10   use TextResultSetParser;
+               1                                  2   
+               1                                 16   
+18             1                    1            10   use MaatkitTest;
+               1                                  4   
+               1                                 37   
+19                                                    
+20             1                                 12   my $dp  = new DSNParser(opts=>$dsn_opts);
+21             1                                251   my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+22             1                                 55   my $dbh = $sb->get_dbh_for('master');
+23                                                    
+24             1                    1             7   use Data::Dumper;
+               1                                  2   
+               1                                  6   
+25             1                                  4   $Data::Dumper::Indent    = 1;
+26             1                                  4   $Data::Dumper::Sortkeys  = 1;
+27             1                                  4   $Data::Dumper::Quotekeys = 0;
+28                                                    
+29             1                                  3   my $output;
+30             1                                  4   my $sample = "common/t/samples/configs/";
+31             1                                  9   my $trp    = new TextResultSetParser();
 32                                                    
 33                                                    throws_ok(
 34                                                       sub {
-35             1                    1            19         $config->set_config(from=>'mysqld', file=>"fooz");
-36                                                       },
-37             1                                 24      qr/Cannot open /,
-38                                                       'set_config() dies if the file cannot be opened'
-39                                                    );
-40                                                    
-41                                                    # #############################################################################
-42                                                    # Config from mysqld --help --verbose
-43                                                    # #############################################################################
-44                                                    
-45             1                                 19   $config->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
-46             1                                  8   is_deeply(
-47                                                       $config->get_config(offline=>1),
-48                                                       {
-49                                                          abort_slave_event_count => '0',
-50                                                          allow_suspicious_udfs => 'FALSE',
-51                                                          auto_increment_increment => '1',
-52                                                          auto_increment_offset => '1',
-53                                                          automatic_sp_privileges => 'TRUE',
-54                                                          back_log => '50',
-55                                                          basedir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23',
-56                                                          bdb => 'FALSE',
-57                                                          bind_address => '',
+35             1                    1            28         my $config = new MySQLConfig(
+36                                                             source              => 'fooz',
+37                                                             TextResultSetParser => $trp,
+38                                                          );
+39                                                       },
+40             1                                 67      qr/invalid source/,
+41                                                       'Dies if source cannot be opened'
+42                                                    );
+43                                                    
+44                                                    # #############################################################################
+45                                                    # parse_show_variables()
+46                                                    # #############################################################################
+47             1                                 19   is_deeply(
+48                                                       MySQLConfig::parse_show_variables(
+49                                                          source => "$trunk/common/t/samples/show-variables/vars003.txt",
+50                                                          TextResultSetParser => $trp,
+51                                                       ),
+52                                                       {
+53                                                          auto_increment_increment => '1',
+54                                                          auto_increment_offset => '1',
+55                                                          automatic_sp_privileges => 'ON',
+56                                                          back_log => '50',
+57                                                          basedir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/',
 58                                                          binlog_cache_size => '32768',
 59                                                          bulk_insert_buffer_size => '8388608',
-60                                                          character_set_client_handshake => 'TRUE',
-61                                                          character_set_filesystem => 'binary',
-62                                                          character_set_server => 'latin1',
-63                                                          character_sets_dir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/charsets/',
-64                                                          chroot => '',
-65                                                          collation_server => 'latin1_swedish_ci',
-66                                                          completion_type => '0',
-67                                                          concurrent_insert => '1',
-68                                                          connect_timeout => '10',
-69                                                          console => 'FALSE',
-70                                                          datadir => '/tmp/12345/data/',
-71                                                          date_format => '',
-72                                                          datetime_format => '',
-73                                                          default_character_set => 'latin1',
-74                                                          default_collation => 'latin1_swedish_ci',
-75                                                          default_time_zone => '',
-76                                                          default_week_format => '0',
-77                                                          delayed_insert_limit => '100',
-78                                                          delayed_insert_timeout => '300',
-79                                                          delayed_queue_size => '1000',
-80                                                          des_key_file => '',
-81                                                          disconnect_slave_event_count => '0',
+60                                                          character_set_client => 'latin1',
+61                                                          character_set_connection => 'latin1',
+62                                                          character_set_database => 'latin1',
+63                                                          character_set_filesystem => 'binary',
+64                                                          character_set_results => 'latin1',
+65                                                          character_set_server => 'latin1',
+66                                                          character_set_system => 'utf8',
+67                                                          character_sets_dir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/charsets/',
+68                                                          collation_connection => 'latin1_swedish_ci',
+69                                                          collation_database => 'latin1_swedish_ci',
+70                                                          collation_server => 'latin1_swedish_ci',
+71                                                          completion_type => '0',
+72                                                          concurrent_insert => '1',
+73                                                          connect_timeout => '10',
+74                                                          datadir => '/tmp/12345/data/',
+75                                                          date_format => '%Y-%m-%d',
+76                                                          datetime_format => '%Y-%m-%d %H:%i:%s',
+77                                                          default_week_format => '0',
+78                                                          delay_key_write => 'ON',
+79                                                          delayed_insert_limit => '100',
+80                                                          delayed_insert_timeout => '300',
+81                                                          delayed_queue_size => '1000',
 82                                                          div_precision_increment => '4',
-83                                                          enable_locking => 'FALSE',
-84                                                          enable_pstack => 'FALSE',
-85                                                          engine_condition_pushdown => 'FALSE',
-86                                                          expire_logs_days => '0',
-87                                                          external_locking => 'FALSE',
-88                                                          federated => 'TRUE',
-89                                                          flush_time => '0',
-90                                                          ft_max_word_len => '84',
-91                                                          ft_min_word_len => '4',
-92                                                          ft_query_expansion_limit => '20',
-93                                                          ft_stopword_file => '',
-94                                                          gdb => 'FALSE',
-95                                                          group_concat_max_len => '1024',
-96                                                          help => 'TRUE',
-97                                                          init_connect => '',
-98                                                          init_file => '',
-99                                                          init_slave => '',
-100                                                         innodb => 'TRUE',
-101                                                         innodb_adaptive_hash_index => 'TRUE',
-102                                                         innodb_additional_mem_pool_size => '1048576',
-103                                                         innodb_autoextend_increment => '8',
-104                                                         innodb_buffer_pool_awe_mem_mb => '0',
-105                                                         innodb_buffer_pool_size => '16777216',
-106                                                         innodb_checksums => 'TRUE',
-107                                                         innodb_commit_concurrency => '0',
-108                                                         innodb_concurrency_tickets => '500',
-109                                                         innodb_data_home_dir => '/tmp/12345/data',
-110                                                         innodb_doublewrite => 'TRUE',
-111                                                         innodb_fast_shutdown => '1',
-112                                                         innodb_file_io_threads => '4',
-113                                                         innodb_file_per_table => 'FALSE',
-114                                                         innodb_flush_log_at_trx_commit => '1',
-115                                                         innodb_flush_method => '',
-116                                                         innodb_force_recovery => '0',
-117                                                         innodb_lock_wait_timeout => '50',
-118                                                         innodb_locks_unsafe_for_binlog => 'FALSE',
-119                                                         innodb_log_arch_dir => '',
-120                                                         innodb_log_buffer_size => '1048576',
-121                                                         innodb_log_file_size => '5242880',
-122                                                         innodb_log_files_in_group => '2',
-123                                                         innodb_log_group_home_dir => '/tmp/12345/data',
-124                                                         innodb_max_dirty_pages_pct => '90',
-125                                                         innodb_max_purge_lag => '0',
-126                                                         innodb_mirrored_log_groups => '1',
-127                                                         innodb_open_files => '300',
-128                                                         innodb_rollback_on_timeout => 'FALSE',
-129                                                         innodb_status_file => 'FALSE',
-130                                                         innodb_support_xa => 'TRUE',
-131                                                         innodb_sync_spin_loops => '20',
-132                                                         innodb_table_locks => 'TRUE',
-133                                                         innodb_thread_concurrency => '8',
-134                                                         innodb_thread_sleep_delay => '10000',
-135                                                         innodb_use_legacy_cardinality_algorithm => 'TRUE',
-136                                                         interactive_timeout => '28800',
-137                                                         isam => 'FALSE',
-138                                                         join_buffer_size => '131072',
-139                                                         keep_files_on_create => 'FALSE',
-140                                                         key_buffer_size => '16777216',
-141                                                         key_cache_age_threshold => '300',
-142                                                         key_cache_block_size => '1024',
-143                                                         key_cache_division_limit => '100',
-144                                                         language => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/english/',
-145                                                         large_pages => 'FALSE',
-146                                                         lc_time_names => 'en_US',
-147                                                         local_infile => 'TRUE',
-148                                                         log => 'OFF',
-149                                                         log_bin => 'mysql-bin',
-150                                                         log_bin_index => '',
-151                                                         log_bin_trust_function_creators => 'FALSE',
-152                                                         log_bin_trust_routine_creators => 'FALSE',
-153                                                         log_error => '',
-154                                                         log_isam => 'myisam.log',
-155                                                         log_queries_not_using_indexes => 'FALSE',
-156                                                         log_short_format => 'FALSE',
-157                                                         log_slave_updates => 'TRUE',
-158                                                         log_slow_admin_statements => 'FALSE',
-159                                                         log_slow_queries => 'OFF',
-160                                                         log_tc => 'tc.log',
-161                                                         log_tc_size => '24576',
-162                                                         log_update => 'OFF',
-163                                                         log_warnings => '1',
-164                                                         long_query_time => '10',
-165                                                         low_priority_updates => 'FALSE',
-166                                                         lower_case_table_names => '0',
-167                                                         master_connect_retry => '60',
-168                                                         master_host => '',
-169                                                         master_info_file => 'master.info',
-170                                                         master_password => '',
-171                                                         master_port => '3306',
-172                                                         master_retry_count => '86400',
-173                                                         master_ssl => 'FALSE',
-174                                                         master_ssl_ca => '',
-175                                                         master_ssl_capath => '',
-176                                                         master_ssl_cert => '',
-177                                                         master_ssl_cipher => '',
-178                                                         master_ssl_key => '',
-179                                                         master_user => 'test',
-180                                                         max_allowed_packet => '1048576',
-181                                                         max_binlog_cache_size => '18446744073709547520',
-182                                                         max_binlog_dump_events => '0',
-183                                                         max_binlog_size => '1073741824',
-184                                                         max_connect_errors => '10',
-185                                                         max_connections => '100',
-186                                                         max_delayed_threads => '20',
-187                                                         max_error_count => '64',
-188                                                         max_heap_table_size => '16777216',
-189                                                         max_join_size => '18446744073709551615',
-190                                                         max_length_for_sort_data => '1024',
-191                                                         max_prepared_stmt_count => '16382',
-192                                                         max_relay_log_size => '0',
-193                                                         max_seeks_for_key => '18446744073709551615',
-194                                                         max_sort_length => '1024',
-195                                                         max_sp_recursion_depth => '0',
-196                                                         max_tmp_tables => '32',
-197                                                         max_user_connections => '0',
-198                                                         max_write_lock_count => '18446744073709551615',
-199                                                         memlock => 'FALSE',
-200                                                         merge => 'TRUE',
+83                                                          engine_condition_pushdown => 'OFF',
+84                                                          expire_logs_days => '0',
+85                                                          flush => 'OFF',
+86                                                          flush_time => '0',
+87                                                          ft_boolean_syntax => '',
+88                                                          ft_max_word_len => '84',
+89                                                          ft_min_word_len => '4',
+90                                                          ft_query_expansion_limit => '20',
+91                                                          ft_stopword_file => '(built-in)',
+92                                                          group_concat_max_len => '1024',
+93                                                          have_archive => 'YES',
+94                                                          have_bdb => 'NO',
+95                                                          have_blackhole_engine => 'YES',
+96                                                          have_community_features => 'YES',
+97                                                          have_compress => 'YES',
+98                                                          have_crypt => 'YES',
+99                                                          have_csv => 'YES',
+100                                                         have_dynamic_loading => 'YES',
+101                                                         have_example_engine => 'NO',
+102                                                         have_federated_engine => 'YES',
+103                                                         have_geometry => 'YES',
+104                                                         have_innodb => 'YES',
+105                                                         have_isam => 'NO',
+106                                                         have_merge_engine => 'YES',
+107                                                         have_ndbcluster => 'DISABLED',
+108                                                         have_openssl => 'DISABLED',
+109                                                         have_profiling => 'YES',
+110                                                         have_query_cache => 'YES',
+111                                                         have_raid => 'NO',
+112                                                         have_rtree_keys => 'YES',
+113                                                         have_ssl => 'DISABLED',
+114                                                         have_symlink => 'YES',
+115                                                         hostname => 'dante',
+116                                                         init_connect => '',
+117                                                         init_file => '',
+118                                                         init_slave => '',
+119                                                         innodb_adaptive_hash_index => 'ON',
+120                                                         innodb_additional_mem_pool_size => '1048576',
+121                                                         innodb_autoextend_increment => '8',
+122                                                         innodb_buffer_pool_awe_mem_mb => '0',
+123                                                         innodb_buffer_pool_size => '16777216',
+124                                                         innodb_checksums => 'ON',
+125                                                         innodb_commit_concurrency => '0',
+126                                                         innodb_concurrency_tickets => '500',
+127                                                         innodb_data_file_path => 'ibdata1:10M:autoextend',
+128                                                         innodb_data_home_dir => '/tmp/12345/data',
+129                                                         innodb_doublewrite => 'ON',
+130                                                         innodb_fast_shutdown => '1',
+131                                                         innodb_file_io_threads => '4',
+132                                                         innodb_file_per_table => 'OFF',
+133                                                         innodb_flush_log_at_trx_commit => '1',
+134                                                         innodb_flush_method => '',
+135                                                         innodb_force_recovery => '0',
+136                                                         innodb_lock_wait_timeout => '50',
+137                                                         innodb_locks_unsafe_for_binlog => 'OFF',
+138                                                         innodb_log_arch_dir => '',
+139                                                         innodb_log_archive => 'OFF',
+140                                                         innodb_log_buffer_size => '1048576',
+141                                                         innodb_log_file_size => '5242880',
+142                                                         innodb_log_files_in_group => '2',
+143                                                         innodb_log_group_home_dir => '/tmp/12345/data',
+144                                                         innodb_max_dirty_pages_pct => '90',
+145                                                         innodb_max_purge_lag => '0',
+146                                                         innodb_mirrored_log_groups => '1',
+147                                                         innodb_open_files => '300',
+148                                                         innodb_rollback_on_timeout => 'OFF',
+149                                                         innodb_support_xa => 'ON',
+150                                                         innodb_sync_spin_loops => '20',
+151                                                         innodb_table_locks => 'ON',
+152                                                         innodb_thread_concurrency => '8',
+153                                                         innodb_thread_sleep_delay => '10000',
+154                                                         innodb_use_legacy_cardinality_algorithm => 'ON',
+155                                                         interactive_timeout => '28800',
+156                                                         join_buffer_size => '131072',
+157                                                         keep_files_on_create => 'OFF',
+158                                                         key_buffer_size => '16777216',
+159                                                         key_cache_age_threshold => '300',
+160                                                         key_cache_block_size => '1024',
+161                                                         key_cache_division_limit => '100',
+162                                                         language => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/english/',
+163                                                         large_files_support => 'ON',
+164                                                         large_page_size => '0',
+165                                                         large_pages => 'OFF',
+166                                                         lc_time_names => 'en_US',
+167                                                         license => 'GPL',
+168                                                         local_infile => 'ON',
+169                                                         locked_in_memory => 'OFF',
+170                                                         log => 'OFF',
+171                                                         log_bin => 'ON',
+172                                                         log_bin_trust_function_creators => 'OFF',
+173                                                         log_error => '',
+174                                                         log_queries_not_using_indexes => 'OFF',
+175                                                         log_slave_updates => 'ON',
+176                                                         log_slow_queries => 'OFF',
+177                                                         log_warnings => '1',
+178                                                         long_query_time => '10',
+179                                                         low_priority_updates => 'OFF',
+180                                                         lower_case_file_system => 'OFF',
+181                                                         lower_case_table_names => '0',
+182                                                         max_allowed_packet => '1048576',
+183                                                         max_binlog_cache_size => '18446744073709547520',
+184                                                         max_binlog_size => '1073741824',
+185                                                         max_connect_errors => '10',
+186                                                         max_connections => '100',
+187                                                         max_delayed_threads => '20',
+188                                                         max_error_count => '64',
+189                                                         max_heap_table_size => '16777216',
+190                                                         max_insert_delayed_threads => '20',
+191                                                         max_join_size => '18446744073709551615',
+192                                                         max_length_for_sort_data => '1024',
+193                                                         max_prepared_stmt_count => '16382',
+194                                                         max_relay_log_size => '0',
+195                                                         max_seeks_for_key => '18446744073709551615',
+196                                                         max_sort_length => '1024',
+197                                                         max_sp_recursion_depth => '0',
+198                                                         max_tmp_tables => '32',
+199                                                         max_user_connections => '0',
+200                                                         max_write_lock_count => '18446744073709551615',
 201                                                         multi_range_count => '256',
-202                                                         myisam_block_size => '1024',
-203                                                         myisam_data_pointer_size => '6',
-204                                                         myisam_max_extra_sort_file_size => '2147483648',
-205                                                         myisam_max_sort_file_size => '9223372036853727232',
-206                                                         myisam_recover => 'OFF',
-207                                                         myisam_repair_threads => '1',
-208                                                         myisam_sort_buffer_size => '8388608',
-209                                                         myisam_stats_method => 'nulls_unequal',
-210                                                         ndb_autoincrement_prefetch_sz => '1',
-211                                                         ndb_cache_check_time => '0',
-212                                                         ndb_connectstring => '',
-213                                                         ndb_force_send => 'TRUE',
-214                                                         ndb_mgmd_host => '',
-215                                                         ndb_nodeid => '0',
-216                                                         ndb_optimized_node_selection => 'TRUE',
-217                                                         ndb_shm => 'FALSE',
-218                                                         ndb_use_exact_count => 'TRUE',
-219                                                         ndb_use_transactions => 'TRUE',
-220                                                         ndbcluster => 'FALSE',
-221                                                         net_buffer_length => '16384',
-222                                                         net_read_timeout => '30',
-223                                                         net_retry_count => '10',
-224                                                         net_write_timeout => '60',
-225                                                         new => 'FALSE',
-226                                                         old_passwords => 'FALSE',
-227                                                         old_style_user_limits => 'FALSE',
-228                                                         open_files_limit => '0',
-229                                                         optimizer_prune_level => '1',
-230                                                         optimizer_search_depth => '62',
-231                                                         pid_file => '/tmp/12345/data/mysql_sandbox12345.pid',
-232                                                         plugin_dir => '',
-233                                                         port => '12345',
-234                                                         port_open_timeout => '0',
-235                                                         preload_buffer_size => '32768',
-236                                                         profiling_history_size => '15',
-237                                                         query_alloc_block_size => '8192',
-238                                                         query_cache_limit => '1048576',
-239                                                         query_cache_min_res_unit => '4096',
-240                                                         query_cache_size => '0',
-241                                                         query_cache_type => '1',
-242                                                         query_cache_wlock_invalidate => 'FALSE',
-243                                                         query_prealloc_size => '8192',
-244                                                         range_alloc_block_size => '4096',
-245                                                         read_buffer_size => '131072',
-246                                                         read_only => 'FALSE',
-247                                                         read_rnd_buffer_size => '262144',
-248                                                         record_buffer => '131072',
-249                                                         relay_log => 'mysql-relay-bin',
-250                                                         relay_log_index => '',
-251                                                         relay_log_info_file => 'relay-log.info',
-252                                                         relay_log_purge => 'TRUE',
-253                                                         relay_log_space_limit => '0',
-254                                                         replicate_same_server_id => 'FALSE',
-255                                                         report_host => '127.0.0.1',
-256                                                         report_password => '',
-257                                                         report_port => '12345',
-258                                                         report_user => '',
-259                                                         rpl_recovery_rank => '0',
-260                                                         safe_user_create => 'FALSE',
-261                                                         secure_auth => 'FALSE',
-262                                                         secure_file_priv => '',
-263                                                         server_id => '12345',
-264                                                         show_slave_auth_info => 'FALSE',
-265                                                         skip_grant_tables => 'FALSE',
-266                                                         skip_slave_start => 'FALSE',
-267                                                         slave_compressed_protocol => 'FALSE',
-268                                                         slave_load_tmpdir => '/tmp/',
-269                                                         slave_net_timeout => '3600',
-270                                                         slave_transaction_retries => '10',
-271                                                         slow_launch_time => '2',
-272                                                         socket => '/tmp/12345/mysql_sandbox12345.sock',
-273                                                         sort_buffer_size => '2097144',
-274                                                         sporadic_binlog_dump_fail => 'FALSE',
-275                                                         sql_mode => 'OFF',
-276                                                         ssl => 'FALSE',
-277                                                         ssl_ca => '',
-278                                                         ssl_capath => '',
-279                                                         ssl_cert => '',
-280                                                         ssl_cipher => '',
-281                                                         ssl_key => '',
-282                                                         symbolic_links => 'TRUE',
-283                                                         sync_binlog => '0',
-284                                                         sync_frm => 'TRUE',
-285                                                         sysdate_is_now => 'FALSE',
-286                                                         table_cache => '64',
-287                                                         table_lock_wait_timeout => '50',
-288                                                         tc_heuristic_recover => '',
-289                                                         temp_pool => 'TRUE',
-290                                                         thread_cache_size => '0',
-291                                                         thread_concurrency => '10',
-292                                                         thread_stack => '262144',
-293                                                         time_format => '',
-294                                                         timed_mutexes => 'FALSE',
-295                                                         tmp_table_size => '33554432',
-296                                                         tmpdir => '',
-297                                                         transaction_alloc_block_size => '8192',
-298                                                         transaction_prealloc_size => '4096',
-299                                                         updatable_views_with_limit => '1',
-300                                                         use_symbolic_links => 'TRUE',
-301                                                         verbose => 'TRUE',
-302                                                         wait_timeout => '28800',
-303                                                         warnings => '1'
-304                                                      },
-305                                                      'set_config(from=>mysqld, file=>mysqldhelp001.txt)'
-306                                                   );
-307                                                   
-308            1                                 41   is(
-309                                                      $config->get('wait_timeout', offline=>1),
-310                                                      28800,
-311                                                      'get() from mysqld'
-312                                                   );
-313                                                   
-314            1                                  7   ok(
-315                                                      $config->has('wait_timeout'),
-316                                                      'has() from mysqld'
-317                                                   );
-318                                                   
-319            1                                  6   ok(
-320                                                     !$config->has('foo'),
-321                                                     "has(), doesn't have it"
-322                                                   );
-323                                                   
-324                                                   # #############################################################################
-325                                                   # Config from SHOW VARIABLES
-326                                                   # #############################################################################
-327                                                   
-328            1                                 10   $config->set_config(from=>'show_variables', rows=>[ [qw(foo bar)], [qw(a z)] ]);
-329            1                                  6   is_deeply(
-330                                                      $config->get_config(),
-331                                                      {
-332                                                         foo => 'bar',
-333                                                         a   => 'z',
-334                                                      },
-335                                                      'set_config(from=>show_variables, rows=>...)'
-336                                                   );
-337                                                   
-338            1                                 10   is(
-339                                                      $config->get('foo'),
-340                                                      'bar',
-341                                                      'get() from show variables'
-342                                                   );
-343                                                   
-344            1                                  6   ok(
-345                                                      $config->has('foo'),
-346                                                      'has() from show variables'
-347                                                   );
-348                                                   
-349                                                   # #############################################################################
-350                                                   # Config from my_print_defaults
-351                                                   # #############################################################################
-352                                                   
-353            1                                 10   $config->set_config(from=>'my_print_defaults',
-354                                                      file=>"$trunk/$sample/myprintdef001.txt");
-355                                                   
-356            1                                  6   is(
-357                                                      $config->get('port', offline=>1),
-358                                                      '12349',
-359                                                      "Duplicate var's last value used"
-360                                                   );
-361                                                   
-362            1                                  7   is(
-363                                                      $config->get('innodb_buffer_pool_size', offline=>1),
-364                                                      '16777216',
-365                                                      'Converted size char to int'
-366                                                   );
-367                                                   
-368            1                                  6   is_deeply(
-369                                                      $config->get_duplicate_variables(),
-370                                                      {
-371                                                         'port' => [12345],
-372                                                      },
-373                                                      'get_duplicate_variables()'
-374                                                   );
-375                                                   
-376                                                   # #############################################################################
-377                                                   # Online tests.
-378                                                   # #############################################################################
-379   ***      1     50                           5   SKIP: {
-380            1                                  7      skip 'Cannot connect to sandbox master', 1 unless $dbh;
-381                                                   
-382            1                                  9      $config = new MySQLConfig();
-383            1                                 12      $config->set_config(from=>'show_variables', dbh=>$dbh);
-384            1                                  8      is(
-385                                                         $config->get('datadir'),
-386                                                         '/tmp/12345/data/',
-387                                                         'set_config(from=>show_variables, dbh=>...)'
-388                                                      );
-389                                                   
-390            1                                  9      $config  = new MySQLConfig();
-391            1                                  3      my $rows = $dbh->selectall_arrayref('show variables');
-392            1                               1665      $config->set_config(from=>'show_variables', rows=>$rows);
-393            1                                  8      is(
-394                                                         $config->get('datadir'),
-395                                                         '/tmp/12345/data/',
-396                                                         'set_config(from=>show_variables, rows=>...)'
-397                                                      );
-398                                                   }
-399                                                   
-400                                                   # #############################################################################
-401                                                   # Done.
-402                                                   # #############################################################################
-403            1                                  4   exit;
+202                                                         myisam_data_pointer_size => '6',
+203                                                         myisam_max_sort_file_size => '9223372036853727232',
+204                                                         myisam_recover_options => 'OFF',
+205                                                         myisam_repair_threads => '1',
+206                                                         myisam_sort_buffer_size => '8388608',
+207                                                         myisam_stats_method => 'nulls_unequal',
+208                                                         ndb_autoincrement_prefetch_sz => '1',
+209                                                         ndb_cache_check_time => '0',
+210                                                         ndb_connectstring => '',
+211                                                         ndb_force_send => 'ON',
+212                                                         ndb_use_exact_count => 'ON',
+213                                                         ndb_use_transactions => 'ON',
+214                                                         net_buffer_length => '16384',
+215                                                         net_read_timeout => '30',
+216                                                         net_retry_count => '10',
+217                                                         net_write_timeout => '60',
+218                                                         new => 'OFF',
+219                                                         old_passwords => 'OFF',
+220                                                         open_files_limit => '1024',
+221                                                         optimizer_prune_level => '1',
+222                                                         optimizer_search_depth => '62',
+223                                                         pid_file => '/tmp/12345/data/mysql_sandbox12345.pid',
+224                                                         plugin_dir => '',
+225                                                         port => '12345',
+226                                                         preload_buffer_size => '32768',
+227                                                         profiling => 'OFF',
+228                                                         profiling_history_size => '15',
+229                                                         protocol_version => '10',
+230                                                         query_alloc_block_size => '8192',
+231                                                         query_cache_limit => '1048576',
+232                                                         query_cache_min_res_unit => '4096',
+233                                                         query_cache_size => '0',
+234                                                         query_cache_type => 'ON',
+235                                                         query_cache_wlock_invalidate => 'OFF',
+236                                                         query_prealloc_size => '8192',
+237                                                         range_alloc_block_size => '4096',
+238                                                         read_buffer_size => '131072',
+239                                                         read_only => 'OFF',
+240                                                         read_rnd_buffer_size => '262144',
+241                                                         relay_log => 'mysql-relay-bin',
+242                                                         relay_log_index => '',
+243                                                         relay_log_info_file => 'relay-log.info',
+244                                                         relay_log_purge => 'ON',
+245                                                         relay_log_space_limit => '0',
+246                                                         rpl_recovery_rank => '0',
+247                                                         secure_auth => 'OFF',
+248                                                         secure_file_priv => '',
+249                                                         server_id => '12345',
+250                                                         skip_external_locking => 'ON',
+251                                                         skip_networking => 'OFF',
+252                                                         skip_show_database => 'OFF',
+253                                                         slave_compressed_protocol => 'OFF',
+254                                                         slave_load_tmpdir => '/tmp/',
+255                                                         slave_net_timeout => '3600',
+256                                                         slave_skip_errors => 'OFF',
+257                                                         slave_transaction_retries => '10',
+258                                                         slow_launch_time => '2',
+259                                                         socket => '/tmp/12345/mysql_sandbox12345.sock',
+260                                                         sort_buffer_size => '2097144',
+261                                                         sql_big_selects => 'ON',
+262                                                         sql_mode => '',
+263                                                         sql_notes => 'ON',
+264                                                         sql_warnings => 'OFF',
+265                                                         ssl_ca => '',
+266                                                         ssl_capath => '',
+267                                                         ssl_cert => '',
+268                                                         ssl_cipher => '',
+269                                                         ssl_key => '',
+270                                                         storage_engine => 'MyISAM',
+271                                                         sync_binlog => '0',
+272                                                         sync_frm => 'ON',
+273                                                         system_time_zone => 'MDT',
+274                                                         table_cache => '64',
+275                                                         table_lock_wait_timeout => '50',
+276                                                         table_type => 'MyISAM',
+277                                                         thread_cache_size => '0',
+278                                                         thread_stack => '262144',
+279                                                         time_format => '%H:%i:%s',
+280                                                         time_zone => 'SYSTEM',
+281                                                         timed_mutexes => 'OFF',
+282                                                         tmp_table_size => '33554432',
+283                                                         tmpdir => '/tmp/',
+284                                                         transaction_alloc_block_size => '8192',
+285                                                         transaction_prealloc_size => '4096',
+286                                                         tx_isolation => 'REPEATABLE-READ',
+287                                                         updatable_views_with_limit => 'YES',
+288                                                         version => '5.0.82-log',
+289                                                         version_comment => 'MySQL Community Server (GPL)',
+290                                                         version_compile_machine => 'x86_64',
+291                                                         version_compile_os => 'unknown-linux-gnu',
+292                                                         wait_timeout => '28800'
+293                                                      },
+294                                                      'parse_show_variables()',
+295                                                   );
+296                                                   
+297                                                   # #############################################################################
+298                                                   # Config from mysqld --help --verbose
+299                                                   # #############################################################################
+300            1                                 95   my $config = new MySQLConfig(
+301                                                      source              => "$trunk/$sample/mysqldhelp001.txt",
+302                                                      TextResultSetParser => $trp,
+303                                                   );
+304                                                   
+305            1                                  9   is(
+306                                                      $config->get_type(),
+307                                                      'mysqld',
+308                                                      "Detect mysqld type"
+309                                                   );
+310                                                   
+311            1                                  6   is_deeply(
+312                                                      $config->get_variables(),
+313                                                      {
+314                                                         abort_slave_event_count => '0',
+315                                                         allow_suspicious_udfs => 'FALSE',
+316                                                         auto_increment_increment => '1',
+317                                                         auto_increment_offset => '1',
+318                                                         automatic_sp_privileges => 'TRUE',
+319                                                         back_log => '50',
+320                                                         basedir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23',
+321                                                         bdb => 'FALSE',
+322                                                         bind_address => '',
+323                                                         binlog_cache_size => '32768',
+324                                                         bulk_insert_buffer_size => '8388608',
+325                                                         character_set_client_handshake => 'TRUE',
+326                                                         character_set_filesystem => 'binary',
+327                                                         character_set_server => 'latin1',
+328                                                         character_sets_dir => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/charsets/',
+329                                                         chroot => '',
+330                                                         collation_server => 'latin1_swedish_ci',
+331                                                         completion_type => '0',
+332                                                         concurrent_insert => '1',
+333                                                         connect_timeout => '10',
+334                                                         console => 'FALSE',
+335                                                         datadir => '/tmp/12345/data/',
+336                                                         date_format => '',
+337                                                         datetime_format => '',
+338                                                         default_character_set => 'latin1',
+339                                                         default_collation => 'latin1_swedish_ci',
+340                                                         default_time_zone => '',
+341                                                         default_week_format => '0',
+342                                                         delayed_insert_limit => '100',
+343                                                         delayed_insert_timeout => '300',
+344                                                         delayed_queue_size => '1000',
+345                                                         des_key_file => '',
+346                                                         disconnect_slave_event_count => '0',
+347                                                         div_precision_increment => '4',
+348                                                         enable_locking => 'FALSE',
+349                                                         enable_pstack => 'FALSE',
+350                                                         engine_condition_pushdown => 'FALSE',
+351                                                         expire_logs_days => '0',
+352                                                         external_locking => 'FALSE',
+353                                                         federated => 'TRUE',
+354                                                         flush_time => '0',
+355                                                         ft_max_word_len => '84',
+356                                                         ft_min_word_len => '4',
+357                                                         ft_query_expansion_limit => '20',
+358                                                         ft_stopword_file => '',
+359                                                         gdb => 'FALSE',
+360                                                         group_concat_max_len => '1024',
+361                                                         help => 'TRUE',
+362                                                         init_connect => '',
+363                                                         init_file => '',
+364                                                         init_slave => '',
+365                                                         innodb => 'TRUE',
+366                                                         innodb_adaptive_hash_index => 'TRUE',
+367                                                         innodb_additional_mem_pool_size => '1048576',
+368                                                         innodb_autoextend_increment => '8',
+369                                                         innodb_buffer_pool_awe_mem_mb => '0',
+370                                                         innodb_buffer_pool_size => '16777216',
+371                                                         innodb_checksums => 'TRUE',
+372                                                         innodb_commit_concurrency => '0',
+373                                                         innodb_concurrency_tickets => '500',
+374                                                         innodb_data_home_dir => '/tmp/12345/data',
+375                                                         innodb_doublewrite => 'TRUE',
+376                                                         innodb_fast_shutdown => '1',
+377                                                         innodb_file_io_threads => '4',
+378                                                         innodb_file_per_table => 'FALSE',
+379                                                         innodb_flush_log_at_trx_commit => '1',
+380                                                         innodb_flush_method => '',
+381                                                         innodb_force_recovery => '0',
+382                                                         innodb_lock_wait_timeout => '3',
+383                                                         innodb_locks_unsafe_for_binlog => 'FALSE',
+384                                                         innodb_log_arch_dir => '',
+385                                                         innodb_log_buffer_size => '1048576',
+386                                                         innodb_log_file_size => '5242880',
+387                                                         innodb_log_files_in_group => '2',
+388                                                         innodb_log_group_home_dir => '/tmp/12345/data',
+389                                                         innodb_max_dirty_pages_pct => '90',
+390                                                         innodb_max_purge_lag => '0',
+391                                                         innodb_mirrored_log_groups => '1',
+392                                                         innodb_open_files => '300',
+393                                                         innodb_rollback_on_timeout => 'FALSE',
+394                                                         innodb_status_file => 'FALSE',
+395                                                         innodb_support_xa => 'TRUE',
+396                                                         innodb_sync_spin_loops => '20',
+397                                                         innodb_table_locks => 'TRUE',
+398                                                         innodb_thread_concurrency => '8',
+399                                                         innodb_thread_sleep_delay => '10000',
+400                                                         innodb_use_legacy_cardinality_algorithm => 'TRUE',
+401                                                         interactive_timeout => '28800',
+402                                                         isam => 'FALSE',
+403                                                         join_buffer_size => '131072',
+404                                                         keep_files_on_create => 'FALSE',
+405                                                         key_buffer_size => '16777216',
+406                                                         key_cache_age_threshold => '300',
+407                                                         key_cache_block_size => '1024',
+408                                                         key_cache_division_limit => '100',
+409                                                         language => '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/english/',
+410                                                         large_pages => 'FALSE',
+411                                                         lc_time_names => 'en_US',
+412                                                         local_infile => 'TRUE',
+413                                                         log => 'OFF',
+414                                                         log_bin => 'mysql-bin',
+415                                                         log_bin_index => '',
+416                                                         log_bin_trust_function_creators => 'FALSE',
+417                                                         log_bin_trust_routine_creators => 'FALSE',
+418                                                         log_error => '',
+419                                                         log_isam => 'myisam.log',
+420                                                         log_queries_not_using_indexes => 'FALSE',
+421                                                         log_short_format => 'FALSE',
+422                                                         log_slave_updates => 'TRUE',
+423                                                         log_slow_admin_statements => 'FALSE',
+424                                                         log_slow_queries => 'OFF',
+425                                                         log_tc => 'tc.log',
+426                                                         log_tc_size => '24576',
+427                                                         log_update => 'OFF',
+428                                                         log_warnings => '1',
+429                                                         long_query_time => '10',
+430                                                         low_priority_updates => 'FALSE',
+431                                                         lower_case_table_names => '0',
+432                                                         master_connect_retry => '60',
+433                                                         master_host => '',
+434                                                         master_info_file => 'master.info',
+435                                                         master_password => '',
+436                                                         master_port => '3306',
+437                                                         master_retry_count => '86400',
+438                                                         master_ssl => 'FALSE',
+439                                                         master_ssl_ca => '',
+440                                                         master_ssl_capath => '',
+441                                                         master_ssl_cert => '',
+442                                                         master_ssl_cipher => '',
+443                                                         master_ssl_key => '',
+444                                                         master_user => 'test',
+445                                                         max_allowed_packet => '1048576',
+446                                                         max_binlog_cache_size => '18446744073709547520',
+447                                                         max_binlog_dump_events => '0',
+448                                                         max_binlog_size => '1073741824',
+449                                                         max_connect_errors => '10',
+450                                                         max_connections => '100',
+451                                                         max_delayed_threads => '20',
+452                                                         max_error_count => '64',
+453                                                         max_heap_table_size => '16777216',
+454                                                         max_join_size => '18446744073709551615',
+455                                                         max_length_for_sort_data => '1024',
+456                                                         max_prepared_stmt_count => '16382',
+457                                                         max_relay_log_size => '0',
+458                                                         max_seeks_for_key => '18446744073709551615',
+459                                                         max_sort_length => '1024',
+460                                                         max_sp_recursion_depth => '0',
+461                                                         max_tmp_tables => '32',
+462                                                         max_user_connections => '0',
+463                                                         max_write_lock_count => '18446744073709551615',
+464                                                         memlock => 'FALSE',
+465                                                         merge => 'TRUE',
+466                                                         multi_range_count => '256',
+467                                                         myisam_block_size => '1024',
+468                                                         myisam_data_pointer_size => '6',
+469                                                         myisam_max_extra_sort_file_size => '2147483648',
+470                                                         myisam_max_sort_file_size => '9223372036853727232',
+471                                                         myisam_recover => 'OFF',
+472                                                         myisam_repair_threads => '1',
+473                                                         myisam_sort_buffer_size => '8388608',
+474                                                         myisam_stats_method => 'nulls_unequal',
+475                                                         ndb_autoincrement_prefetch_sz => '1',
+476                                                         ndb_cache_check_time => '0',
+477                                                         ndb_connectstring => '',
+478                                                         ndb_force_send => 'TRUE',
+479                                                         ndb_mgmd_host => '',
+480                                                         ndb_nodeid => '0',
+481                                                         ndb_optimized_node_selection => 'TRUE',
+482                                                         ndb_shm => 'FALSE',
+483                                                         ndb_use_exact_count => 'TRUE',
+484                                                         ndb_use_transactions => 'TRUE',
+485                                                         ndbcluster => 'FALSE',
+486                                                         net_buffer_length => '16384',
+487                                                         net_read_timeout => '30',
+488                                                         net_retry_count => '10',
+489                                                         net_write_timeout => '60',
+490                                                         new => 'FALSE',
+491                                                         old_passwords => 'FALSE',
+492                                                         old_style_user_limits => 'FALSE',
+493                                                         open_files_limit => '0',
+494                                                         optimizer_prune_level => '1',
+495                                                         optimizer_search_depth => '62',
+496                                                         pid_file => '/tmp/12345/data/mysql_sandbox12345.pid',
+497                                                         plugin_dir => '',
+498                                                         port => '12345',
+499                                                         port_open_timeout => '0',
+500                                                         preload_buffer_size => '32768',
+501                                                         profiling_history_size => '15',
+502                                                         query_alloc_block_size => '8192',
+503                                                         query_cache_limit => '1048576',
+504                                                         query_cache_min_res_unit => '4096',
+505                                                         query_cache_size => '0',
+506                                                         query_cache_type => '1',
+507                                                         query_cache_wlock_invalidate => 'FALSE',
+508                                                         query_prealloc_size => '8192',
+509                                                         range_alloc_block_size => '4096',
+510                                                         read_buffer_size => '131072',
+511                                                         read_only => 'FALSE',
+512                                                         read_rnd_buffer_size => '262144',
+513                                                         record_buffer => '131072',
+514                                                         relay_log => 'mysql-relay-bin',
+515                                                         relay_log_index => '',
+516                                                         relay_log_info_file => 'relay-log.info',
+517                                                         relay_log_purge => 'TRUE',
+518                                                         relay_log_space_limit => '0',
+519                                                         replicate_same_server_id => 'FALSE',
+520                                                         report_host => '127.0.0.1',
+521                                                         report_password => '',
+522                                                         report_port => '12345',
+523                                                         report_user => '',
+524                                                         rpl_recovery_rank => '0',
+525                                                         safe_user_create => 'FALSE',
+526                                                         secure_auth => 'FALSE',
+527                                                         secure_file_priv => '',
+528                                                         server_id => '12345',
+529                                                         show_slave_auth_info => 'FALSE',
+530                                                         skip_grant_tables => 'FALSE',
+531                                                         skip_slave_start => 'FALSE',
+532                                                         slave_compressed_protocol => 'FALSE',
+533                                                         slave_load_tmpdir => '/tmp/',
+534                                                         slave_net_timeout => '3600',
+535                                                         slave_transaction_retries => '10',
+536                                                         slow_launch_time => '2',
+537                                                         socket => '/tmp/12345/mysql_sandbox12345.sock',
+538                                                         sort_buffer_size => '2097144',
+539                                                         sporadic_binlog_dump_fail => 'FALSE',
+540                                                         sql_mode => 'OFF',
+541                                                         ssl => 'FALSE',
+542                                                         ssl_ca => '',
+543                                                         ssl_capath => '',
+544                                                         ssl_cert => '',
+545                                                         ssl_cipher => '',
+546                                                         ssl_key => '',
+547                                                         symbolic_links => 'TRUE',
+548                                                         sync_binlog => '0',
+549                                                         sync_frm => 'TRUE',
+550                                                         sysdate_is_now => 'FALSE',
+551                                                         table_cache => '64',
+552                                                         table_lock_wait_timeout => '50',
+553                                                         tc_heuristic_recover => '',
+554                                                         temp_pool => 'TRUE',
+555                                                         thread_cache_size => '0',
+556                                                         thread_concurrency => '10',
+557                                                         thread_stack => '262144',
+558                                                         time_format => '',
+559                                                         timed_mutexes => 'FALSE',
+560                                                         tmp_table_size => '33554432',
+561                                                         tmpdir => '',
+562                                                         transaction_alloc_block_size => '8192',
+563                                                         transaction_prealloc_size => '4096',
+564                                                         updatable_views_with_limit => '1',
+565                                                         use_symbolic_links => 'TRUE',
+566                                                         verbose => 'TRUE',
+567                                                         wait_timeout => '28800',
+568                                                         warnings => '1'
+569                                                      },
+570                                                      'mysqldhelp001.txt'
+571                                                   );
+572                                                   
+573            1                                 35   is(
+574                                                      $config->get('wait_timeout', offline=>1),
+575                                                      28800,
+576                                                      'get() from mysqld'
+577                                                   );
+578                                                   
+579            1                                 10   ok(
+580                                                      $config->has('wait_timeout'),
+581                                                      'has() from mysqld'
+582                                                   );
+583                                                   
+584            1                                  7   ok(
+585                                                     !$config->has('foo'),
+586                                                     "has(), doesn't have it"
+587                                                   );
+588                                                   
+589                                                   # #############################################################################
+590                                                   # Config from SHOW VARIABLES
+591                                                   # #############################################################################
+592            1                                 13   $config = new MySQLConfig(
+593                                                      source              => [ [qw(foo bar)], [qw(a z)] ],
+594                                                      TextResultSetParser => $trp,
+595                                                   );
+596                                                   
+597            1                                 56   is(
+598                                                      $config->get_type(),
+599                                                      'show_variables',
+600                                                      "Detect show_variables type (arrayref)"
+601                                                   );
+602                                                   
+603            1                                  7   is_deeply(
+604                                                      $config->get_variables(),
+605                                                      {
+606                                                         foo => 'bar',
+607                                                         a   => 'z',
+608                                                      },
+609                                                      'Variables from arrayref'
+610                                                   );
+611                                                   
+612            1                                 10   is(
+613                                                      $config->get('foo'),
+614                                                      'bar',
+615                                                      'get() from arrayref',
+616                                                   );
+617                                                   
+618            1                                  5   ok(
+619                                                      $config->has('foo'),
+620                                                      'has() from arrayref',
+621                                                   );
+622                                                   
+623                                                   # #############################################################################
+624                                                   # Config from my_print_defaults
+625                                                   # #############################################################################
+626            1                                 10   $config = new MySQLConfig(
+627                                                      source              => "$trunk/$sample/myprintdef001.txt",
+628                                                      TextResultSetParser => $trp,
+629                                                   );
+630                                                   
+631            1                                  9   is(
+632                                                      $config->get_type(),
+633                                                      'my_print_defaults',
+634                                                      "Detect my_print_defaults type"
+635                                                   );
+636                                                   
+637            1                                  6   is(
+638                                                      $config->get('port', offline=>1),
+639                                                      '12349',
+640                                                      "Duplicate var's last value used"
+641                                                   );
+642                                                   
+643            1                                  7   is(
+644                                                      $config->get('innodb_buffer_pool_size', offline=>1),
+645                                                      '16777216',
+646                                                      'Converted size char to int'
+647                                                   );
+648                                                   
+649            1                                  6   is_deeply(
+650                                                      $config->get_duplicate_variables(),
+651                                                      {
+652                                                         'port' => [12345],
+653                                                      },
+654                                                      'get_duplicate_variables()'
+655                                                   );
+656                                                   
+657                                                   # #############################################################################
+658                                                   # Config from option file (my.cnf)
+659                                                   # #############################################################################
+660            1                                 16   $config = new MySQLConfig(
+661                                                      source              => "$trunk/$sample/mycnf001.txt",
+662                                                      TextResultSetParser => $trp,
+663                                                   );
+664                                                   
+665            1                                 12   is(
+666                                                      $config->get_type(),
+667                                                      'option_file',
+668                                                      "Detect option_file type"
+669                                                   );
+670                                                   
+671   ***      1     50                           6   is_deeply(
+672                                                      $config->get_variables(),
+673                                                      {
+674                                                         'user'                  => 'mysql',
+675                                                         'pid_file'              => '/var/run/mysqld/mysqld.pid',
+676                                                         'socket'                => '/var/run/mysqld/mysqld.sock',
+677                                                         'port'                  => 3306,
+678                                                         'basedir'               => '/usr',
+679                                                         'datadir'               => '/var/lib/mysql',
+680                                                         'tmpdir'		            => '/tmp',
+681                                                         'skip_external_locking' => 'ON',
+682                                                         'bind_address'		      => '127.0.0.1',
+683                                                         'key_buffer'		      => 16777216,
+684                                                         'max_allowed_packet'	   => 16777216,
+685                                                         'thread_stack'		      => 131072,
+686                                                         'thread_cache_size'	   => 8,
+687                                                         'myisam_recover'		   => 'BACKUP',
+688                                                         'query_cache_limit'     => 1048576,
+689                                                         'query_cache_size'      => 16777216,
+690                                                         'expire_logs_days'	   => 10,
+691                                                         'max_binlog_size'       => 104857600,
+692                                                         'skip_federated'        => '',
+693                                                      },
+694                                                      "Vars from option file"
+695                                                   ) or print Dumper($config->get_variables());
+696                                                   
+697                                                   # #############################################################################
+698                                                   # Online test.
+699                                                   # #############################################################################
+700   ***      1     50                           5   SKIP: {
+701            1                                 11      skip 'Cannot connect to sandbox master', 3 unless $dbh;
+702                                                   
+703            1                                  8      $config = new MySQLConfig(
+704                                                         source              => $dbh,
+705                                                         TextResultSetParser => $trp,
+706                                                      );
+707                                                   
+708            1                                 14      is(
+709                                                         $config->get_type(),
+710                                                         "show_variables",
+711                                                         "Detect show_variables type (dbh)"
+712                                                      );
+713                                                   
+714            1                                  7      is(
+715                                                         $config->get('datadir'),
+716                                                         '/tmp/12345/data/',
+717                                                         "Vars from dbh"
+718                                                      );
+719                                                   
+720            1                                  7      like(
+721                                                         $config->get_mysql_version(),
+722                                                         qr/5\.\d+\.\d+/,
+723                                                         "MySQL version from dbh"
+724                                                      );
+725                                                   }
+726                                                   
+727                                                   # #############################################################################
+728                                                   # Done.
+729                                                   # #############################################################################
+730            1                                  4   exit;
 
 
 Branches
@@ -905,8 +1383,9 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-4     ***     50      0      1   unless $ENV{'MAATKIT_TRUNK'} and -d $ENV{'MAATKIT_TRUNK'}
-379   ***     50      0      1   unless $dbh
+4     ***     50      0      1   unless $ENV{'MAATKIT_WORKING_COPY'} and -d $ENV{'MAATKIT_WORKING_COPY'}
+671   ***     50      0      1   unless is_deeply($config->get_variables, {'user', 'mysql', 'pid_file', '/var/run/mysqld/mysqld.pid', 'socket', '/var/run/mysqld/mysqld.sock', 'port', 3306, 'basedir', '/usr', 'datadir', '/var/lib/mysql', 'tmpdir', '/tmp', 'skip_external_locking', 'ON', 'bind_address', '127.0.0.1', 'key_buffer', 16777216, 'max_allowed_packet', 16777216, 'thread_stack', 131072, 'thread_cache_size', 8, 'myisam_recover', 'BACKUP', 'query_cache_limit', 1048576, 'query_cache_size', 16777216, 'expire_logs_days', 10, 'max_binlog_size', 104857600, 'skip_federated', ''}, 'Vars from option file')
+700   ***     50      0      1   unless $dbh
 
 
 Conditions
@@ -916,7 +1395,7 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-4     ***     33      0      0      1   $ENV{'MAATKIT_TRUNK'} and -d $ENV{'MAATKIT_TRUNK'}
+4     ***     33      0      0      1   $ENV{'MAATKIT_WORKING_COPY'} and -d $ENV{'MAATKIT_WORKING_COPY'}
 
 
 Covered Subroutines
@@ -931,7 +1410,8 @@ BEGIN          1 MySQLConfig.t:14
 BEGIN          1 MySQLConfig.t:15
 BEGIN          1 MySQLConfig.t:16
 BEGIN          1 MySQLConfig.t:17
-BEGIN          1 MySQLConfig.t:23
+BEGIN          1 MySQLConfig.t:18
+BEGIN          1 MySQLConfig.t:24
 BEGIN          1 MySQLConfig.t:4 
 BEGIN          1 MySQLConfig.t:9 
 __ANON__       1 MySQLConfig.t:35

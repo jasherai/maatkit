@@ -2737,13 +2737,13 @@ sub main {
    # #########################################################################
    # Make common modules.
    # #########################################################################
-   my $txtres_parser = new TextResultSetParser();
-   my $config_cmp    = new MySQLConfigComparer();
+   my $trp         = new TextResultSetParser();
+   my $config_cmp  = new MySQLConfigComparer();
    my %common_modules = (
       DSNParser           => $dp,
       OptionParser        => $o,
       MySQLConfigComparer => $config_cmp,
-      TextResultSetParser => $txtres_parser,
+      TextResultSetParser => $trp,
    );
 
    # #########################################################################
@@ -2759,12 +2759,11 @@ sub main {
 
       if ( -f $config_src ) {
          MKDEBUG && _d('Config source', $config_src, 'is a file');
-         parse_config_from_file(
-            file        => $config_src,
-            MySQLConfig => $config,
-            %common_modules
+         push @configs, new MySQLConfig(
+            source => $config_src,
+            %common_modules,
          );
-         $config_name = $config_src;  # the file name
+         push @config_names, $config_src;  # filename
       }
       else {
          MKDEBUG && _d('Config source', $config_src, 'is a DSN');
@@ -2773,13 +2772,14 @@ sub main {
          $dp->fill_in_dsn($dbh, $dsn);
          $last_dsn = $dsn;
 
-         $config->set_config(from=>'show_variables', dbh=>$dbh);
-         $config_name = ($dsn->{h} || $dsn->{S} || $dsn->{F})
-                      . ($dsn->{P} ? ":$dsn->{P}" : '');
+         push @configs, new MySQLConfig(
+            source => $dbh,
+            %common_modules,
+         );
+         my $config_name = ($dsn->{h} || $dsn->{S} || $dsn->{F})
+                         . ($dsn->{P} ? ":$dsn->{P}" : '');
+         push @config_names, $config_name;
       }
-
-      push @configs, $config;
-      push @config_names, $config_name;
    }
 
    # ########################################################################
@@ -2800,15 +2800,9 @@ sub main {
    # #########################################################################
    # Diff the given configs.
    # #########################################################################
-   my $exit_status = 0;
-
-   if ( @ARGV == 1 ) {
-      push @ARGV, '-'; # Magical STDIN filename.
-   }
-
    my $report = new ReportFormatter(
       line_prefix => '',
-      line_width  => 78,
+      line_width  => $o->get('report-width'),
    );
    $report->set_title('MySQL config diff');
    $report->set_columns(
@@ -2823,7 +2817,7 @@ sub main {
 
    print $report->get_report();
 
-   return $exit_status;
+   return @diffs ? 1 : 0;
 }
 
 # ##########################################################################
@@ -2958,6 +2952,12 @@ exists, the program exits.
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --report-width
+
+type: int; default: 78
+
+Truncate report lines to this many characters.
 
 =item --set-vars
 

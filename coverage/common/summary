@@ -31,8 +31,8 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...maatkit/common/MockSth.pm  100.0  100.0    n/a  100.0    n/a  100.0  100.0
 .../common/MockSyncStream.pm   85.7   78.6   60.0   82.4    0.0    1.0   74.6
 ...it/common/MySQLAdvisor.pm   68.6   30.0    n/a   87.5    n/a  100.0   64.2
-...on/MySQLConfigComparer.pm   90.9   66.7   54.1   93.3    0.0   92.8   77.9
-...kit/common/MySQLConfig.pm   90.8   70.0   63.2   88.9    0.0   91.5   79.7
+...on/MySQLConfigComparer.pm   87.3   57.1   32.4   86.7    0.0   49.4   69.7
+...unk/common/MySQLConfig.pm   91.7   67.9   58.1   91.7    0.0   97.2   79.4
 ...atkit/common/MySQLDump.pm   63.5   44.4   15.0   73.3    0.0   66.3   52.6
 ...atkit/common/MySQLFind.pm   95.4   85.4   88.1   94.4    n/a  100.0   91.8
 ...t/common/MySQLInstance.pm   91.7   77.8   65.3   96.3    n/a  100.0   84.4
@@ -45,7 +45,6 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...kit/common/Processlist.pm   89.8   84.4   58.8   84.2    0.0   89.7   77.9
 ...aatkit/common/Progress.pm   89.6   76.7   75.0   92.3    0.0   76.3   81.0
 .../common/ProtocolParser.pm   10.0    0.0    3.3   35.3    0.0   31.8    8.3
-...it/common/QueryAdvisor.pm   71.9   50.0   50.0   80.0    0.0   45.8   64.1
 ...mmon/QueryAdvisorRules.pm   99.4   96.5   78.1  100.0    0.0   49.3   94.1
 ...kit/common/QueryParser.pm   76.3   63.9   62.5   76.5    0.0   87.4   70.0
 ...n/QueryReportFormatter.pm   94.2   69.0   59.1  100.0    0.0   19.9   81.0
