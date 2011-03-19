@@ -1734,7 +1734,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 7357
+# MySQLConfig package 7366
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
@@ -1753,18 +1753,6 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-my %undef_for = (
-   'log'                         => 'OFF',
-   log_bin                       => 'OFF',
-   log_slow_queries              => 'OFF',
-   log_slave_updates             => 'ON',
-   log_queries_not_using_indexes => 'ON',
-   log_update                    => 'OFF',
-   skip_bdb                      => 0,
-   skip_external_locking         => 'ON',
-   skip_name_resolve             => 'ON',
-);
 
 my %can_be_duplicate = (
    replicate_wild_do_table     => 1,
@@ -1832,10 +1820,11 @@ sub parse_config_from_file {
    }
    my ($source) = @args{@required_args};
 
-   my $type = $args{type} || detect_source_type(%args);
+   my $type = detect_source_type(%args);
    if ( !$type ) {
       die "Cannot auto-detect the type of MySQL config data in $source"
    }
+   $args{type} = $type;  # needed in _parse_varvals()
 
    my $vars;      # variables hashref
    my $dupes;     # duplicate vars hashref
@@ -1882,7 +1871,8 @@ sub detect_source_type {
       MKDEBUG && _d($line);
       if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
            || $line =~ m/\*+ \d/
-           || $line =~ m/Variable_name:\s+\w+/ )
+           || $line =~ m/Variable_name:\s+\w+/
+           || $line =~ m/Variable_name\s+Value$/ )
       {
          MKDEBUG && _d('show variables config line');
          $type = 'show_variables';
@@ -1930,12 +1920,13 @@ sub parse_show_variables {
 
 sub parse_mysqld {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    my @opt_files;
@@ -1956,22 +1947,27 @@ sub parse_mysqld {
 
    my $varvals = substr($output, (pos $output) + 1, length $output);
 
-   my ($config, undef) = _parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+   my ($config, undef) = _parse_varvals(
+      $type,
+      $varvals =~ m/\G^(\S+)(.*)\n/mg
+   );
 
    return $config, \@opt_files;
 }
 
 sub parse_my_print_defaults {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    my ($config, $dupes) = _parse_varvals(
+      $type,
       map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
    );
 
@@ -1980,12 +1976,13 @@ sub parse_my_print_defaults {
 
 sub parse_option_file {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
@@ -1993,6 +1990,7 @@ sub parse_option_file {
       unless $mysqld_section;
 
    my ($config, $dupes) = _parse_varvals(
+      $type,
       map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
       grep { $_ !~ m/^\s*#/ }  # no # comment lines
       split("\n", $mysqld_section)
@@ -2002,7 +2000,8 @@ sub parse_option_file {
 }
 
 sub _parse_varvals {
-   my ( @varvals ) = @_;
+   my ( $type, @varvals ) = @_;
+   die "I need a type argument" unless $type;
 
    my %config;
 
@@ -2028,7 +2027,7 @@ sub _parse_varvals {
          $var      = 0;  # next item should be the val for this var
          $last_var = $item;
       }
-      else {
+      else { # value
          if ( $item ) {
             $item =~ s/^\s+//;
 
@@ -2042,11 +2041,13 @@ sub _parse_varvals {
                $item = $num * $factor_for{lc $factor};
             }
             elsif ( $item =~ m/No default/ ) {
-               $item = undef;
+               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
             }
          }
 
-         $item = $undef_for{$last_var} || '' unless defined $item;
+         if ( !defined $item ) {
+            $item = $type ne 'mysqld' ? 'ON' : '';
+         } 
 
          if ( $duplicate_var ) {
             push @{$duplicates{$last_var}}, $config{$last_var};
