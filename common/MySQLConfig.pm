@@ -35,18 +35,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my %undef_for = (
-   'log'                         => 'OFF',
-   log_bin                       => 'OFF',
-   log_slow_queries              => 'OFF',
-   log_slave_updates             => 'ON',
-   log_queries_not_using_indexes => 'ON',
-   log_update                    => 'OFF',
-   skip_bdb                      => 0,
-   skip_external_locking         => 'ON',
-   skip_name_resolve             => 'ON',
-);
-
 my %can_be_duplicate = (
    replicate_wild_do_table     => 1,
    replicate_wild_ignore_table => 1,
@@ -358,11 +346,27 @@ sub _parse_varvals {
                $item = $num * $factor_for{lc $factor};
             }
             elsif ( $item =~ m/No default/ ) {
-               $item = undef;
+               # mysqld --help --verbose lists "(No default value)" for vars
+               # that aren't set.  For most vars, this means that the var's
+               # value is undefined, but for vars starting with the words in
+               # in regex below, it means that they're OFF.  See the same
+               # regext below.
+               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : undef;
             }
          }
 
-         $item = $undef_for{$last_var} || '' unless defined $item;
+         if ( !defined $item ) {
+            # Like mysqld --help --verbose above, some sources like option
+            # files (my.cnf) may contain a var without a value, like "log-bin".
+            # These vars are ON when simply given even without a value.  A
+            # value for them is usually optional; when not specified, mysqld
+            # uses some default value.
+            $item = 'ON' if $last_var =~ m/^(?:log|skip|ignore)/;
+         } 
+
+         # To help MySQLConfigComparer avoid crashing on undef comparisons,
+         # we let a blank string equal an undefined value.
+         $item = '' unless defined $item;
 
          if ( $duplicate_var ) {
             # Save var's original value before overwritng with this new value.

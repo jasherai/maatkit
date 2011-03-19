@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 22;
 
 use MySQLConfig;
 use DSNParser;
@@ -412,7 +412,7 @@ is_deeply(
       local_infile => 'TRUE',
       log => 'OFF',
       log_bin => 'mysql-bin',
-      log_bin_index => '',
+      log_bin_index => 'OFF',
       log_bin_trust_function_creators => 'FALSE',
       log_bin_trust_routine_creators => 'FALSE',
       log_error => '',
@@ -689,10 +689,33 @@ is_deeply(
       'query_cache_size'      => 16777216,
       'expire_logs_days'	   => 10,
       'max_binlog_size'       => 104857600,
-      'skip_federated'        => '',
+      'skip_federated'        => 'ON',
    },
    "Vars from option file"
 ) or print Dumper($config->get_variables());
+
+# ############################################################################
+# Baron's test cases.
+# ############################################################################
+$config = new MySQLConfig(
+   source              => "$trunk/$sample/mycnf-baron-001.txt",
+   TextResultSetParser => $trp,
+);
+
+is_deeply(
+   $config->get_variables(),
+   {
+      'datadir'      => '/home/baron/etc/mysql/server/5.1.50/data/',
+      'port'         => '5150',
+      'socket'       => '/home/baron/etc/mysql/server/5.1.50/data/mysql.sock',
+      'language'     => './share/english',
+      'basedir'      => '/home/baron/etc/mysql/server/5.1.50',
+      'log_bin'      => 'ON',
+      'plugin_load'  => 'innodb=ha_innodb_plugin.so.0;innodb_trx=ha_innodb_plugin.so.0;innodb_locks=ha_innodb_plugin.so.0;innodb_cmp=ha_innodb_plugin.so.0;innodb_cmp_reset=ha_innodb_plugin.so.0;innodb_cmpmem=ha_innodb_plugin.so.0;innodb_cmpmem_reset=ha_innodb_plugin.so.0',
+      'ignore_builtin_innodb' => 'ON',
+   },
+   "mycnf-baron-001.cnf"
+);
 
 # #############################################################################
 # Online test.
