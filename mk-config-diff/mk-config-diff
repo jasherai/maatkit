@@ -2865,15 +2865,15 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-config-diff - Diff MySQL configurations.
+mk-config-diff - Diff MySQL configuration files and server variables.
 
 =head1 SYNOPSIS
 
 Usage: mk-config-diff [OPTION...] CONFIG CONFIG [CONFIG...]
 
-mk-config-diff diffs MySQL configurations.  CONFIG can be either a filename
-or a DSN.  At least two CONFIG sources must be given.  Like standard Unix diff,
-there is no output if there are no differences.
+mk-config-diff diffs MySQL configuration files and server variables.  CONFIG can
+be either a filename or a DSN.  At least two CONFIG sources must be given.  Like
+standard Unix diff, there is no output if there are no differences.
 
 Diff host1 config from SHOW VARIABLES against host2:
 
@@ -2915,8 +2915,8 @@ an option file (e.g. my.cnf).
 
 =head1 OUTPUT
 
-When there are difference, a reported is printed to STDOUT that lists them
-like:
+There is no output when there are no differences.  When there are differences,
+mk-config-diff prints a report to STDOUT that looks similar to the following:
 
   2 config differences
   Variable                  /tmp/12345/my.sandbox.cnf /tmp/12346/my.sandbox.cnf
@@ -2924,20 +2924,22 @@ like:
   datadir                   /tmp/12345/data           /tmp/12346/data
   port                      12345                     12346
 
-There is no output when there are no differences.
-
-=head2 WARNINGS
-
-Comparing MySQL variables is difficult because there are many variations
-and subtlties across the many versions and distributions of MySQL.
-When a comparison fails, a warning like,
+Comparing MySQL variables is difficult because there are many variations and
+subtleties across the many versions and distributions of MySQL.  When a
+comparison fails, the tool prints a warning to STDERR, such as the following:
 
   Comparing log_error values (mysqld.log, /tmp/12345/data/mysqld.log)
   caused an error: Argument "/tmp/12345/data/mysqld.log" isn't numeric
   in numeric eq (==) at ./mk-config-diff line 2311.
 
-is printed to STDERR before the report.  Please report these warnings so
-the comparison functions can be improved.
+Please report these warnings so the comparison functions can be improved.
+
+=head1 EXIT STATUS
+
+mk-config-diff exits with a zero exit status when there are no differences, and
+1 if there are.
+
+=head2 WARNINGS
 
 =head1 OPTIONS
 
@@ -3017,15 +3019,14 @@ default: yes
 
 Print the MySQL config diff report to STDOUT.  If you just want to check
 if the given configs are different or not by examining the tool's exit
-status (0=no difference, 1=configs are different), then specify
-C<--no-report> to suppress the report.
+status, then specify C<--no-report> to suppress the report.
 
 =item --report-width
 
 type: int; default: 78
 
 Truncate report lines to this many characters.  Since some variable values can
-be long, or when comparining multiple configs, it may help to increase the
+be long, or when comparing multiple configs, it may help to increase the
 report width so values are not truncated beyond readability.
 
 =item --set-vars
