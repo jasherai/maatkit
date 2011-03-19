@@ -151,7 +151,8 @@ sub detect_source_type {
       MKDEBUG && _d($line);
       if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
            || $line =~ m/\*+ \d/
-           || $line =~ m/Variable_name:\s+\w+/ )
+           || $line =~ m/Variable_name:\s+\w+/
+           || $line =~ m/Variable_name\s+Value$/ )
       {
          MKDEBUG && _d('show variables config line');
          $type = 'show_variables';

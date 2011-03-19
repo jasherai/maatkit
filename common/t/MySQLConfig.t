@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 use MySQLConfig;
 use DSNParser;
@@ -715,6 +715,23 @@ is_deeply(
       'ignore_builtin_innodb' => 'ON',
    },
    "mycnf-baron-001.cnf"
+);
+
+$config = new MySQLConfig(
+   source              => "$trunk/common/t/samples/show-variables/vars-baron-001.txt",
+   TextResultSetParser => $trp,
+);
+
+is(
+   $config->get_type(),
+   'show_variables',
+   'Detect show_variables type for unformatted SHOW VARIABLES output'
+);
+
+is(
+   $config->get('wait_timeout'),
+   28800,
+   "Get vars from unformatted SHOW VARIABLES output"
 );
 
 # #############################################################################
