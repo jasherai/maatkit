@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 use MySQLConfig;
 use DSNParser;
@@ -732,6 +732,17 @@ is(
    $config->get('wait_timeout'),
    28800,
    "Get vars from unformatted SHOW VARIABLES output"
+);
+
+$config = new MySQLConfig(
+   source              => "$trunk/$sample/mycnf-baron-002.txt",
+   TextResultSetParser => $trp,
+);
+
+is_deeply(
+   $config->get('innodb_file_per_table'),
+   'ON',
+   "innodb_file_per_table (mycnf-baron-002.cnf)"
 );
 
 # #############################################################################

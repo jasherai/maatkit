@@ -101,10 +101,11 @@ sub parse_config_from_file {
    }
    my ($source) = @args{@required_args};
 
-   my $type = $args{type} || detect_source_type(%args);
+   my $type = detect_source_type(%args);
    if ( !$type ) {
       die "Cannot auto-detect the type of MySQL config data in $source"
    }
+   $args{type} = $type;  # needed in _parse_varvals()
 
    my $vars;      # variables hashref
    my $dupes;     # duplicate vars hashref
@@ -204,12 +205,13 @@ sub parse_show_variables {
 # defaults file is explicitly given by --default-file.
 sub parse_mysqld {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    # First look for the list of option files like
@@ -243,7 +245,10 @@ sub parse_mysqld {
 
    # Parse the "var  val" lines.  2nd retval is duplicates but there
    # shouldn't be any with mysqld.
-   my ($config, undef) = _parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+   my ($config, undef) = _parse_varvals(
+      $type,
+      $varvals =~ m/\G^(\S+)(.*)\n/mg
+   );
 
    return $config, \@opt_files;
 }
@@ -252,16 +257,18 @@ sub parse_mysqld {
 # and a hashref of any duplicated variables.
 sub parse_my_print_defaults {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    # Parse the "--var=val" lines.
    my ($config, $dupes) = _parse_varvals(
+      $type,
       map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
    );
 
@@ -272,12 +279,13 @@ sub parse_my_print_defaults {
 # variable=>values and a hashref of any duplicated variables.
 sub parse_option_file {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(source type);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-   my $output   = _slurp_file($source);
+   my ($source, $type) = @args{@required_args};
+
+   my $output = _slurp_file($source);
    return unless $output;
 
    my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
@@ -286,6 +294,7 @@ sub parse_option_file {
 
    # Parse the "var=val" lines.
    my ($config, $dupes) = _parse_varvals(
+      $type,
       map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
       grep { $_ !~ m/^\s*#/ }  # no # comment lines
       split("\n", $mysqld_section)
@@ -299,7 +308,8 @@ sub parse_option_file {
 # vars.  The varvals list should start with a var at index 0 and its value
 # at index 1 then repeat for the next var-val pair.  
 sub _parse_varvals {
-   my ( @varvals ) = @_;
+   my ( $type, @varvals ) = @_;
+   die "I need a type argument" unless $type;
 
    # Config built from parsing the given varvals.
    my %config;
@@ -333,7 +343,7 @@ sub _parse_varvals {
          $var      = 0;  # next item should be the val for this var
          $last_var = $item;
       }
-      else {
+      else { # value
          if ( $item ) {
             $item =~ s/^\s+//;
 
@@ -349,25 +359,20 @@ sub _parse_varvals {
             elsif ( $item =~ m/No default/ ) {
                # mysqld --help --verbose lists "(No default value)" for vars
                # that aren't set.  For most vars, this means that the var's
-               # value is undefined, but for vars starting with the words in
-               # in regex below, it means that they're OFF.  See the same
-               # regext below.
-               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : undef;
+               # value is blank/undefined, but for vars starting with the
+               # words in this regex it means that they're OFF.
+               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
             }
          }
 
          if ( !defined $item ) {
-            # Like mysqld --help --verbose above, some sources like option
-            # files (my.cnf) may contain a var without a value, like "log-bin".
-            # These vars are ON when simply given even without a value.  A
-            # value for them is usually optional; when not specified, mysqld
-            # uses some default value.
-            $item = 'ON' if $last_var =~ m/^(?:log|skip|ignore)/;
+            # To prevent crashing on undef comparisons, we use a blank string
+            # instead of undef if the source type is not mysqld.  When other
+            # source types (i.e. option files and my_print_defaults) list a
+            # var without a value it means the var is on/enabled and MySQL
+            # will use a default value.
+            $item = $type ne 'mysqld' ? 'ON' : '';
          } 
-
-         # To help MySQLConfigComparer avoid crashing on undef comparisons,
-         # we let a blank string equal an undefined value.
-         $item = '' unless defined $item;
 
          if ( $duplicate_var ) {
             # Save var's original value before overwritng with this new value.
