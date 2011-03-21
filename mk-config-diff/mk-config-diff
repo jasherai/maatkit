@@ -1734,7 +1734,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 7366
+# MySQLConfig package 7368
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
@@ -2029,9 +2029,7 @@ sub _parse_varvals {
       }
       else { # value
          if ( $item ) {
-            $item =~ s/^\s+//;
-
-            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
+            if ( my ($num, $factor) = $item =~ m/(\d+)([KMGT])b?$/i ) {
                my %factor_for = (
                   k => 1_024,
                   m => 1_048_576,
