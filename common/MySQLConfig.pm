@@ -345,9 +345,8 @@ sub _parse_varvals {
       }
       else { # value
          if ( $item ) {
-            $item =~ s/^\s+//;
-
-            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
+            if ( my ($num, $factor) = $item =~ m/(\d+)([KMGT])b?$/i ) {
+               # value is a size like 1k, 16M, etc.
                my %factor_for = (
                   k => 1_024,
                   m => 1_048_576,

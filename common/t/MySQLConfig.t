@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 26;
 
 use MySQLConfig;
 use DSNParser;
@@ -692,6 +692,30 @@ is_deeply(
       'skip_federated'        => 'ON',
    },
    "Vars from option file"
+) or print Dumper($config->get_variables());
+
+$config = new MySQLConfig(
+   source              => "$trunk/$sample/mycnf002.txt",
+   TextResultSetParser => $trp,
+);
+
+is_deeply(
+   $config->get_variables(),
+   {
+      var1  => '16777216',    # 16 Mb
+      var2  => '16777216',
+      var3  => '16777216',
+      var4  => '16777216',
+      var5  => '16384',       # 16 Kb
+      var6  => '16384',
+      var7  => '16384',
+      var8  => '16384',
+      var9  => '1073741824',  # 1 Gb
+      var10 => '1073741824',
+      var11 => '1073741824',
+      var12 => '1073741824',
+   },
+   "Size postfixes MB, KB, etc."
 ) or print Dumper($config->get_variables());
 
 # ############################################################################
