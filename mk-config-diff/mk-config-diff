@@ -2131,7 +2131,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 7370
+# MySQLConfigComparer package 7372
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
@@ -2180,13 +2180,18 @@ my %eq_for = (
    binlog_format             => sub { return _optvaleq(@_);             },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
-
-   datadir                   => sub { return _eqdatadir(@_);            },
 );
 
 my %relative_path = (
-   language  => 'basedir',
-   log_error => 'datadir',
+   character_sets_dir  => 'basedir',
+   datadir             => 'basedir',
+   general_log_file    => 'datadir',
+   language            => 'basedir',
+   log_error           => 'datadir',
+   pid_file            => 'datadir',
+   plugin_dir          => 'basedir',
+   slow_query_log_file => 'datadir',
+   socket              => 'datadir',
 );
 
 sub new {
