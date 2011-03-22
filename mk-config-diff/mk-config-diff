@@ -2131,7 +2131,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 7360
+# MySQLConfigComparer package 7370
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
@@ -2157,7 +2157,6 @@ my %alt_val_for = (
    OFF   => 0,
    NO    => 0,
    FALSE => 0,
-   ''    => 0,
 );
 
 my %ignore_vars = (
@@ -2168,9 +2167,6 @@ my %ignore_vars = (
 
 my %eq_for = (
    ft_stopword_file          => sub { return _veq(@_, '(built-in)', 0); },
-
-   basedir                   => sub { return _patheq(@_);               },
-   language                  => sub { return _patheq(@_);               },
 
    log_bin                   => sub { return _eqifon(@_);               },
    log_slow_queries          => sub { return _eqifon(@_);               },
@@ -2188,6 +2184,11 @@ my %eq_for = (
    datadir                   => sub { return _eqdatadir(@_);            },
 );
 
+my %relative_path = (
+   language  => 'basedir',
+   log_error => 'datadir',
+);
+
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
@@ -2203,8 +2204,8 @@ sub diff {
    }
    my ($config_objs) = @args{@required_args};
 
-   my @diffs;
-   return @diffs if @$config_objs < 2;  # nothing to compare
+   my $diffs = {};
+   return $diffs if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('diff configs:', Dumper($config_objs));
 
    my $vars     = [ map { $_->get_variables() }     @$config_objs ];
@@ -2213,12 +2214,28 @@ sub diff {
    my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
 
    my %vals = map {
-      my $var  = $_;
+      my $var = $_;
+
+      my $is_dir   = $var =~ m/dir$/ || $var eq 'language';
+      my $rel_path = $relative_path{$var};
+
       my $vals = [
          map {
             my $config = $_;
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
+
+            if ( $val ) {
+               if ( $is_dir ) {
+                  $val .= '/' unless $val =~ m/\/$/;
+               }
+               if ( $rel_path && $val !~ m/^\// ) {
+                  my $base_path = $config->{ $relative_path{$var} } || "";
+                  $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
+                  $val =~ s/\/{2,}/\//g;  # make redundant // single /
+               }
+            }
+
             $val;
          } @$vars
       ];
@@ -2236,10 +2253,9 @@ sub diff {
             if ( $vals->[0] ne $vals->[$i] ) {
                if (    !$eq_for{$var}
                     || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
-                  push @diffs, {
-                     var  => $var,
-                     vals => [ map { $_->{$var} } @$vars ],  # original vals
-                  };
+                  $diffs->{$var} = [
+                     map { $_->{$var} } @$vars  # original vals
+                  ];
                   last VAL;
                }
             }
@@ -2251,7 +2267,7 @@ sub diff {
       }
    } # VAR
 
-   return @diffs;
+   return $diffs;
 }
 
 sub missing {
@@ -2262,8 +2278,8 @@ sub missing {
    }
    my ($config_objs) = @args{@required_args};
 
-   my @missing;
-   return @missing if @$config_objs < 2;  # nothing to compare
+   my $missing = {};
+   return $missing if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
 
    my @configs = map { $_->get_variables() } @$config_objs;
@@ -2274,14 +2290,11 @@ sub missing {
    my $n_configs = scalar @configs;
    foreach my $var ( keys %vars ) {
       if ( $vars{$var} < $n_configs ) {
-         push @missing, {
-            var     => $var,
-            missing => [ map { exists $_->{$var} ? 0 : 1 } @configs ],
-         };
+         $missing->{$var} = [ map { exists $_->{$var} ? 0 : 1 } @configs ];
       }
    }
 
-   return @missing;
+   return $missing;
 }
 
 sub _veq { 
@@ -2290,20 +2303,13 @@ sub _veq {
    return 0;
 }
 
-sub _patheq {
-   my ( $x, $y ) = @_;
-   $x .= '/' if $x !~ m/\/$/;
-   $y .= '/' if $y !~ m/\/$/;
-   return $x eq $y;
-}
-
 sub _eqdatadir {
    my ( $x, $y, $versions ) = @_;
    if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
       MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
       return 1;
    }
-   return _patheq(@_);
+   return $x eq $y;
 }
 
 sub _eqifon { 
@@ -2821,20 +2827,24 @@ sub main {
       # };
    }
 
-   my @diffs = $config_cmp->diff(configs=>\@configs);
-   foreach my $diff ( @diffs ) {
-      $report->add_line($diff->{var}, @{$diff->{vals}});
+   my $diffs   = $config_cmp->diff(configs=>\@configs);
+   my $n_diffs = scalar keys %$diffs;
+   if ( $n_diffs ) {
+      if ( $o->get('report') ) {
+         foreach my $var ( sort keys %$diffs ) {
+            $report->add_line($var, @{$diffs->{$var}});
+         }
+         $report->set_title(
+            "$n_diffs config difference" . ($n_diffs > 1 ? 's' : ''));
+         print $report->get_report(
+            truncate_callback => $truncate_callback,
+         );
+      }
+      exit 1;
    }
 
-   if ( @diffs && $o->get('report') ) {
-      $report->set_title(
-         scalar @diffs . ' config difference' . (@diffs > 1 ? 's' : ''));
-      print $report->get_report(
-         truncate_callback => $truncate_callback,
-      );
-   }
-
-   return @diffs ? 1 : 0;
+   # No differences.
+   return 0;
 }
 
 # ##########################################################################
