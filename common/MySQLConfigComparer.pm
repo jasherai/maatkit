@@ -29,8 +29,9 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# Alternate values because offline/config my-var=ON is shown
-# online as my_var=TRUE.
+# Alternate values because a config file can have var=ON and then be shown
+# in SHOW VARS as var=TRUE.  I.e. there's several synonyms for basic
+# true (1) and false (0), so we normalize them to make comparisons easier.
 my %alt_val_for = (
    ON    => 1,
    YES   => 1,
@@ -38,7 +39,7 @@ my %alt_val_for = (
    OFF   => 0,
    NO    => 0,
    FALSE => 0,
-   ''    => 0,
+#   ''    => 0,
 );
 
 # These vars don't interest us so we ignore them.
@@ -52,9 +53,6 @@ my %ignore_vars = (
 # values that are actually equal, like ON==1, ''=OFF, etc.
 my %eq_for = (
    ft_stopword_file          => sub { return _veq(@_, '(built-in)', 0); },
-
-   basedir                   => sub { return _patheq(@_);               },
-   language                  => sub { return _patheq(@_);               },
 
    log_bin                   => sub { return _eqifon(@_);               },
    log_slow_queries          => sub { return _eqifon(@_);               },
@@ -70,6 +68,14 @@ my %eq_for = (
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
 
    datadir                   => sub { return _eqdatadir(@_);            },
+);
+
+# The value of these vars are relative to some base-path.  In config files
+# just a filename can be given, but in SHOW VARS the full /base/path/filename
+# is shown.  So we have to qualify the config value with the correct base-path.
+my %relative_path = (
+   language  => 'basedir',
+   log_error => 'datadir',
 );
 
 sub new {
@@ -99,8 +105,8 @@ sub diff {
    }
    my ($config_objs) = @args{@required_args};
 
-   my @diffs;
-   return @diffs if @$config_objs < 2;  # nothing to compare
+   my $diffs = {};
+   return $diffs if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('diff configs:', Dumper($config_objs));
 
    my $vars     = [ map { $_->get_variables() }     @$config_objs ];
@@ -115,12 +121,30 @@ sub diff {
    #     var2 => [ config0-var2-val, config1-var2-val ],
    #   }
    my %vals = map {
-      my $var  = $_;
+      my $var = $_;
+
+      # Var specifies a directory path if it ends in "dir" or is "language".
+      # (language is an exception; hopefully there won't be any more.) 
+      my $is_dir   = $var =~ m/dir$/ || $var eq 'language';
+      my $rel_path = $relative_path{$var};
+
       my $vals = [
          map {
             my $config = $_;
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
+
+            if ( $val ) {
+               if ( $is_dir ) {
+                  $val .= '/' unless $val =~ m/\/$/;
+               }
+               if ( $rel_path && $val !~ m/^\// ) {
+                  my $base_path = $config->{ $relative_path{$var} } || "";
+                  $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
+                  $val =~ s/\/{2,}/\//g;  # make redundant // single /
+               }
+            }
+
             $val;
          } @$vars
       ];
@@ -142,10 +166,9 @@ sub diff {
             if ( $vals->[0] ne $vals->[$i] ) {
                if (    !$eq_for{$var}
                     || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
-                  push @diffs, {
-                     var  => $var,
-                     vals => [ map { $_->{$var} } @$vars ],  # original vals
-                  };
+                  $diffs->{$var} = [
+                     map { $_->{$var} } @$vars  # original vals
+                  ];
                   last VAL;
                }
             }
@@ -157,7 +180,7 @@ sub diff {
       }
    } # VAR
 
-   return @diffs;
+   return $diffs;
 }
 
 sub missing {
@@ -168,8 +191,8 @@ sub missing {
    }
    my ($config_objs) = @args{@required_args};
 
-   my @missing;
-   return @missing if @$config_objs < 2;  # nothing to compare
+   my $missing = {};
+   return $missing if @$config_objs < 2;  # nothing to compare
    MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
 
    my @configs = map { $_->get_variables() } @$config_objs;
@@ -183,14 +206,11 @@ sub missing {
    my $n_configs = scalar @configs;
    foreach my $var ( keys %vars ) {
       if ( $vars{$var} < $n_configs ) {
-         push @missing, {
-            var     => $var,
-            missing => [ map { exists $_->{$var} ? 0 : 1 } @configs ],
-         };
+         $missing->{$var} = [ map { exists $_->{$var} ? 0 : 1 } @configs ];
       }
    }
 
-   return @missing;
+   return $missing;
 }
 
 # True if x is val1 or val2 and y is val1 or val2.
@@ -200,21 +220,13 @@ sub _veq {
    return 0;
 }
 
-# True if paths are equal; adds trailing / to x or y if missing.
-sub _patheq {
-   my ( $x, $y ) = @_;
-   $x .= '/' if $x !~ m/\/$/;
-   $y .= '/' if $y !~ m/\/$/;
-   return $x eq $y;
-}
-
 sub _eqdatadir {
    my ( $x, $y, $versions ) = @_;
    if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
       MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
       return 1;
    }
-   return _patheq(@_);
+   return $x eq $y;
 }
 
 # True if x=1 (alt val for "ON") and y is true (any value), or vice-versa.
