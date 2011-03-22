@@ -66,16 +66,21 @@ my %eq_for = (
    binlog_format             => sub { return _optvaleq(@_);             },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
-
-   datadir                   => sub { return _eqdatadir(@_);            },
 );
 
 # The value of these vars are relative to some base-path.  In config files
 # just a filename can be given, but in SHOW VARS the full /base/path/filename
 # is shown.  So we have to qualify the config value with the correct base-path.
 my %relative_path = (
-   language  => 'basedir',
-   log_error => 'datadir',
+   character_sets_dir  => 'basedir',
+   datadir             => 'basedir',
+   general_log_file    => 'datadir',
+   language            => 'basedir',
+   log_error           => 'datadir',
+   pid_file            => 'datadir',
+   plugin_dir          => 'basedir',
+   slow_query_log_file => 'datadir',
+   socket              => 'datadir',
 );
 
 sub new {
