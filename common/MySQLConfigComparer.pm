@@ -39,7 +39,6 @@ my %alt_val_for = (
    OFF   => 0,
    NO    => 0,
    FALSE => 0,
-#   ''    => 0,
 );
 
 # These vars don't interest us so we ignore them.
@@ -50,37 +49,38 @@ my %ignore_vars = (
 );
 
 # Special equality tests for certain vars that have varying
-# values that are actually equal, like ON==1, ''=OFF, etc.
+# values that are actually equal.
 my %eq_for = (
-   ft_stopword_file          => sub { return _veq(@_, '(built-in)', 0); },
-
-   log_bin                   => sub { return _eqifon(@_);               },
-   log_slow_queries          => sub { return _eqifon(@_);               },
-
-   general_log_file          => sub { return _optvaleq(@_);             },
-   innodb_data_file_path     => sub { return _optvaleq(@_);             },
-   innodb_log_group_home_dir => sub { return _optvaleq(@_);             },
-   log_error                 => sub { return _optvaleq(@_);             },
-   slow_query_log_file       => sub { return _optvaleq(@_);             },
-   tmpdir                    => sub { return _optvaleq(@_);             },
-   binlog_format             => sub { return _optvaleq(@_);             },
-
-   long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
+   ft_stopword_file => sub { return _veq(@_, '(built-in)', 0); },
+   long_query_time  => sub { return $_[0] == $_[1] ? 1 : 0;    },
 );
+
+# These vars can be specified like --log or --log=value in config files.
+# If specified without a value, then they're "equal" to whatever default
+# value SHOW VARIABLES lists.
+my %value_is_optional = (
+   log                  => 1,
+   log_bin              => 1,
+   log_bin_index        => 1,
+   log_error            => 1,
+   log_isam             => 1,
+   log_slow_queries     => 1,
+   slow_query_log_file  => 1,
+); 
 
 # The value of these vars are relative to some base-path.  In config files
 # just a filename can be given, but in SHOW VARS the full /base/path/filename
 # is shown.  So we have to qualify the config value with the correct base-path.
 my %relative_path = (
-   character_sets_dir  => 'basedir',
-   datadir             => 'basedir',
-   general_log_file    => 'datadir',
-   language            => 'basedir',
-   log_error           => 'datadir',
-   pid_file            => 'datadir',
-   plugin_dir          => 'basedir',
-   slow_query_log_file => 'datadir',
-   socket              => 'datadir',
+   character_sets_dir   => 'basedir',
+   datadir              => 'basedir',
+   general_log_file     => 'datadir',
+   language             => 'basedir',
+   log_error            => 'datadir',
+   pid_file             => 'datadir',
+   plugin_dir           => 'basedir',
+   slow_query_log_file  => 'datadir',
+   socket               => 'datadir',
 );
 
 sub new {

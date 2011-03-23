@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -232,6 +232,31 @@ is_deeply(
    $diff,
    {},
    "log_error: value, undef"
+);
+
+# ############################################################################
+# Vars with default values.
+# ############################################################################
+$c1 = new MySQLConfig(
+   source              => [
+      ['log',        ''],
+      ['log_bin',    ''],
+   ],
+   TextResultSetParser => $trp,
+   type                => 'option_file',
+);
+$c2 = new MySQLConfig(
+   source              => [
+      ['log',        '/opt/mysql/data/mysqld.log'],
+      ['log_bin',    '/opt/mysql/data/mysql-bin' ],
+   ],
+   TextResultSetParser => $trp,
+   type                => 'show_variables',
+);
+is_deeply(
+   diff($c2, $c2),
+   {},
+   "Variables with optional values"
 );
 
 # ############################################################################

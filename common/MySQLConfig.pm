@@ -75,11 +75,11 @@ sub parse_config {
       %config_data = parse_config_from_file(%args);
    }
    elsif ( ref $source && ref $source eq 'ARRAY' ) {
-      $config_data{type} = 'show_variables';
+      $config_data{type} = $args{type} || 'show_variables';
       $config_data{vars} = { map { @$_ } @$source };
    }
    elsif ( ref $source && (ref $source) =~ m/DBI/i ) {
-      $config_data{type} = 'show_variables';
+      $config_data{type} = $args{type} || 'show_variables';
       my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
       MKDEBUG && _d($source, $sql);
       my $rows = $source->selectall_arrayref($sql);
@@ -101,11 +101,10 @@ sub parse_config_from_file {
    }
    my ($source) = @args{@required_args};
 
-   my $type = detect_source_type(%args);
+   my $type = $args{type} || detect_source_type(%args);
    if ( !$type ) {
       die "Cannot auto-detect the type of MySQL config data in $source"
    }
-   $args{type} = $type;  # needed in _parse_varvals()
 
    my $vars;      # variables hashref
    my $dupes;     # duplicate vars hashref
@@ -205,11 +204,11 @@ sub parse_show_variables {
 # defaults file is explicitly given by --default-file.
 sub parse_mysqld {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(source );
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
+   my ($source) = @args{@required_args};
 
    my $output = _slurp_file($source);
    return unless $output;
@@ -246,7 +245,6 @@ sub parse_mysqld {
    # Parse the "var  val" lines.  2nd retval is duplicates but there
    # shouldn't be any with mysqld.
    my ($config, undef) = _parse_varvals(
-      $type,
       $varvals =~ m/\G^(\S+)(.*)\n/mg
    );
 
@@ -257,18 +255,17 @@ sub parse_mysqld {
 # and a hashref of any duplicated variables.
 sub parse_my_print_defaults {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(source);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
+   my ($source) = @args{@required_args};
 
    my $output = _slurp_file($source);
    return unless $output;
 
    # Parse the "--var=val" lines.
    my ($config, $dupes) = _parse_varvals(
-      $type,
       map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
    );
 
@@ -279,11 +276,11 @@ sub parse_my_print_defaults {
 # variable=>values and a hashref of any duplicated variables.
 sub parse_option_file {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(source);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
+   my ($source) = @args{@required_args};
 
    my $output = _slurp_file($source);
    return unless $output;
@@ -294,7 +291,6 @@ sub parse_option_file {
 
    # Parse the "var=val" lines.
    my ($config, $dupes) = _parse_varvals(
-      $type,
       map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
       grep { $_ !~ m/^\s*#/ }  # no # comment lines
       split("\n", $mysqld_section)
@@ -308,8 +304,7 @@ sub parse_option_file {
 # vars.  The varvals list should start with a var at index 0 and its value
 # at index 1 then repeat for the next var-val pair.  
 sub _parse_varvals {
-   my ( $type, @varvals ) = @_;
-   die "I need a type argument" unless $type;
+   my ( @varvals ) = @_;
 
    # Config built from parsing the given varvals.
    my %config;
@@ -319,33 +314,46 @@ sub _parse_varvals {
    my %duplicates;
 
    # Keep track if item is var or val because each needs special modifications.
-   my $var      = 1;
-   my $last_var = undef;
+   my $var;  # current variable (e.g. datadir)
+   my $val;  # value for current variable
+   ITEM:
    foreach my $item ( @varvals ) {
       if ( $item ) {
-         $item =~ s/^\s+//;  # strip leading whitespace
-         $item =~ s/\s+$//;  # strip trailing whitespace
+         # Strip leading and trailing whitespace.
+         $item =~ s/^\s+//;
+         $item =~ s/\s+$//;
       }
 
-      if ( $var ) {
-         # Variable names via config files are like "log-bin" but
-         # via SHOW VARIABLES they're like "log_bin".
-         $item =~ s/-/_/g;
+      if ( !$var ) {
+         # No var means this item is (should be) the next var in the list.
+         $var = $item;
 
-         # If this var exists in the offline config already, then
-         # its a duplicate.  Its original value will be saved before
-         # being overwritten with the new value.
-         if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
-            MKDEBUG && _d("Duplicate var:", $item);
-            $duplicate_var = 1;
+         # Variable names are usually specified like "log-bin"
+         # but in SHOW VARIABLES they're all like "log_bin".
+         $var =~ s/-/_/g;
+
+         # The var is a duplicate (in the bad sense, i.e. where user is
+         # probably unaware that there's two different values for this var
+         # but only the last is used) if we've seen it already and it cannot
+         # be duplicated.  We don't have its value yet (next loop iter),
+         # so we set a flag to indicate that we should save the duplicate value.
+         if ( exists $config{$var} && !$can_be_duplicate{$var} ) {
+            MKDEBUG && _d("Duplicate var:", $var);
+            $duplicate_var = 1;  # flag on, save all the var's values
          }
-
-         $var      = 0;  # next item should be the val for this var
-         $last_var = $item;
       }
-      else { # value
-         if ( $item ) {
-            if ( my ($num, $factor) = $item =~ m/(\d+)([KMGT])b?$/i ) {
+      else {
+         # $var is set so this item should be its value.
+         my $val = $item;
+         MKDEBUG && _d("Var:", $var, "val:", $val);
+
+         # Avoid crashing on undef comparison.  Also, SHOW VARIABLES uses
+         # blank strings, not NULL/undef.
+         if ( !defined $val ) {
+            $val = '';
+         }
+         else {
+            if ( my ($num, $factor) = $val =~ m/(\d+)([KMGT])b?$/i ) {
                # value is a size like 1k, 16M, etc.
                my %factor_for = (
                   k => 1_024,
@@ -353,36 +361,32 @@ sub _parse_varvals {
                   g => 1_073_741_824,
                   t => 1_099_511_627_776,
                );
-               $item = $num * $factor_for{lc $factor};
+               $val = $num * $factor_for{lc $factor};
             }
-            elsif ( $item =~ m/No default/ ) {
+            elsif ( $val =~ m/No default/ ) {
                # mysqld --help --verbose lists "(No default value)" for vars
-               # that aren't set.  For most vars, this means that the var's
-               # value is blank/undefined, but for vars starting with the
-               # words in this regex it means that they're OFF.
-               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
+               # without values, but this means two things.  One, for most
+               # vars it means there's no value, which we treat as a blank
+               # string because that's usually what SHOW VARIABLES will list
+               # and it safeguards against crashing on undef comparisons.
+               # Two, for certains vars (i.e. the ones matches in the regex
+               # below), it means that they're OFF (because otherwise they'd
+               # be ON if they had a value).
+               $val = $var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
             }
          }
 
-         if ( !defined $item ) {
-            # To prevent crashing on undef comparisons, we use a blank string
-            # instead of undef if the source type is not mysqld.  When other
-            # source types (i.e. option files and my_print_defaults) list a
-            # var without a value it means the var is on/enabled and MySQL
-            # will use a default value.
-            $item = $type ne 'mysqld' ? 'ON' : '';
-         } 
-
          if ( $duplicate_var ) {
-            # Save var's original value before overwritng with this new value.
-            push @{$duplicates{$last_var}}, $config{$last_var};
-            $duplicate_var = 0;
+            # Save the var's last value before we overwrite it with this
+            # current value.
+            push @{$duplicates{$var}}, $config{$var};
+            $duplicate_var = 0;  # flag off for next var
          }
 
          # Save this var-val.
-         $config{$last_var} = $item;
+         $config{$var} = $val;
 
-         $var = 1;  # next item should be a var
+         $var = undef;  # next item should be a var
       }
    }
 
