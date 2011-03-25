@@ -37,12 +37,66 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   QueryParser - <QueryParser> object
+#   SQLParser   - <SQLParser> object
+#
+# Returns:
+#   TableAccess object
 sub new {
    my ( $class, %args ) = @_;
+   my @required_args = qw(QueryParser SQLParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
    my $self = {
       %args,
    };
+
    return bless $self, $class;
+}
+
+# Sub: get_table_access
+#   Get table access info for each table in the given query.  Table access
+#   info includes the Context, Access (read or write) and the Table (CAT).
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   query - Query string
+#
+# Returns:
+#   Arrayref of hashrefs, one for each CAT, like:
+#   (code start)
+#   [
+#     { context => 'DELETE',
+#       access  => 'write',
+#       table   => 'd.t',
+#     },
+#     { context => 'DELETE',
+#       access  => 'read',
+#       table   => 'd.t',
+#     },
+#   ],
+#   (code stop)
+sub get_table_access {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($query) = @args{@required_args};
+
+   my $cat;  # Context, Access, Table for each table
+
+   return $cat;
 }
 
 sub _d {
