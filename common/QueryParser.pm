@@ -1,4 +1,4 @@
-# This program is copyright 2008-2009 Percona Inc.
+# This program is copyright 2008-2011 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,6 +17,12 @@
 # ###########################################################################
 # QueryParser package $Revision$
 # ###########################################################################
+
+# Package: QueryParser
+# QueryParser extracts parts of SQL statements, like table lists and subqueries.
+# This package differs from SQLParser because it only extracts from a query
+# what is needed and only when that can be accomplished rather simply.  By
+# contrast, SQLParser parses the entire SQL statement no matter the complexity.
 package QueryParser;
 
 use strict;

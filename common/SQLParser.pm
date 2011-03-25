@@ -1,4 +1,4 @@
-# This program is copyright 2010 Percona Inc.
+# This program is copyright 2010-2011 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -27,14 +27,15 @@
 # places and varieties.
 #
 # This package has not been profiled and since it relies heavily on
-# mildly complex regex, do not expect amazing performance.
-#
-# In Maatkit, SQLParser is primarily used by <QueryAdvisorRules> which
-# is used by <mk-query-advisor>.
+# mildly complex regex, so do not expect amazing performance.
 #
 # See SQLParser.t for examples of the various data structures.  There are
 # many and they vary a lot depending on the statment parsed, so documentation
 # in this file is not exhaustive.
+#
+# This package differs from QueryParser because here we parse the entire SQL
+# statement (thus giving access to all its parts), whereas QueryParser extracts
+# just needed parts (and ignores all the rest).
 package SQLParser;
 
 use strict;
