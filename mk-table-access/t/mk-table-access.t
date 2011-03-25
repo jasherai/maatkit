@@ -15,11 +15,11 @@ use MaatkitTest;
 shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 
-require "$trunk/util/mk-table-access/mk-table-access";
+require "$trunk/mk-table-access/mk-table-access";
 
 my @args = qw();
-my $in   = "$trunk/util/mk-table-access/t/samples/in/";
-my $out  = "util/mk-table-access/t/samples/out/";
+my $in   = "$trunk/mk-table-access/t/samples/in/";
+my $out  = "mk-table-access/t/samples/out/";
 
 ok(
    no_diff(
