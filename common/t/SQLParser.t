@@ -1425,6 +1425,7 @@ my @cases = (
          into         => [ { name => 'tbl', } ],
          columns      => [ { name => 'col' } ],
          select       => {
+            type    => 'select',
             clauses => { 
                columns => 'id ',
                from    => 'tbl2 ',
@@ -1520,6 +1521,7 @@ my @cases = (
          columns => [ { name => 'dt' }, { name => 'ncpc' } ],
          into    => [ { db => 'db', name => 'tblA' } ],
          select  => {
+            type    => 'select',
             clauses => {
                columns => 'dates.dt, scraped.total_r ',
                from    => 'tblB AS dates LEFT JOIN dbF.tblC AS scraped ON dates.dt = scraped.dt AND dates.version = scraped.version',

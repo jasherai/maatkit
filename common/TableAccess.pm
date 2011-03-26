@@ -180,32 +180,108 @@ sub _get_cats_from_query_struct {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($query_struct) = @args{@required_args};
-   MKDEBUG && _d('Getting cats from query struct');
+   my $sp             = $self->{SQLParser};
 
+   MKDEBUG && _d('Getting cats from query struct');
    my @cats;
-   my $context = uc $query_struct->{type};
-   my $access  = $context eq 'SELECT' ? 'read' : 'write';
+   
+   my $context = uc($args{context} || $query_struct->{type});
+   my $access  = $args{access}     || ($context eq 'SELECT' ? 'read' : 'write');
+
+   # Get CAT for each table referenced by the query.  The query should
+   # reference tables, i.e. we assume that we're not given queries like
+   # SELECT NOW() or SET @a=1.
    my $tables  = $query_struct->{from} || $query_struct->{into};
    foreach my $table ( @$tables ) {
-      push @cats, {
+      my $cat = {
          table   => ($table->{db} ? "$table->{db}." : '') . $table->{name},
          context => $table->{join} ? 'JOIN' : $context,
          access  => $access,
       };
+      MKDEBUG && _d("Table access:", Dumper($cat));
+      push @cats, $cat;
    }
 
+   # Get CAT for each unique table referenced in the query's WHERE
+   # clause, if it has one.
    if ( $query_struct->{where} ) {
+      my %seen_table;
+
       foreach my $cond ( @{$query_struct->{where}} ) {
-         my $table;
-         push @cats, {
-            context => 'WHERE',
-            access  => 'read',
-            table   => $table,
-         };
+         MKDEBUG && _d("WHERE condition column:", $cond->{column});
+         my $col = $sp->parse_identifier('column', $cond->{column});
+
+         my $tbl;
+         if ( $col->{tbl} ) {
+            $tbl = $self->_get_real_table_name(
+               name         => $col->{tbl},
+               query_struct => $query_struct,
+            );
+         }
+         elsif ( @$tables == 1 ) {
+            MKDEBUG && _d("WHERE condition column is not table-qualified; ",
+               "using query's only table:", $tables->[0]->{name});
+            $tbl = $tables->[0]->{name};
+         }
+
+         my $db;
+         if ( $col->{tbl} && $col->{db} ) {
+            $db = $col->{db};
+         }
+         elsif ( @$tables == 1 && $tables->[0]->{db} ) {
+            MKDEBUG && _d("WHERE condition column is not database-qualified; ",
+               "using query's only database:", $tables->[0]->{db});
+            $db = $tables->[0]->{db};
+         }
+
+         my $db_tbl = ($db ? "$db." : "") . $tbl;
+         if ( !$seen_table{$db_tbl}++ ) {
+            my $cat = {
+               context => 'WHERE',
+               access  => 'read',
+               table   => $db_tbl,
+            };
+            MKDEBUG && _d("Table access:", Dumper($cat));
+            push @cats, $cat;
+         }
       }
    }
 
+   # Recurse into the query's sub-select, if it has one.
+   # E.g. INSERT ... SELECT.  The context is the outer (this's) query's
+   # context, but the access is read because this subquery is a SELECT.
+   if ( $query_struct->{select} ) {
+      MKDEBUG && _d("Parsing SELECT struct in query");
+      my $select_cats = $self->_get_cats_from_query_struct(
+            %args,
+            context      => $context,
+            access       => 'read',
+            query_struct => $query_struct->{select},
+      );
+      push @cats, @$select_cats;
+   }
+
    return \@cats;
+}
+
+sub _get_real_table_name {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(name query_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($name, $query_struct) = @args{@required_args};
+
+   my $tables  = $query_struct->{from} || $query_struct->{into};
+   foreach my $table ( @$tables ) {
+      if ( $table->{name} eq $name
+           || ($table->{alias} || "") eq $name ) {
+         MKDEBUG && _d("Real table name for", $name, "is", $table->{name});
+         return $table->{name};
+      }
+   }
+   warn "Table $name does not exist in query";  # shouldn't happen
+   return;
 }
 
 sub _d {

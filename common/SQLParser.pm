@@ -208,6 +208,7 @@ sub _parse_clauses {
 
       if ( $clause eq 'select' ) {
          MKDEBUG && _d('Parsing subquery clauses');
+         $struct->{select}->{type} = 'select';
          $self->_parse_clauses($struct->{select});
       }
    }
@@ -1123,6 +1124,7 @@ sub parse_identifiers {
 sub parse_identifier {
    my ( $self, $type, $ident ) = @_;
    return unless $type && $ident;
+   MKDEBUG && _d("Parsing", $type, "identifier:", $ident);
 
    my %ident_struct;
    my @ident_parts = map { s/`//g; $_; } split /[.]/, $ident;
@@ -1142,6 +1144,7 @@ sub parse_identifier {
       die "Invalid number of parts in $type reference: $ident";
    }
 
+   MKDEBUG && _d($type, "identifier struct:", Dumper(\%ident_struct));
    return \%ident_struct;
 }
 
