@@ -49,13 +49,16 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-my $quoted_ident   = qr/`[^`]+`/;        # `db`.`col`
+# Basic identifers for database, table, column and function names.
+my $quoted_ident   = qr/`[^`]+`/;             # `db`.`col`
 my $unquoted_ident = qr/\w+(?:\([^\)]*\))?/;  # db.col or NOW()
 
 my $table_ident = qr/(?:
     (?:(?:$quoted_ident|$unquoted_ident)\.?){1,2}
 )/xio;
 
+# A column is identified by 1 to 3 identifiers separated by periods
+# and optionally followed by an alias.
 my $column_ident = qr/(?:
    \s*
     ((?:(?>$quoted_ident|$unquoted_ident|\*)\.?){1,3}) # column
@@ -65,7 +68,6 @@ my $column_ident = qr/(?:
       ((?>$quoted_ident|$unquoted_ident))              #  alais
     )?                                                 # end optional alias
     \s*                                                # optional space before
-    (?>,|\Z)                                           # next column or end str
 )/xio;
 
 # Sub: new
@@ -361,14 +363,6 @@ sub parse_insert {
       die "INSERT/REPLACE without values: $query" unless $values;
       $struct->{clauses}->{$next_clause} = $values;
       MKDEBUG && _d('Clause:', $next_clause, $values);
-
-      #if ( $on ) {
-      #   print Dumper($on);
-      #   ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
-      #   die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
-      #   $struct->{clauses}->{on_duplicate} = $values;
-      #   MKDEBUG && _d('Clause: on duplicate key update', $values);
-      #}
    }
 
    # Save any leftovers.  If there are any, parsing missed something.
@@ -951,7 +945,7 @@ sub parse_columns {
    my @cols;
    pos $cols = 0;
    while (pos $cols < length $cols) {
-      if ($cols =~ m/\G$column_ident/gcxo) {
+      if ($cols =~ m/\G$column_ident(?>,|\Z)/gcxo) {
          my ($db_tbl_col, $as, $alias) = ($1, $2, $3); # XXX
          my $ident_struct = $self->parse_identifier('column', $db_tbl_col);
          $alias =~ s/`//g if $alias;
