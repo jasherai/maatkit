@@ -53,22 +53,26 @@ $Data::Dumper::Quotekeys = 0;
 my $quoted_ident   = qr/`[^`]+`/;             # `db`.`col`
 my $unquoted_ident = qr/\w+(?:\([^\)]*\))?/;  # db.col or NOW()
 
+my $ident_alias = qr/
+  \s+                                 # space before alias
+  (?:(AS)\s+)?                        # optional AS keyword
+  ((?>$quoted_ident|$unquoted_ident)) # alais
+/xi;
+
+# A table is identified by 1 or 2 identifiers separated by a period
+# and optionally followed by an alias.  See parse_table_reference()
+# for why an optional index hint is not included here.
 my $table_ident = qr/(?:
-    (?:(?:$quoted_ident|$unquoted_ident)\.?){1,2}
-)/xio;
+   ((?:(?>$quoted_ident|$unquoted_ident)\.?){1,2}) # table
+   (?:$ident_alias)?                               # optional alias
+)/xo;
 
 # A column is identified by 1 to 3 identifiers separated by periods
 # and optionally followed by an alias.
 my $column_ident = qr/(?:
-   \s*
-    ((?:(?>$quoted_ident|$unquoted_ident|\*)\.?){1,3}) # column
-    (?:                                                # optional alias
-      \s+                                              #  space before alias
-      (?:(AS)\s+)?                                     #  optional AS keyword
-      ((?>$quoted_ident|$unquoted_ident))              #  alais
-    )?                                                 # end optional alias
-    \s*                                                # optional space before
-)/xio;
+   ((?:(?>$quoted_ident|$unquoted_ident|\*)\.?){1,3}) # column
+   (?:$ident_alias)?                                  # optional alias
+)/xo;
 
 # Sub: new
 #   Create a SQLParser object.
@@ -578,11 +582,13 @@ sub parse_from {
 # confused with the "JOIN" thing in parse_from().
 sub parse_table_reference {
    my ( $self, $tbl_ref ) = @_;
-   my %tbl;
+   return unless $tbl_ref;
    MKDEBUG && _d('Parsing table reference:', $tbl_ref);
+   my %tbl;
 
    # First, check for an index hint.  Remove and save it if present.
-   my $index_hint;
+   # This can't be included in the $table_ident regex because, for example,
+   # `tbl` FORCE INDEX (foo), makes FORCE look like an implicit alias.
    if ( $tbl_ref =~ s/
          \s+(
             (?:FORCE|USE|INGORE)\s
@@ -590,29 +596,20 @@ sub parse_table_reference {
             \s*\([^\)]+\)\s*
          )//xi)
    {
-      MKDEBUG && _d('Index hint:', $1);
       $tbl{index_hint} = $1;
+      MKDEBUG && _d('Index hint:', $tbl{index_hint});
    }
 
-
-   my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($table_ident)/g;
-   # tbl ref:  tbl AS foo
-   # words:      0  1   2
-   MKDEBUG && _d('Table ref words:', @words);
-
-   # Real table name with optional db. qualifier.
-   my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
-   $tbl{db}   = $db if $db;
-   $tbl{name} = $tbl;
-
-   # Alias.
-   if ( $words[2] ) {
-      die "Bad table ref: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
-      $tbl{alias}          = $words[2];
-      $tbl{explicit_alias} = 1;
+   if ( $tbl_ref =~ m/$table_ident/ ) {
+      my ($db_tbl, $as, $alias) = ($1, $2, $3); # XXX
+      my $ident_struct = $self->parse_identifier('table', $db_tbl);
+      $alias =~ s/`//g if $alias;
+      @tbl{keys %$ident_struct} = values %$ident_struct;
+      $tbl{explicit_alias} = 1 if $as;
+      $tbl{alias}          = $alias if $alias;
    }
-   elsif ( $words[1] ) {
-      $tbl{alias} = $words[1];
+   else {
+      die "Table ident match failed";  # shouldn't happen
    }
 
    return \%tbl;
@@ -945,7 +942,7 @@ sub parse_columns {
    my @cols;
    pos $cols = 0;
    while (pos $cols < length $cols) {
-      if ($cols =~ m/\G$column_ident(?>,|\Z)/gcxo) {
+      if ($cols =~ m/\G\s*$column_ident\s*(?>,|\Z)/gcxo) {
          my ($db_tbl_col, $as, $alias) = ($1, $2, $3); # XXX
          my $ident_struct = $self->parse_identifier('column', $db_tbl_col);
          $alias =~ s/`//g if $alias;
@@ -957,7 +954,7 @@ sub parse_columns {
          push @cols, $col_struct;
       }
       else {
-         die "no match for $cols\n";
+         die "Column ident match failed";  # shouldn't happen
       }
    }
 
