@@ -38,6 +38,7 @@
 # just needed parts (and ignores all the rest).
 package SQLParser;
 
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -47,6 +48,25 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
+
+my $quoted_ident   = qr/`[^`]+`/;        # `db`.`col`
+my $unquoted_ident = qr/\w+(?:\([^\)]*\))?/;  # db.col or NOW()
+
+my $table_ident = qr/(?:
+    (?:(?:$quoted_ident|$unquoted_ident)\.?){1,2}
+)/xio;
+
+my $column_ident = qr/(?:
+   \s*
+    ((?:(?>$quoted_ident|$unquoted_ident|\*)\.?){1,3}) # column
+    (?:                                                # optional alias
+      \s+                                              #  space before alias
+      (?:(AS)\s+)?                                     #  optional AS keyword
+      ((?>$quoted_ident|$unquoted_ident))              #  alais
+    )?                                                 # end optional alias
+    \s*                                                # optional space before
+    (?>,|\Z)                                           # next column or end str
+)/xio;
 
 # Sub: new
 #   Create a SQLParser object.
@@ -110,14 +130,14 @@ sub parse {
    if ( $query =~ s/^(\w+)\s+// ) {
       $type = lc $1;
       MKDEBUG && _d('Query type:', $type);
-      if ( $type !~ m/$allowed_types/i ) {
-         return;
-      }
+      die "Cannot parse " . uc($type) . " queries"
+         unless $type =~ m/$allowed_types/i;
    }
    else {
-      MKDEBUG && _d('No first word/type');
-      return;
+      die "Query does not begin with a word";  # shouldn't happen
    }
+
+   $query = $self->normalize_keyword_spaces($query);
 
    # If query has any subqueries, remove/save them and replace them.
    # They'll be parsed later, after the main outer query.
@@ -188,7 +208,6 @@ sub _parse_clauses {
    return;
 }
 
-
 # Sub: clean_query
 #   Remove spaces, flatten, and normalize some patterns for easier parsing.
 #
@@ -207,6 +226,21 @@ sub clean_query {
    $query =~ s!/\*.*?\*/!!g;   # /* comments */
    $query =~ s/^\s+//;         # leading spaces
    $query =~ s/\s+$//;         # trailing spaces
+
+   return $query;
+}
+
+# Sub: normalize_keyword_spaces
+#   Normalize spaces around certain SQL keywords.  Spaces are added and
+#   removed around certain SQL keywords to make parsing easier.
+#
+# Parameters:
+#   $query - SQL statement
+#
+# Returns:
+#   Normalized $query
+sub normalize_keyword_spaces {
+   my ( $self, $query ) = @_;
 
    # Add spaces between important tokens to help the parse_* subs.
    $query =~ s/\b(VALUE(?:S)?)\(/$1 (/i;
@@ -288,6 +322,18 @@ sub parse_insert {
    my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
    1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
+   if ( $query =~ m/ON DUPLICATE KEY UPDATE (.+)/i ) {
+      my $values = $1;
+      die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
+      $struct->{clauses}->{on_duplicate} = $values;
+      MKDEBUG && _d('Clause: on duplicate key update', $values);
+
+      # This clause can be confused for JOIN ... ON in INSERT-SELECT queries,
+      # so we remove the ON DUPLICATE KEY UPDATE clause after extracting its
+      # values.
+      $query =~ s/\s+ON DUPLICATE KEY UPDATE.+//;
+   }
+
    # Parse INTO clause.  Literal "INTO" is optional.
    if ( my @into = ($query =~ m/
             (?:INTO\s+)?            # INTO, optional
@@ -311,17 +357,18 @@ sub parse_insert {
       die "INSERT/REPLACE without clause after table: $query"
          unless $next_clause;
       $next_clause = 'values' if $next_clause eq 'value';
-      my ($values, $on) = ($query =~ m/\G(.+?)(ON|\Z)/gci);
+      my ($values) = ($query =~ m/\G(.+)/gci);
       die "INSERT/REPLACE without values: $query" unless $values;
       $struct->{clauses}->{$next_clause} = $values;
       MKDEBUG && _d('Clause:', $next_clause, $values);
 
-      if ( $on ) {
-         ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
-         die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
-         $struct->{clauses}->{on_duplicate} = $values;
-         MKDEBUG && _d('Clause: on duplicate key update', $values);
-      }
+      #if ( $on ) {
+      #   print Dumper($on);
+      #   ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
+      #   die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
+      #   $struct->{clauses}->{on_duplicate} = $values;
+      #   MKDEBUG && _d('Clause: on duplicate key update', $values);
+      #}
    }
 
    # Save any leftovers.  If there are any, parsing missed something.
@@ -430,154 +477,104 @@ sub parse_update {
 sub parse_from {
    my ( $self, $from ) = @_;
    return unless $from;
-   MKDEBUG && _d('FROM clause:', $from);
+   MKDEBUG && _d('Parsing FROM', $from);
 
-   # This method tokenizes the FROM clause into "things".  Each thing
-   # is one of:
-   #   * table ref, including alias
-   #   * JOIN syntax word
-   #   * ON or USING (condition)
-   #   * ON|USING expression (WHERE-like expression for ON, columns for USING)
-   # So it is not word-by-word; it's thing-by-thing in one pass.
+   # Table references in a FROM clause are separated either by commas
+   # (comma/theta join, implicit INNER join) or the JOIN keyword (ansi
+   # join).  JOIN can be preceded by other keywords like LEFT, RIGHT,
+   # OUTER, etc.  There must be spaces before and after JOIN and its
+   # keywords, but there does not have to be spaces before or after a
+   # comma.  See http://dev.mysql.com/doc/refman/5.5/en/join.html
+   my $comma_join = qr/(?>\s*,\s*)/;
+   my $ansi_join  = qr/(?>
+     \s+
+     (?:(?:INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL)\s+)*
+     JOIN
+     \s+
+   )/xi;
 
-   my @tbls;  # All parsed tables.
-   my $tbl;   # This gets pushed to @tbls when it's set.  It may not be
-              # all the time if, for example, $pending_tbl is being built.
+   my @tbls;     # all table refs, a hashref for each
+   my $tbl_ref;  # current table ref hashref
+   my $join;     # join info hahsref for current table ref
+   foreach my $thing ( split /($comma_join|$ansi_join)/io, $from ) {
+      # We shouldn't parse empty things.
+      die "Error parsing FROM clause" unless $thing;
 
-   # These vars are used when parsing an explicit/ANSI JOIN statement.
-   my $pending_tbl;         
-   my $state  = undef;  
-   my $join   = '';  # JOIN syntax words, without JOIN; becomes type
-   my $joinno = 0;   # join number for debugging
-   my $redo   = 0;   # save $pending_tbl, redo loop for new JOIN
+      # Strip leading and trailing spaces.
+      $thing =~ s/^\s+//;
+      $thing =~ s/\s+$//;
+      MKDEBUG && _d('Table thing:', $thing);
 
-   # These vars help detect "comma joins", e.g. "tbl1, tbl2", which are
-   # treated by MySQL as implicit INNER JOIN.  See below.
-   my $join_back  = 0;
-   my $last_thing = '';
+      if ( $thing =~ m/(?:ON|USING)/i ) {
+         MKDEBUG && _d("JOIN condition");
+         # This join condition follows a JOIN (comma joins don't have
+         # conditions).  It includes a table ref, ON|USING, and then
+         # the value to ON|USING.
+         my ($tbl_ref_txt, $join_condition_verb, $join_condition_value)
+            = $thing =~ m/^(.+?)\s+(ON|USING)\s+(.+)/i;
 
-   my $join_delim
-      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN|ON|USING/i;
-   my $next_tbl
-      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN/i;
+         $tbl_ref = $self->parse_table_reference($tbl_ref_txt);
 
-   foreach my $thing ( split(/\s*($join_delim)\s+/io, $from) ) {
-      next unless $thing;
-      MKDEBUG && _d('Table thing:', $thing, 'state:', $state); 
+         $join->{condition} = lc $join_condition_verb;
+         if ( $join->{condition} eq 'on' ) {
+            # The value for ON can be, as the MySQL manual says, is just
+            # like a WHERE clause.
+            my $where      = $self->parse_where($join_condition_value);
+            $join->{where} = $where; 
+         }
+         else { # USING
+            # Although calling parse_columns() works, it's overkill.
+            # This is not a columns def as in "SELECT col1, col2", it's
+            # a simple csv list of column names without aliases, etc.
+            $join_condition_value =~ s/^\s*\(//;
+            $join_condition_value =~ s/\)\s*$//;
+            $join->{columns} = $self->parse_csv($join_condition_value);
+         }
+      }
+      elsif ( $thing =~ m/(?:,|JOIN)/i ) {
+         # A comma or JOIN signals the end of the current table ref and
+         # the begining of the next table ref.  Save the current table ref.
+         if ( $join ) {
+            $tbl_ref->{join} = $join;
+         }
+         push @tbls, $tbl_ref;
+         MKDEBUG && _d("Complete table reference:", Dumper($tbl_ref));
 
-      if ( !$state && $thing !~ m/$join_delim/i ) {
-         MKDEBUG && _d('Table factor');
-         $tbl = { $self->parse_table_reference($thing) };
+         # Reset vars for the next table ref.
+         $tbl_ref = undef;
+         $join    = {};
 
-         # Non-ANSI implicit INNER join to previous table, e.g. "tbl1, tbl2".
-         # Manual says: "INNER JOIN and , (comma) are semantically equivalent
-         # in the absence of a join condition".
-         $join_back = 1 if ($last_thing || '') eq ',';
+         # Next table ref becomes the current table ref.  It's joined to
+         # the previous table ref either implicitly (comma join) or explicitly
+         # (ansi join).
+         $join->{to} = $tbls[-1]->{name};
+         if ( $thing eq ',' ) {
+            $join->{type} = 'inner';
+            $join->{ansi} = 0;
+         }
+         else { # ansi join
+            my $type = $thing =~ m/^(.+?)\s+JOIN$/i ? lc $1 : 'inner';
+            $join->{type} = $type;
+            $join->{ansi} = 1;
+         }
       }
       else {
-         # Should be starting or continuing an explicit JOIN.
-         if ( !$state ) {
-            $joinno++;
-            MKDEBUG && _d('JOIN', $joinno, 'start');
-            $join .= ' ' . lc $thing;
-            if ( $join =~ m/join$/ ) {
-               $join =~ s/ join$//;
-               $join =~ s/^\s+//;
-               MKDEBUG && _d('JOIN', $joinno, 'type:', $join);
-               my $last_tbl = $tbls[-1];
-               die "Invalid syntax: $from\n"
-                  . "JOIN without preceding table reference" unless $last_tbl;
-               $pending_tbl->{join} = {
-                  to   => $last_tbl->{name},
-                  type => $join || 'inner',
-                  ansi => 1,
-               };
-               $join    = '';
-               $state   = 'join tbl';
-            }
-         }
-         elsif ( $state eq 'join tbl' ) {
-            # Table for this join (i.e. tbl to right of JOIN).
-            my %tbl_ref = $self->parse_table_reference($thing);
-            @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
-            $state = 'join condition';
-         }
-         elsif ( $state eq 'join condition' ) {
-            if ( $thing =~ m/$next_tbl/io ) {
-               MKDEBUG && _d('JOIN', $joinno, 'end');
-               $tbl  = $pending_tbl;
-               $redo = 1;  # save $pending_tbl then redo this new JOIN
-            }
-            elsif ( $thing =~ m/ON|USING/i ) {
-               MKDEBUG && _d('JOIN', $joinno, 'codition');
-               $pending_tbl->{join}->{condition} = lc $thing;
-            }
-            else {
-               MKDEBUG && _d('JOIN', $joinno, 'predicate');
-               if ( $pending_tbl->{join}->{condition} eq 'on' ) {
-                  # The manual says: "The conditional_expr used with ON is any
-                  # conditional expression of the form that can be used in a
-                  # WHERE clause."
-                  $pending_tbl->{join}->{where} = $self->parse_where($thing);
-               }
-               else {
-                  # Although calling parse_columns() works, it's overkill.
-                  # This is not a columns def as in "SELECT col1, col2", it's
-                  # a simple csv list of column names without aliases, etc.
-                  $thing =~ s/^\s*\(//;
-                  $thing =~ s/\)\s*$//;
-                  $pending_tbl->{join}->{columns} = $self->parse_csv($thing);
-               }
-            }
-         }
-         else {
-            die "Unknown state '$state' parsing JOIN syntax: $from";
-         }
-      }
-
-      $last_thing = $thing;
-
-      # Done parsing a table, save it unless we have to join back.
-      if ( $tbl ) {
-         if ( $join_back ) {
-            my $prev_tbl = $tbls[-1];
-            if ( $tbl->{join} ) {
-               die "Cannot implicitly join $tbl->{name} to $prev_tbl->{name} "
-                  . "because it is already joined to $tbl->{join}->{to}";
-            }
-            $tbl->{join} = {
-               to   => $prev_tbl->{name},
-               type => 'inner',
-               ansi => 0,
-            }
-         }
-
-         push @tbls, $tbl;  # save table
-
-         # Reset for next table.
-         $tbl         = undef;
-         $state       = undef;
-         $pending_tbl = undef;
-         $join        = '';
-         $join_back   = 0;
-      }
-      else {
-         MKDEBUG && _d('Table pending:', Dumper($pending_tbl));
-      }
-      if ( $redo ) {
-         MKDEBUG && _d("Redoing this thing");
-         $redo = 0;
-         redo;
+         # First table ref and comma-joined tables.
+         $tbl_ref = $self->parse_table_reference($thing);
+         MKDEBUG && _d('Table reference:', Dumper($tbl_ref));
       }
    }
 
-   # Save the final JOIN which was end by the end of the FROM clause
-   # rather than by the start of a new JOIN.
-   if ( $pending_tbl ) {
-      push @tbls, $pending_tbl;
+   # Save the last table ref.  It's not completed in the loop above because
+   # there's no comma or JOIN after it.
+   if ( $tbl_ref ) {
+      if ( $join ) {
+         $tbl_ref->{join} = $join;
+      }
+      push @tbls, $tbl_ref;
+      MKDEBUG && _d("Complete table reference:", Dumper($tbl_ref));
    }
 
-   MKDEBUG && _d('Parsed tables:', Dumper(\@tbls));
    return \@tbls;
 }
 
@@ -588,7 +585,7 @@ sub parse_from {
 sub parse_table_reference {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
-   MKDEBUG && _d('Table reference:', $tbl_ref);
+   MKDEBUG && _d('Parsing table reference:', $tbl_ref);
 
    # First, check for an index hint.  Remove and save it if present.
    my $index_hint;
@@ -603,15 +600,8 @@ sub parse_table_reference {
       $tbl{index_hint} = $1;
    }
 
-   my $tbl_ident = qr/
-      (?:`[^`]+`|[\w*]+)       # `something`, or something
-      (?:                      # optionally followed by either
-         \.(?:`[^`]+`|[\w*]+)  #   .`something` or .something, or
-         |\([^\)]*\)           #   (function stuff)  (e.g. NOW())
-      )?             
-   /x;
 
-   my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
+   my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($table_ident)/g;
    # tbl ref:  tbl AS foo
    # words:      0  1   2
    MKDEBUG && _d('Table ref words:', @words);
@@ -631,7 +621,7 @@ sub parse_table_reference {
       $tbl{alias} = $words[1];
    }
 
-   return %tbl;
+   return \%tbl;
 }
 {
    no warnings;  # Why? See same line above.
@@ -707,7 +697,7 @@ sub parse_table_reference {
 sub parse_where {
    my ( $self, $where ) = @_;
    return unless $where;
-   MKDEBUG && _d("Parsing WHERE clause:", $where);
+   MKDEBUG && _d("Parsing WHERE", $where);
 
    # Not all the operators listed at
    # http://dev.mysql.com/doc/refman/5.1/en/non-typed-operators.html
@@ -854,7 +844,7 @@ sub parse_having {
 sub parse_group_by {
    my ( $self, $group_by ) = @_;
    return unless $group_by;
-   MKDEBUG && _d('Parse GROUP BY', $group_by);
+   MKDEBUG && _d('Parsing GROUP BY', $group_by);
 
    # Remove special "WITH ROLLUP" clause so we're left with a simple csv list.
    my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
@@ -871,7 +861,7 @@ sub parse_group_by {
 sub parse_order_by {
    my ( $self, $order_by ) = @_;
    return unless $order_by;
-   MKDEBUG && _d('Parse ORDER BY', $order_by);
+   MKDEBUG && _d('Parsing ORDER BY', $order_by);
    my $idents = $self->parse_identifiers( $self->parse_csv($order_by) );
    return $idents;
 }
@@ -956,10 +946,27 @@ sub parse_csv {
 
 sub parse_columns {
    my ( $self, $cols ) = @_;
-   my @cols = map {
-      my %ref = $self->parse_table_reference($_);
-      \%ref;
-   } @{ $self->parse_csv($cols) };
+   MKDEBUG && _d('Parsing columns list:', $cols);
+
+   my @cols;
+   pos $cols = 0;
+   while (pos $cols < length $cols) {
+      if ($cols =~ m/\G$column_ident/gcxo) {
+         my ($db_tbl_col, $as, $alias) = ($1, $2, $3); # XXX
+         my $ident_struct = $self->parse_identifier('column', $db_tbl_col);
+         $alias =~ s/`//g if $alias;
+         my $col_struct = {
+            %$ident_struct,
+            ($as    ? (explicit_alias => 1)      : ()),
+            ($alias ? (alias          => $alias) : ()),
+         };
+         push @cols, $col_struct;
+      }
+      else {
+         die "no match for $cols\n";
+      }
+   }
+
    return \@cols;
 }
 
@@ -1089,7 +1096,7 @@ sub remove_subqueries {
 sub parse_identifiers {
    my ( $self, $idents ) = @_;
    return unless $idents;
-   MKDEBUG && _d("Parse identifiers");
+   MKDEBUG && _d("Parsing identifiers");
 
    my @ident_parts;
    foreach my $ident ( @$idents ) {
@@ -1122,6 +1129,31 @@ sub parse_identifiers {
    return \@ident_parts;
 }
 
+sub parse_identifier {
+   my ( $self, $type, $ident ) = @_;
+   return unless $type && $ident;
+
+   my %ident_struct;
+   my @ident_parts = map { s/`//g; $_; } split /[.]/, $ident;
+   if ( @ident_parts == 3 ) {
+      @ident_struct{qw(db tbl name)} = @ident_parts;
+   }
+   elsif ( @ident_parts == 2 ) {
+      my @parts_for_type = $type eq 'column' ? qw(tbl name)
+                         : $type eq 'table'  ? qw(db  name)
+                         : die "Invalid identifier type: $type";
+      @ident_struct{@parts_for_type} = @ident_parts;
+   }
+   elsif ( @ident_parts == 1 ) {
+      @ident_struct{qw(name)} = @ident_parts;
+   }
+   else {
+      die "Invalid number of parts in $type reference: $ident";
+   }
+
+   return \%ident_struct;
+}
+
 # Sub: split_unquote
 #   Split and unquote a table name.  The table name can be database-qualified
 #   or not, like `db`.`table`.  The table name can be backtick-quoted or not.
@@ -1152,6 +1184,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################

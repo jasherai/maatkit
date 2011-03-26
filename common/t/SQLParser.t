@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 109;
+use Test::More tests => 113;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -21,6 +21,15 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 my $sp = new SQLParser();
+
+# ############################################################################
+# Should throw some errors for stuff it can't do.
+# ############################################################################
+throws_ok(
+   sub { $sp->parse('drop table foo'); },
+   qr/Cannot parse DROP queries/,
+   "Dies if statement type cannot be parsed"
+);
 
 # #############################################################################
 # WHERE where_condition
@@ -361,46 +370,46 @@ select now()
 
 
 # #############################################################################
-# Add space between key tokens.
+# Normalize space around certain SQL keywords.  (This makes parsing easier.)
 # #############################################################################
 is(
-   $sp->clean_query('insert into t value(1)'),
+   $sp->normalize_keyword_spaces('insert into t value(1)'),
    'insert into t value (1)',
    'Add space VALUE (cols)'
 );
 
 is(
-   $sp->clean_query('insert into t values(1)'),
+   $sp->normalize_keyword_spaces('insert into t values(1)'),
    'insert into t values (1)',
    'Add space VALUES (cols)'
 );
 
 is(
-   $sp->clean_query('select * from a join b on(foo)'),
+   $sp->normalize_keyword_spaces('select * from a join b on(foo)'),
    'select * from a join b on (foo)',
    'Add space ON (conditions)'
 );
 
 is(
-   $sp->clean_query('select * from a join b on(foo) join c on(bar)'),
+   $sp->normalize_keyword_spaces('select * from a join b on(foo) join c on(bar)'),
    'select * from a join b on (foo) join c on (bar)',
    'Add space multiple ON (conditions)'
 );
 
 is(
-   $sp->clean_query('select * from a join b using(foo)'),
+   $sp->normalize_keyword_spaces('select * from a join b using(foo)'),
    'select * from a join b using (foo)',
    'Add space using (conditions)'
 );
 
 is(
-   $sp->clean_query('select * from a join b using(foo) join c using(bar)'),
+   $sp->normalize_keyword_spaces('select * from a join b using(foo) join c using(bar)'),
    'select * from a join b using (foo) join c using (bar)',
    'Add space multiple USING (conditions)'
 );
 
 is(
-   $sp->clean_query('select * from a join b using(foo) join c on(bar)'),
+   $sp->normalize_keyword_spaces('select * from a join b using(foo) join c on(bar)'),
    'select * from a join b using (foo) join c on (bar)',
    'Add space USING and ON'
 );
@@ -488,13 +497,15 @@ is_deeply(
 # ###########################################################################
 # FROM table_references
 # ###########################################################################
+
 sub test_from {
    my ( $from, $struct ) = @_;
+   my $got = $sp->parse_from($from);
    is_deeply(
-      $sp->parse_from($from),
+      $got,
       $struct,
       "FROM $from"
-   ) or print Dumper($struct);
+   ) or print Dumper($got);
 };
 
 test_from(
@@ -857,14 +868,51 @@ test_from(
    ],
 );
 
+test_from(
+   'tblB AS dates LEFT JOIN dbF.tblC AS scraped ON dates.dt = scraped.dt AND dates.version = scraped.version',
+   [
+      {
+        name           => 'tblB',
+        alias          => 'dates',
+        explicit_alias => 1,
+      },
+      {
+        name           => 'tblC',
+        alias          => 'scraped',
+        explicit_alias => 1,
+        db             => 'dbF',
+        join           => {
+          condition  => 'on',
+          ansi       => 1,
+          to         => 'tblB',
+          type       => 'left',
+          where      => [
+            {
+              predicate => undef,
+              column    => 'dates.dt',
+              operator  => '=',
+              value     => 'scraped.dt',
+            },
+            {
+              predicate => 'and',
+              column    => 'dates.version',
+              operator  => '=',
+              value     => 'scraped.version',
+            },
+          ],
+        },
+      },
+   ],
+);
+
 # #############################################################################
 # parse_table_reference()
 # #############################################################################
 sub test_parse_table_reference {
    my ( $tbl, $struct ) = @_;
-   my %s = $sp->parse_table_reference($tbl);
+   my $s = $sp->parse_table_reference($tbl);
    is_deeply(
-      \%s,
+      $s,
       $struct,
       $tbl
    );
@@ -928,8 +976,22 @@ test_parse_table_reference('`db`.`tbl` AS `a`',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 
-test_parse_table_reference('db.* foo',
-   { name => '*', db => 'db', alias => 'foo' }
+# #############################################################################
+# parse_columns()
+# #############################################################################
+sub test_parse_columns {
+   my ( $cols, $struct ) = @_;
+   my $s = $sp->parse_columns($cols);
+   is_deeply(
+      $s,
+      $struct,
+      $cols,
+   );
+   return;
+}
+
+test_parse_columns('tbl.* foo',
+   [ { name => '*', tbl => 'tbl', alias => 'foo' } ],
 );
 
 # #############################################################################
@@ -1053,7 +1115,8 @@ SELECT * FROM cities WHERE NOT EXISTS (
 SELECT * FROM cities_stores
 WHERE cities_stores.city = cities.city
 AND cities_stores.store_type = stores.store_type))";
-@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+@subqueries = $sp->remove_subqueries(
+   $sp->clean_query($sp->normalize_keyword_spaces($query)));
 is_deeply(
    \@subqueries,
    [
@@ -1310,7 +1373,7 @@ my @cases = (
          type    => 'insert',
          clauses => { 
             into         => 'tbl',
-            values       => '(3,"bob") ',
+            values       => '(3,"bob")',
             on_duplicate => 'col1=9',
          },
          into         => [ { name => 'tbl', } ],
@@ -1341,7 +1404,7 @@ my @cases = (
          type    => 'insert',
          clauses => { 
             into         => 'tbl',
-            set          => 'i=3 ',
+            set          => 'i=3',
             on_duplicate => 'col1=9',
          },
          into         => [ { name => 'tbl', } ],
@@ -1444,6 +1507,65 @@ my @cases = (
          unknown => undef,
       },
    },
+   {
+      name  => 'REPLACE SELECT JOIN ON',
+      query => 'REPLACE INTO db.tblA (dt, ncpc) SELECT dates.dt, scraped.total_r FROM tblB AS dates LEFT JOIN dbF.tblC AS scraped ON dates.dt = scraped.dt AND dates.version = scraped.version',
+      struct => {
+         type    => 'replace',
+         clauses => {
+            columns => 'dt, ncpc ',
+            into    => 'db.tblA',
+            select  => 'dates.dt, scraped.total_r FROM tblB AS dates LEFT JOIN dbF.tblC AS scraped ON dates.dt = scraped.dt AND dates.version = scraped.version',
+         },
+         columns => [ { name => 'dt' }, { name => 'ncpc' } ],
+         into    => [ { db => 'db', name => 'tblA' } ],
+         select  => {
+            clauses => {
+               columns => 'dates.dt, scraped.total_r ',
+               from    => 'tblB AS dates LEFT JOIN dbF.tblC AS scraped ON dates.dt = scraped.dt AND dates.version = scraped.version',
+            },
+            columns => [
+               { tbl => 'dates',   name => 'dt'      },
+               { tbl => 'scraped', name => 'total_r' },
+            ],
+            from    => [
+               {
+                 name           => 'tblB',
+                 alias          => 'dates',
+                 explicit_alias => 1,
+               },
+               {
+                 name           => 'tblC',
+                 alias          => 'scraped',
+                 explicit_alias => 1,
+                 db             => 'dbF',
+                 join           => {
+                   condition => 'on',
+                   ansi  => 1,
+                   to    => 'tblB',
+                   type  => 'left',
+                   where => [
+                     {
+                       predicate => undef,
+                       column    => 'dates.dt',
+                       operator  => '=',
+                       value     => 'scraped.dt',
+                     },
+                     {
+                       predicate => 'and',
+                       column    => 'dates.version',
+                       operator  => '=',
+                       value     => 'scraped.version',
+                     },
+                   ],
+                 },
+               },
+            ],
+            unknown => undef,
+         },
+         unknown => undef,
+      },
+   },
 
    # ########################################################################
    # SELECT
@@ -1494,8 +1616,8 @@ my @cases = (
             order_by => 't2.name ASC ',
             limit    => '100, 10',
          },
-         columns => [ { name => 'col1', db => 't1', alias => 'a' },
-                      { name => 'col2', db => 't1', alias => 'b',
+         columns => [ { name => 'col1', tbl => 't1', alias => 'a' },
+                      { name => 'col2', tbl => 't1', alias => 'b',
                         explicit_alias => 1 } ],
          from    => [
             {
@@ -1566,8 +1688,8 @@ my @cases = (
             from     => 'tbl1 t1 JOIN tbl2 AS t2 on (t1.id = t2.id) JOIN tbl3 t3 using (id) ',
             where    => 't2.col IS NOT NULL',
          },
-         columns => [ { name => 'col1', db => 't1', alias => 'a' },
-                      { name => 'col2', db => 't1', alias => 'b',
+         columns => [ { name => 'col1', tbl => 't1', alias => 'a' },
+                      { name => 'col2', tbl => 't1', alias => 'b',
                         explicit_alias => 1 } ],
          from    => [
             {
@@ -1963,6 +2085,37 @@ my @cases = (
          ],
          order_by => [{column=>'id'}],
          limit    => { row_count => 10 },
+         unknown => undef,
+      },
+   },
+
+   # ########################################################################
+   # EXPLAIN EXTENDED fully-qualified queries.
+   # ########################################################################
+   {  name   => 'EXPLAIN EXTENDED SELECT',
+      query  => 'select `sakila`.`city`.`country_id` AS `country_id` from `sakila`.`city` where (`sakila`.`city`.`country_id` = 1)',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns => '`sakila`.`city`.`country_id` AS `country_id` ',
+            from    => '`sakila`.`city` ',
+            where   => '(`sakila`.`city`.`country_id` = 1)',
+         },
+         columns => [
+            { db    => 'sakila',
+              tbl   => 'city',
+              name  => 'country_id',
+              alias => 'country_id',
+              explicit_alias => 1,
+            },
+         ],
+         from    => [ { db=>'sakila', name=>'city' } ],
+         where   => [ {
+            predicate => undef,
+            column    => '`sakila`.`city`.`country_id`',
+            operator  => '=',
+            value     => '1',
+         } ],
          unknown => undef,
       },
    },
