@@ -19,13 +19,35 @@
 # ###########################################################################
 
 # Package: TableAccess
-# TableAccess determines which tables in a query are read, written and in what
-# context.  A single query may read or write to several different tables, and
-# the context for each table read/write can differ, too.  For example, the
-# simplest case is "SELECT c FROM t": table t is read in the context (i.e.
-# "for") the SELECT.  A more complex case is "INSERT INTO t1 SELECT * FROM
-# t2 WHERE ...": t1 is written and t2 is read is read in the context of the
-# INSERT.
+# TableAccess determines how tables in a query are accessed: read or written
+# and in what context.  Each table access is a "CAT": Context, Access and
+# Table.  The context of a table access is usually the query: SELECT, INSERT,
+# etc.  JOIN is also a context for joined tables in a SELECT.  Certain queries
+# like INSERT-SELECT have more complex contexts.  Access is always "read" or
+# "write".  Table is the table name accessed, database-qualified if possible.
+#
+# Table cats also show how data flows between tables in complex queries.  For
+# example, in "INSERT INTO t1 (c) SELECT c FROM t2 LEFT JOIN t3 USING (id)",
+# the table cats are,
+# (code start)
+#   { context => 'INSERT',
+#     access  => 'write',
+#     table   => 't1',
+#   },
+#   { context => 'INSERT',
+#     access  => 'read',
+#     table   => 't2',
+#   },
+#   { context => 'INSERT',
+#     access  => 'read',
+#     table   => 't3',
+#   },
+# That reads like: the INSERT writes to table t1 and reads from tables t2
+# and t3.
+#
+# For best results, queries should be from EXPLAIN EXTENDED so all identifiers
+# are fully qualified.  Else, some table accesses may be missed because
+# no effort is made to table-qualify unqualified columns.
 #
 # This package uses both QueryParser and SQLParser.  The former is used for
 # simple queries, and the latter is used for more complex queries where table
@@ -323,6 +345,12 @@ sub _get_cats_from_conditions {
    CONDITION:
    foreach my $cond ( @$conditions ) {
       MKDEBUG && _d("Condition:", Dumper($cond));
+
+      # If these are conditions from a WHERE clause, $cond->{column} will
+      # not be parsed, so we need the call below.  If these are conditions
+      # from a SET clause, then $cond may already have $cond->{tbl} and
+      # $cond->{db}, so we don't need the call below.  We make the call in
+      # any case for simplicity.
       my $col = $sql_parser->parse_identifier('column', $cond->{column});
 
       my $tbl;

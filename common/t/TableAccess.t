@@ -93,7 +93,7 @@ test_get_table_access(
         access  => 'read',
         table   => 'tblB',
       },
-      { context => 'REPLACE',  # TODO: should be REPLACE?
+      { context => 'REPLACE',
         access  => 'read',
         table   => 'dbF.tblC',
       },
