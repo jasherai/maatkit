@@ -915,8 +915,8 @@ sub parse_set {
          column => $col,
          value  => $val,
       };
-      $set_struct->{table}    = $tbl if $tbl;
-      $set_struct->{database} = $db  if $db;
+      $set_struct->{tbl} = $tbl if $tbl;
+      $set_struct->{db}  = $db  if $db;
       MKDEBUG && _d("SET:", Dumper($set_struct));
       push @set, $set_struct;
    }

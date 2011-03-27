@@ -1015,8 +1015,8 @@ test_parse_set(
 test_parse_set(
    'a.foo="bar", b.foo="bat"',
    [
-      {table=>"a", column=>"foo", value=>"bar"},
-      {table=>"b", column=>"foo", value=>"bat"},
+      {tbl=>"a", column=>"foo", value=>"bar"},
+      {tbl=>"b", column=>"foo", value=>"bat"},
    ],
 );
 

@@ -24,9 +24,8 @@
 # the context for each table read/write can differ, too.  For example, the
 # simplest case is "SELECT c FROM t": table t is read in the context (i.e.
 # "for") the SELECT.  A more complex case is "INSERT INTO t1 SELECT * FROM
-# t2 WHERE ...": t1 is written in the context of the INSERT and t2 is read
-# in the context of the SELECT.  Any basic SQL statment is a context (SELECT,
-# INSERT, UPDATE, DELETE, etc.), and JOIN is also a context.
+# t2 WHERE ...": t1 is written and t2 is read is read in the context of the
+# INSERT.
 #
 # This package uses both QueryParser and SQLParser.  The former is used for
 # simple queries, and the latter is used for more complex queries where table
@@ -37,10 +36,12 @@ package TableAccess;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Sub: new
@@ -117,7 +118,7 @@ sub get_table_access {
          # SQLParser can't parse this type of query, so it's probably some
          # data definition statement with just a table list.  Use QueryParser
          # to extract the table list and hope we're not wrong.
-         $cats = $self->_get_cats_from_tables(%args);
+         $cats = $self->_get_cats_from_query_parser(%args);
       }
       else {
          # SQLParser failed to parse the query due to some error.
@@ -137,7 +138,7 @@ sub get_table_access {
    return $cats;
 }
 
-sub _get_cats_from_tables {
+sub _get_cats_from_query_parser {
    my ( $self, %args ) = @_;
    my @required_args = qw(query);
    foreach my $arg ( @required_args ) {
@@ -184,81 +185,184 @@ sub _get_cats_from_query_struct {
 
    MKDEBUG && _d('Getting cats from query struct');
    my @cats;
-   
-   my $context = uc($args{context} || $query_struct->{type});
-   my $access  = $args{access}     || ($context eq 'SELECT' ? 'read' : 'write');
 
-   # Get CAT for each table referenced by the query.  The query should
+   # The table references clause is different depending on the query type.
+   my $query_type = uc $query_struct->{type};
+   my $tbl_refs   = $query_type =~ m/(?:SELECT|DELETE)/  ? 'from'
+                  : $query_type =~ m/(?:INSERT|REPLACE)/ ? 'into'
+                  : $query_type =~ m/UPDATE/             ? 'tables'
+                  : die "Cannot find table references for $query_type queries";
+   my $tables     = $query_struct->{$tbl_refs};
+   my $access     = $args{access}           ? lc $args{access}
+                  : $query_type eq 'SELECT' ? 'read'
+                  :                           'write';
+
+   # UPDATE queries with multiple tables are a special case.  The query
+   # is really just reading each referenced table, and it only writes to
+   # tables referenced in the SET clause.
+   my $multi_table_update = 0;
+   if ( $query_type eq 'UPDATE' && @{$query_struct->{tables}} > 1 ) {
+      MKDEBUG && _d("Multi-table UPDATE");
+      $multi_table_update = 1;
+
+      my $set_cats = $self->_get_cats_from_set(
+         %args,
+         context => $query_type,
+         set     => $query_struct->{set},
+         tables  => $tables,
+      );
+      push @cats, @$set_cats;
+   }
+
+   # Get cats for each table referenced by the query.  The query should
    # reference tables, i.e. we assume that we're not given queries like
    # SELECT NOW() or SET @a=1.
-   my $tables  = $query_struct->{from} || $query_struct->{into};
+   my $tbl_refs_cats = $self->_get_cats_from_tables(
+      %args,
+      query_type => $query_type,
+      tables     => $tables,
+      access     => $multi_table_update ? 'read' : $access,
+   );
+   push @cats, @$tbl_refs_cats;
+
+   # If the query is an INSERT/REPLACE and has an optional SELECT query,
+   # get the SELECT query's cats by recursing.  The SELECT is its own,
+   # complete query with a query struct like the parent INSERT/REPLACE;
+   # that's why recursing works.
+   if ( $query_type =~ m/(?:INSERT|REPLACE)/ && $query_struct->{select} ) {
+      MKDEBUG && _d("Getting cats from INSERT-SELECT");
+      my $insert_select_cats = $self->_get_cats_from_query_struct(
+         %args,
+         query_struct => $query_struct->{select},
+         context      => $query_type,  # SELECT's context is parent INSERT
+         access       => 'read',
+      );
+      push @cats, @$insert_select_cats;
+   }
+
+   # Get cats for each unique table referenced in the query's WHERE
+   # clause, if it has one.
+   if ( $query_struct->{where} ) {
+      my $where_cats = $self->_get_cats_from_where(
+         %args,
+         tables  => $tables,
+         where   => $query_struct->{where},
+         context => 'WHERE',
+      );
+      push @cats, @$where_cats;
+   }
+
+   return \@cats;
+}
+
+sub _get_cats_from_tables {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_type tables access);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($query_type, $tables, $access) = @args{@required_args};
+   MKDEBUG && _d("Getting cats from table references");
+
+   my @cats;
    foreach my $table ( @$tables ) {
+      my $context = $args{context} ? $args{context}
+                  : $table->{join} ? 'JOIN'
+                  :                  $query_type;
       my $cat = {
-         table   => ($table->{db} ? "$table->{db}." : '') . $table->{name},
-         context => $table->{join} ? 'JOIN' : $context,
+         context => $context,
          access  => $access,
+         table   => ($table->{db} ? "$table->{db}." : '') . $table->{name},
       };
       MKDEBUG && _d("Table access:", Dumper($cat));
       push @cats, $cat;
    }
 
-   # Get CAT for each unique table referenced in the query's WHERE
-   # clause, if it has one.
-   if ( $query_struct->{where} ) {
-      my %seen_table;
+   return \@cats;
+}
 
-      foreach my $cond ( @{$query_struct->{where}} ) {
-         MKDEBUG && _d("WHERE condition column:", $cond->{column});
-         my $col = $sp->parse_identifier('column', $cond->{column});
-
-         my $tbl;
-         if ( $col->{tbl} ) {
-            $tbl = $self->_get_real_table_name(
-               name         => $col->{tbl},
-               query_struct => $query_struct,
-            );
-         }
-         elsif ( @$tables == 1 ) {
-            MKDEBUG && _d("WHERE condition column is not table-qualified; ",
-               "using query's only table:", $tables->[0]->{name});
-            $tbl = $tables->[0]->{name};
-         }
-
-         my $db;
-         if ( $col->{tbl} && $col->{db} ) {
-            $db = $col->{db};
-         }
-         elsif ( @$tables == 1 && $tables->[0]->{db} ) {
-            MKDEBUG && _d("WHERE condition column is not database-qualified; ",
-               "using query's only database:", $tables->[0]->{db});
-            $db = $tables->[0]->{db};
-         }
-
-         my $db_tbl = ($db ? "$db." : "") . $tbl;
-         if ( !$seen_table{$db_tbl}++ ) {
-            my $cat = {
-               context => 'WHERE',
-               access  => 'read',
-               table   => $db_tbl,
-            };
-            MKDEBUG && _d("Table access:", Dumper($cat));
-            push @cats, $cat;
-         }
-      }
+sub _get_cats_from_where {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(context tables where);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
+   MKDEBUG && _d("Getting cats from WHERE condition");
+   return $self->_get_cats_from_conditions(
+      %args,
+      conditions => $args{where},
+      access     => 'read',  # WHERE can only read
+   );
+}
 
-   # Recurse into the query's sub-select, if it has one.
-   # E.g. INSERT ... SELECT.  The context is the outer (this's) query's
-   # context, but the access is read because this subquery is a SELECT.
-   if ( $query_struct->{select} ) {
-      MKDEBUG && _d("Parsing SELECT struct in query");
-      my $select_cats = $self->_get_cats_from_query_struct(
+sub _get_cats_from_set {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(context tables set);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   MKDEBUG && _d("Getting cats from SET conditions");
+   return $self->_get_cats_from_conditions(
+      %args,
+      conditions => $args{set},
+      access     => 'write',  # SET can only write
+   );
+}
+
+sub _get_cats_from_conditions {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(context access tables conditions);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($context, $access, $tables, $conditions) = @args{@required_args};
+   my $sql_parser = $self->{SQLParser};
+
+   my @cats;
+   my %seen_table;
+   CONDITION:
+   foreach my $cond ( @$conditions ) {
+      MKDEBUG && _d("Condition:", Dumper($cond));
+      my $col = $sql_parser->parse_identifier('column', $cond->{column});
+
+      my $tbl;
+      if ( $cond->{tbl} || $col->{tbl} ) {
+         $tbl = $self->_get_real_table_name(
             %args,
-            context      => $context,
-            access       => 'read',
-            query_struct => $query_struct->{select},
-      );
-      push @cats, @$select_cats;
+            name => $cond->{tbl} || $col->{tbl},
+         );
+      }
+      elsif ( @$tables == 1 ) {
+         MKDEBUG && _d("Condition column is not table-qualified; ",
+            "using query's only table:", $tables->[0]->{name});
+         $tbl = $tables->[0]->{name};
+      }
+      else {
+         MKDEBUG && _d("Condition column is not table-qualified",
+            "and query has multiple tables; cannot determine its table");
+         next CONDITION;
+      }
+
+      my $db;
+      if ( $cond->{db} || ($col->{tbl} && $col->{db}) ) {
+         $db = $cond->{db} || $col->{db};
+      }
+      elsif ( @$tables == 1 && $tables->[0]->{db} ) {
+         MKDEBUG && _d("Condition column is not database-qualified; ",
+            "using query's only database:", $tables->[0]->{db});
+         $db = $tables->[0]->{db};
+      }
+
+      my $db_tbl = ($db ? "$db." : "") . $tbl;
+      if ( !$seen_table{$db_tbl}++ ) {
+         my $cat = {
+            context => $context,
+            access  => $access,
+            table   => $db_tbl,
+         };
+         MKDEBUG && _d("Table access:", Dumper($cat));
+         push @cats, $cat;
+      }
    }
 
    return \@cats;
@@ -266,13 +370,12 @@ sub _get_cats_from_query_struct {
 
 sub _get_real_table_name {
    my ( $self, %args ) = @_;
-   my @required_args = qw(name query_struct);
+   my @required_args = qw(tables name);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($name, $query_struct) = @args{@required_args};
+   my ($tables, $name) = @args{@required_args};
 
-   my $tables  = $query_struct->{from} || $query_struct->{into};
    foreach my $table ( @$tables ) {
       if ( $table->{name} eq $name
            || ($table->{alias} || "") eq $name ) {
