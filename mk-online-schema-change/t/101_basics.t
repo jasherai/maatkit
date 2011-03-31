@@ -15,6 +15,8 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-online-schema-change/mk-online-schema-change";
 
+use Data::Dumper;
+
 my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -23,7 +25,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 12;
+   plan tests => 14;
 }
 
 my $output  = "";
@@ -31,9 +33,6 @@ my $cnf     = '/tmp/12345/my.sandbox.cnf';
 my @args    = ('-F', $cnf);
 my $exit    = 0;
 my $rows;
-
-#system(" >/dev/null &");
-
 
 $sb->load_file('master', "mk-online-schema-change/t/samples/small_table.sql");
 $dbh->do('use mkosc');
@@ -148,6 +147,49 @@ is(
    $exit,
    0,
    "Exit status 0"
+);
+
+# ############################################################################
+# Alter a table with foreign keys.
+# ############################################################################
+
+# The tables we're loading have fk constraints like:
+# country
+#   ^- city (on update cascade)
+#        ^- address (on update cascade)
+# So for good measure we'll do three runs: alter the parent table (country),
+# its child (city), and then its child (address).  No fk constraints should
+# break or be different after the alters.
+$sb->load_file('master', "mk-online-schema-change/t/samples/fk_tables_schema.sql");
+
+# city has a fk constraint on country, so get its original table def.
+my $orig_table_def = $dbh->selectrow_hashref('show create table mkosc.city')->{'create table'};
+my ($orig_fk_constraint) = $orig_table_def =~ m/(CONSTRAINT .+)/m;
+
+# Alter the parent table.  The error we need to avoid is:
+# DBD::mysql::db do failed: Cannot delete or update a parent row:
+# a foreign key constraint fails [for Statement "DROP TABLE
+# `mkosc`.`__old_country`"]
+output(
+   sub { $exit = mk_online_schema_change::main(@args,
+      'D=mkosc,t=country', qw(--child-tables auto-detect --drop-old-table)) },
+);
+is(
+   $exit,
+   0,
+   "Dropped parent table"
+);
+
+# Get city's table def again and verify that its fk constraint still
+# references country.  When country was renamed to __old_country, MySQL
+# also updated city's fk constraint to __old_country.  We should have
+# dropped and re-added that constraint exactly, changing only __old_country
+# to country, like it originally was.
+my $new_table_def = $dbh->selectrow_hashref('show create table mkosc.city')->{'create table'};
+is(
+   $new_table_def,
+   $orig_table_def,
+   "Updated child table foreign key constraint"
 );
 
 # #############################################################################

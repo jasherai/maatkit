@@ -4222,6 +4222,9 @@ sub main {
    msg("Old table: $tables{old_table}");
    msg("New table: $tables{new_table}");
 
+   # TODO: this crashes if the old table doesn't exist because this is
+   # done before checks() because checks() wants this.  Need to fix this
+   # circular dependency.
    $tables{old_tbl_struct} = $tp->parse(
       $du->get_create_table($dbh, $q, $db, $old_tbl));
 
@@ -4282,6 +4285,21 @@ sub main {
    my $chunk = checks(%plugin_args);
    $plugin_args{chunk_column} = $chunk->{column};
    $plugin_args{chunk_index}  = $chunk->{index};
+
+   my @child_tables;
+   if ( my $child_tables = $o->get('child-tables') ) {
+      if ( lc $child_tables eq 'auto-detect' ) {
+         msg("Auto-detecting child tables of $tables{old_table}");
+         @child_tables = get_child_tables(%plugin_args);
+         msg("Child tables of $tables{old_table}: "
+            .  (@child_tables ? join(', ', @child_tables) : "(none)"));
+      }
+      else {
+         @child_tables = split(',', $child_tables);
+         msg("User-specified child tables: " . join(', ', @child_tables));
+      }
+   }
+
    if ( $o->get('exit-after-checks') ) {
       msg("$PROGRAM_NAME ending for --exit-after-checks; all checks passed");
       return 0;
@@ -4404,6 +4422,17 @@ sub main {
       }
 
       # #####################################################################
+      # Update foreign key constraints if there are child tables.
+      # #####################################################################
+      if ( @child_tables ) {
+         msg("Updating foreign key constraints in child tables");
+         update_foreign_key_constraints(
+            child_tables => \@child_tables,
+            %plugin_args,
+         );
+      }
+
+      # #####################################################################
       # Cleanup.
       # #####################################################################
       msg("Calling " . (ref $copy_rows). "::cleanup()");
@@ -4503,6 +4532,84 @@ sub checks {
    $chunkable_cols[0]->{column_ddl} =~ s/AUTO_INCREMENT//i;
 
    return $chunkable_cols[0];
+}
+
+sub get_child_tables {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh old_table Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $old_table, $q) = @args{@required_args};
+
+   my ($db, $tbl) = $q->split_unquote($old_table);
+
+   my $sql = "SELECT table_name "
+           . "FROM information_schema.key_column_usage "
+           . "WHERE constraint_schema='$db' AND referenced_table_name='$tbl'";
+   MKDEBUG && _d($dbh, $sql);
+   my $child_tables;
+   eval {
+      $child_tables = $dbh->selectall_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      die "Error executing query to check $old_table for child tables.\n\n"
+         . "Query: $sql\n\n"
+         . "Error: $EVAL_ERROR"
+   }
+
+   MKDEBUG && _d("Child tables:", join(', ', map { $_->[0] } @$child_tables));
+   return map { $_->[0] } @$child_tables;
+}
+
+sub update_foreign_key_constraints {
+   my ( %args ) = @_;
+   my @required_args = qw(msg dbh db child_tables old_table old_table_renamed Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($msg, $dbh, $db, $child_tables, $old_table, $old_table_renamed, $q)
+      = @args{@required_args};
+
+   my (undef, $tbl)     = $q->split_unquote($old_table);
+   my (undef, $old_tbl) = $q->split_unquote($old_table_renamed);
+   my $constraint       = qr/^\s+(CONSTRAINT.+?REFERENCES `$old_tbl`.+)$/mo;
+
+   CHILD_TABLE:
+   foreach my $child_table ( @$child_tables ) {
+      my $sql = "SHOW CREATE TABLE `$db`.`$child_table`";
+      MKDEBUG && _d($dbh, $sql);
+      $msg->($sql);
+      my $table_def;
+      eval {
+         $table_def = $dbh->selectrow_arrayref($sql)->[1];
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Skipping child table $child_table: $EVAL_ERROR";
+         next CHILD_TABLE;
+      }
+
+      my @constraints = $table_def =~ m/$constraint/g;
+      if ( !@constraints ) {
+         warn "Child table $child_table does not have any foreign key "
+            . "constraints referencing $old_table_renamed";
+         next CHILD_TABLE;
+      }
+
+      foreach my $constraint ( @constraints ) {
+         my ($fk_symbol) = $constraint =~ m/CONSTRAINT\s+(\S+)/;
+         $sql = "ALTER TABLE `$db`.`$child_table` DROP FOREIGN KEY $fk_symbol";
+         $msg->($sql);
+         $dbh->do($sql) unless $args{print};
+
+         $constraint =~ s/REFERENCES `$old_tbl`/REFERENCES `$tbl`/o;
+         $sql = "ALTER TABLE `$db`.`$child_table` ADD $constraint"; 
+         $msg->($sql);
+         $dbh->do($sql) unless $args{print};
+      }
+   }
+
+   return;
 }
 
 sub intersection {
@@ -4704,6 +4811,22 @@ Default character set.  If the value is utf8, sets Perl's binmode on
 STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
 without the utf8 layer, and runs SET NAMES after connecting to MySQL.
+
+=item --child-tables
+
+type: string
+
+Foreign key constraints in these (child) tables reference the old table.
+If the old table being altered is a parent to tables which reference it with
+foreign key constraints, you must specify those child tables with this option
+so that the tool will update the foreign key constraints after renaming
+tables.  The list of child tables is comma-separted, not quoted, and not
+database-qualified (the database is assumed to be the same as the old table)
+If you specify a table that doesn't exist, it is ignored.
+
+Or you can specify just C<auto-detect> and the tool will query the
+C<INFORMATION_SCHEMA> to auto-detect any foreign key contraints on the
+old table.  
 
 =item --chunk-size
 
