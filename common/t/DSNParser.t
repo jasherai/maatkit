@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 use DSNParser;
 use OptionParser;
@@ -232,7 +232,7 @@ eval {
    $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
 };
 SKIP: {
-   skip 'Cannot connect to sandbox master', 5 if $EVAL_ERROR;
+   skip 'Cannot connect to sandbox master', 6 if $EVAL_ERROR;
 
    $dp->fill_in_dsn($dbh, $d);
    is($d->{P}, 12345, 'Left port alone');
@@ -244,6 +244,24 @@ SKIP: {
       $dbh->selectrow_arrayref('select @@character_set_client, @@character_set_connection, @@character_set_results'),
       [qw(utf8 utf8 utf8)],
       'Set charset'
+   );
+   $dbh->disconnect();
+
+   # Issue 1282: Enabling utf8 with --charset (-A) is case-sensitive
+   # This test really doesn't do anything because the problem is in the line,
+   # mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+   # in get_dbh().  That line is part of a hashref declaration so we
+   # have no access to it here.  I keep this this test because it allows
+   # me to look manually via MKDEBUG and see that  mysql_enable_utf8=>1
+   # even if A=UTF8.
+   $d = $dp->parse('h=127.0.0.1,P=12345,A=UTF8,u=msandbox,p=msandbox');
+   eval {
+      $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
+   };
+   is_deeply(
+      $dbh->selectrow_arrayref('select @@character_set_client, @@character_set_connection, @@character_set_results'),
+      [qw(utf8 utf8 utf8)],
+      'Set utf8 charset case-insensitively (issue 1282)'
    );
 };
 
