@@ -1,6 +1,8 @@
 Changelog for mk-archiver:
 
    * Different character sets could have caused data loss (issue 1225).
+   * --file was not opened using the specified --charset (issue 1229).
+   * --charset=UTF8 did not enable mysql_enable_utf8 (issue 1282).
    * Added --[no]check-charset (issue 1225).
 
 2010-12-11: version 1.0.26

@@ -1444,7 +1444,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6785
+# DSNParser package 7388
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -1644,7 +1644,7 @@ sub get_dbh {
       RaiseError         => 1,
       PrintError         => 0,
       ShowErrorStatement => 1,
-      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/i ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
@@ -4044,17 +4044,24 @@ sub main {
       return 0;
    }
 
-   # Open the file and print the header to it.
-   if ( $archive_file ) {
-      my $need_hdr = $o->get('header') && !-f $archive_file;
-      $archive_fh = IO::File->new($archive_file, ">>")
-         or die "Cannot open $archive_file: $OS_ERROR\n";
-      $archive_fh->autoflush(1) unless $o->get('buffer');
-      if ( $need_hdr ) {
-         print $archive_fh '', escape(\@sel_cols), "\n"
-            or die "Cannot write to $archive_file: $OS_ERROR\n";
-      }
-   }
+   # Open the file and print the header to it. 
+   if ( $archive_file ) { 
+      my $need_hdr = $o->get('header') && !-f $archive_file; 
+      my $charset  = lc $o->get('charset'); 
+      if ( $charset ) { 
+          $archive_fh = IO::File->new($archive_file, ">>:$charset") 
+             or die "Cannot open $charset $archive_file: $OS_ERROR\n"; 
+      } 
+      else { 
+          $archive_fh = IO::File->new($archive_file, ">>") 
+             or die "Cannot open $archive_file: $OS_ERROR\n"; 
+      } 
+      $archive_fh->autoflush(1) unless $o->get('buffer'); 
+      if ( $need_hdr ) { 
+         print $archive_fh '', escape(\@sel_cols), "\n" 
+            or die "Cannot write to $archive_file: $OS_ERROR\n"; 
+      } 
+   } 
 
    # Open the bulk insert file, which doesn't get any header info.
    my $bulkins_file;
