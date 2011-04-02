@@ -3749,8 +3749,8 @@ sub main {
    # ########################################################################
    # Start working.
    # ########################################################################
-   heartbeat("$PROGRAM_NAME starting");
-   heartbeat(@ARGV ? "Reading files @ARGV"
+   msg("$PROGRAM_NAME starting");
+   msg(@ARGV ? "Reading files @ARGV"
                    : "Connected to host " . $dp->as_string($dsn));
 
    # Class-based match criteria.
@@ -3790,18 +3790,18 @@ sub main {
          User     => $o->get('match-user'),
       },
    );
-   heartbeat("Find spec: " . Dumper(\%find_spec));
+   msg("Find spec: " . Dumper(\%find_spec));
 
    my $sentinel = $o->get('sentinel');
    my $run_time = $o->get('run-time') || 0;
    my $start    = time();
    my $end      = $start + $run_time;  # When we should exit
    my $now      = $start;
-   heartbeat("Run-time: " . ($run_time ? "$run_time seconds" : "forever")
+   msg("Run-time: " . ($run_time ? "$run_time seconds" : "forever")
       . " at " . ($o->get('interval') || 0) . " second intervals");
 
    while ( (!$run_time || $now < $end) && !-f $sentinel ) {
-      heartbeat('Checking processlist');
+      msg('Checking processlist');
       my $proclist;
       eval { $proclist = $get_proclist->(); };
       if ( $EVAL_ERROR ) {
@@ -3891,7 +3891,7 @@ sub main {
             MKDEBUG && _d(scalar @matches, "queries in class to kill");
             push @queries, @matches;
          } # CLASS
-         heartbeat('Matched ' . scalar @queries . ' queries');
+         msg('Matched ' . scalar @queries . ' queries');
 
          MATCHING_QUERY:
          foreach my $query ( @queries ) {
@@ -3903,36 +3903,36 @@ sub main {
             }
             if ( $o->get('execute-command') ) {
                exec_cmd($o->get('execute-command'));
-               heartbeat('Executed ' . $o->get('execute-command'));
+               msg('Executed ' . $o->get('execute-command'));
             }
             if ( $o->get('kill') || $o->get('kill-query') ) {
                if ( $o->get('wait-before-kill') ) {
-                  heartbeat("Sleeping " . $o->get('wait-before-kill')
+                  msg("Sleeping " . $o->get('wait-before-kill')
                      . " seconds before kill");
                   sleep $o->get('wait-before-kill');
                }
                eval { $kill_sth->execute($query->{Id}); };
                if ( $EVAL_ERROR ) {
-                  heartbeat("Error killing $query->{Id}: $EVAL_ERROR");
+                  msg("Error killing $query->{Id}: $EVAL_ERROR");
                }
                else {
-                  heartbeat("Killed $query->{Id}");
+                  msg("Killed $query->{Id}");
                }
             }
          }
       }
       else {
-         heartbeat('Processlist returned no queries');
+         msg('Processlist returned no queries');
       }
 
       if ( $dbh ) {
          if ( @queries && $o->get('wait-after-kill') ) {
-            heartbeat("Sleeping " . $o->get('wait-after-kill')
+            msg("Sleeping " . $o->get('wait-after-kill')
                . " seconds after killing queries");
             sleep $o->get('wait-after-kill');
          }
          else {
-            heartbeat("Sleeping " . $o->get('interval')
+            msg("Sleeping " . $o->get('interval')
                . " seconds after normal interval");
             sleep $o->get('interval');
          }
@@ -3941,8 +3941,8 @@ sub main {
       $now = time();
    }
 
-   heartbeat("Sentinel file $sentinel exists") if $sentinel && -f $sentinel;
-   heartbeat("$PROGRAM_NAME ending");
+   msg("Sentinel file $sentinel exists") if $sentinel && -f $sentinel;
+   msg("$PROGRAM_NAME ending");
    return 0;
 }
 
@@ -3982,9 +3982,9 @@ sub exec_cmd {
    exit $retval;
 }
 
-sub heartbeat {
+sub msg {
    my ( $msg ) = @_;
-   print '# ', ts(time), " $msg\n" if $o->get('heartbeat');
+   print '# ', ts(time), " $msg\n" if $o->get('verbose');
    MKDEBUG && _d($msg);
    return;
 }
@@ -4237,10 +4237,6 @@ query c<"SELECT c FROM t WHERE id=3"> is not identical to the first two
 queries so it is grouped into another class. Then when L<"--victims">
 C<all-but-oldest> is specified, all but the oldest query in each class is
 killed for each class of queries that matches the match criteria.
-
-=item --heartbeat
-
-Print information to STDOUT about what is being done.
 
 =item --help
 
@@ -4632,6 +4628,10 @@ grouped into classes by specifying L<"--group-by">, this option causes matches
 to apply only to classes with at least this many queries.  If L<"--group-by">
 is not specified then this option causes matches to apply only if there
 are at least this many queries in the entire SHOW PROCESSLIST.
+
+=item --verbose
+
+Print information to STDOUT about what is being done.
 
 =back
 

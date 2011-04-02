@@ -23,7 +23,7 @@ if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -57,6 +57,20 @@ system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(10)' >/dev/
 $output = `$cmd --busy-time 1s --print --run-time 11s`;
 @times = $output =~ m/\(Query (\d+) sec\)/g;
 ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 0');
+
+
+# ############################################################################
+# --verbose
+# ############################################################################
+$output = output(
+   sub { mk_kill::main('-F', $cnf, qw(--run-time 2s --busy-time 1 --print),
+      qw(--verbose)) },
+);
+like(
+   $output,
+   qr/Checking processlist/,
+   '--verbose'
+);
 
 # #############################################################################
 # Done.
