@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 29;
 
 use MySQLConfig;
 use DSNParser;
@@ -33,20 +33,43 @@ my $trp    = new TextResultSetParser();
 throws_ok(
    sub {
       my $config = new MySQLConfig(
-         source              => 'fooz',
          TextResultSetParser => $trp,
       );
    },
-   qr/invalid source/,
-   'Dies if source cannot be opened'
+   qr/I need a/,
+   'Must specify an input'
+);
+
+throws_ok(
+   sub {
+      my $config = new MySQLConfig(
+         file   => 'foo',
+         output => 'bar',
+         TextResultSetParser => $trp,
+      );
+   },
+   qr/Specify only one/,
+   'Must specify only one input'
+);
+
+throws_ok(
+   sub {
+      my $config = new MySQLConfig(
+         file => 'fooz',
+         TextResultSetParser => $trp,
+      );
+   },
+   qr/Cannot open/,
+   'Dies if file cannot be opened'
 );
 
 # #############################################################################
 # parse_show_variables()
 # #############################################################################
+$output = load_file("common/t/samples/show-variables/vars003.txt");
 is_deeply(
    MySQLConfig::parse_show_variables(
-      source => "$trunk/common/t/samples/show-variables/vars003.txt",
+      output              => $output,
       TextResultSetParser => $trp,
    ),
    {
@@ -298,18 +321,18 @@ is_deeply(
 # Config from mysqld --help --verbose
 # #############################################################################
 my $config = new MySQLConfig(
-   source              => "$trunk/$sample/mysqldhelp001.txt",
+   file                => "$trunk/$sample/mysqldhelp001.txt",
    TextResultSetParser => $trp,
 );
 
 is(
-   $config->get_type(),
+   $config->format(),
    'mysqld',
    "Detect mysqld type"
 );
 
 is_deeply(
-   $config->get_variables(),
+   $config->variables(),
    {
       abort_slave_event_count => '0',
       allow_suspicious_udfs => 'FALSE',
@@ -571,9 +594,9 @@ is_deeply(
 );
 
 is(
-   $config->get('wait_timeout', offline=>1),
+   $config->value_of('wait_timeout'),
    28800,
-   'get() from mysqld'
+   'value_of() from mysqld'
 );
 
 ok(
@@ -590,18 +613,18 @@ ok(
 # Config from SHOW VARIABLES
 # #############################################################################
 $config = new MySQLConfig(
-   source              => [ [qw(foo bar)], [qw(a z)] ],
+   result_set          => [ [qw(foo bar)], [qw(a z)] ],
    TextResultSetParser => $trp,
 );
 
 is(
-   $config->get_type(),
+   $config->format(),
    'show_variables',
    "Detect show_variables type (arrayref)"
 );
 
 is_deeply(
-   $config->get_variables(),
+   $config->variables(),
    {
       foo => 'bar',
       a   => 'z',
@@ -610,9 +633,9 @@ is_deeply(
 );
 
 is(
-   $config->get('foo'),
+   $config->value_of('foo'),
    'bar',
-   'get() from arrayref',
+   'value_of() from arrayref',
 );
 
 ok(
@@ -624,52 +647,58 @@ ok(
 # Config from my_print_defaults
 # #############################################################################
 $config = new MySQLConfig(
-   source              => "$trunk/$sample/myprintdef001.txt",
+   file                => "$trunk/$sample/myprintdef001.txt",
    TextResultSetParser => $trp,
 );
 
 is(
-   $config->get_type(),
+   $config->format(),
    'my_print_defaults',
    "Detect my_print_defaults type"
 );
 
 is(
-   $config->get('port', offline=>1),
+   $config->value_of('port'),
    '12349',
    "Duplicate var's last value used"
 );
 
 is(
-   $config->get('innodb_buffer_pool_size', offline=>1),
+   $config->value_of('innodb_buffer_pool_size'),
    '16777216',
    'Converted size char to int'
 );
 
+is(
+   $config->value_of('log_slave_updates'),
+   'ON',
+   "Var is ON if specified in my_print_defaults"
+);
+
 is_deeply(
-   $config->get_duplicate_variables(),
+   $config->duplicate_variables(),
    {
       'port' => [12345],
    },
-   'get_duplicate_variables()'
+   'duplicate_variables()'
 );
 
 # #############################################################################
 # Config from option file (my.cnf)
 # #############################################################################
 $config = new MySQLConfig(
-   source              => "$trunk/$sample/mycnf001.txt",
+   file                => "$trunk/$sample/mycnf001.txt",
    TextResultSetParser => $trp,
 );
 
 is(
-   $config->get_type(),
+   $config->format(),
    'option_file',
    "Detect option_file type"
 );
 
 is_deeply(
-   $config->get_variables(),
+   $config->variables(),
    {
       'user'                  => 'mysql',
       'pid_file'              => '/var/run/mysqld/mysqld.pid',
@@ -692,15 +721,15 @@ is_deeply(
       'skip_federated'        => 'ON',
    },
    "Vars from option file"
-) or print Dumper($config->get_variables());
+) or print Dumper($config->variables());
 
 $config = new MySQLConfig(
-   source              => "$trunk/$sample/mycnf002.txt",
+   file                => "$trunk/$sample/mycnf002.txt",
    TextResultSetParser => $trp,
 );
 
 is_deeply(
-   $config->get_variables(),
+   $config->variables(),
    {
       var1  => '16777216',    # 16 Mb
       var2  => '16777216',
@@ -716,18 +745,18 @@ is_deeply(
       var12 => '1073741824',
    },
    "Size postfixes MB, KB, etc."
-) or print Dumper($config->get_variables());
+) or print Dumper($config->variables());
 
 # ############################################################################
 # Baron's test cases.
 # ############################################################################
 $config = new MySQLConfig(
-   source              => "$trunk/$sample/mycnf-baron-001.txt",
+   file                => "$trunk/$sample/mycnf-baron-001.txt",
    TextResultSetParser => $trp,
 );
 
 is_deeply(
-   $config->get_variables(),
+   $config->variables(),
    {
       'datadir'      => '/home/baron/etc/mysql/server/5.1.50/data/',
       'port'         => '5150',
@@ -742,29 +771,29 @@ is_deeply(
 );
 
 $config = new MySQLConfig(
-   source              => "$trunk/common/t/samples/show-variables/vars-baron-001.txt",
+   file => "$trunk/common/t/samples/show-variables/vars-baron-001.txt",
    TextResultSetParser => $trp,
 );
 
 is(
-   $config->get_type(),
+   $config->format(),
    'show_variables',
    'Detect show_variables type for unformatted SHOW VARIABLES output'
 );
 
 is(
-   $config->get('wait_timeout'),
+   $config->value_of('wait_timeout'),
    28800,
    "Get vars from unformatted SHOW VARIABLES output"
 );
 
 $config = new MySQLConfig(
-   source              => "$trunk/$sample/mycnf-baron-002.txt",
+   file                => "$trunk/$sample/mycnf-baron-002.txt",
    TextResultSetParser => $trp,
 );
 
 is_deeply(
-   $config->get('innodb_file_per_table'),
+   $config->value_of('innodb_file_per_table'),
    'ON',
    "innodb_file_per_table (mycnf-baron-002.cnf)"
 );
@@ -776,24 +805,23 @@ SKIP: {
    skip 'Cannot connect to sandbox master', 3 unless $dbh;
 
    $config = new MySQLConfig(
-      source              => $dbh,
-      TextResultSetParser => $trp,
+      dbh => $dbh,
    );
 
    is(
-      $config->get_type(),
+      $config->format(),
       "show_variables",
       "Detect show_variables type (dbh)"
    );
 
    is(
-      $config->get('datadir'),
+      $config->value_of('datadir'),
       '/tmp/12345/data/',
       "Vars from dbh"
    );
 
    like(
-      $config->get_mysql_version(),
+      $config->mysql_version(),
       qr/5\.\d+\.\d+/,
       "MySQL version from dbh"
    );

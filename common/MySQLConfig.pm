@@ -17,21 +17,27 @@
 # ###########################################################################
 # MySQLConfig package $Revision$
 # ###########################################################################
-package MySQLConfig;
 
-# This package encapsulates a MySQL config (i.e. its system variables)
-# from different sources: SHOW VARIABLES, mysqld --help --verbose, etc.
-# (See set_config() for full list of valid input.)  It basically just
-# parses the config into a common data struct, then MySQLConfig objects
-# are passed to other modules like MySQLConfigComparer.
+# Package: MySQLConfig
+# MySQLConfig parses and encapsulates system variables and values from
+# SHOW VARIABLES, option files, mysqld --help --verbose or my_print_defaults.
+# A MySQLConfig object represents how MySQL is or would be configured given
+# one of those inputs.  If the input is SHOW VARIABLES, then the config is
+# acive, i.e. MySQL's running config.  All other inputs are inactive, i.e.
+# how MySQL should or would be running if started with the config.
+#
+# Inactive configs are made to mimic SHOW VARIABLES so that MySQLConfig
+# objects can be reliably compared with MySQLConfigComparer.  This is
+# necessary because the inputs are different in how they list values,
+# how they treat variables with optional values, etc.
+#
+# Only variables present in the input are saved in the MySQLConfig object.
+# So if <has()> returns false, then the variable did not appear in the input.
+package MySQLConfig;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -45,14 +51,45 @@ my %can_be_duplicate = (
    replicate_do_db             => 1,
 );
 
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Arguments:
+#   file       - Filename of an option file, or containing output of
+#                mysqld --help --verbose, my_print_defaults or SHOW VARIABLES
+#   output     - Text output of one of ^ if you want to slurp the file manually
+#   result_set - Arrayref of SHOW VARIABLES
+#   dbh        - dbh to get SHOW VARIABLES from
+#   TextResultSetParser - <TextResultSetParser> object if file or output
+#                         arg is given
+#
+# Returns:
+#   MySQLConfig object
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg arugment" unless $args{$arg};
+   my @requires_one_of = qw(file output result_set dbh);
+   my $required_arg    = grep { $args{$_} } @requires_one_of;
+   if ( !$required_arg ) {
+      die "I need a " . join(', ', @requires_one_of[0..$#requires_one_of-1])
+         . " or " . $requires_one_of[-1] . " argument";
+   }
+   if ( $required_arg > 1 ) {
+      die "Specify only one "
+         . join(', ', @requires_one_of[0..$#requires_one_of-1])
+         . " or " . $requires_one_of[-1] . " argument";
+   }
+   if ( $args{file} || $args{output} ) {
+      die "I need a TextResultSetParser argument"
+         unless $args{TextResultSetParser};
    }
 
-   my %config_data = parse_config(%args);
+   if ( $args{file} ) {
+      $args{output} = _slurp_file($args{file});
+   }
+
+   my %config_data = _parse_config(%args);
 
    my $self = {
       %args,
@@ -62,134 +99,126 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_config {
+sub _parse_config {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg arugment" unless $args{$arg};
-   }
-   my ($source) = @args{@required_args};
 
    my %config_data;
-   if ( -f $source ) {
-      %config_data = parse_config_from_file(%args);
+   if ( $args{output} ) {
+      %config_data = _parse_config_output(%args);
    }
-   elsif ( ref $source && ref $source eq 'ARRAY' ) {
-      $config_data{type} = $args{type} || 'show_variables';
-      $config_data{vars} = { map { @$_ } @$source };
+   elsif ( my $rows = $args{result_set} ) {
+      $config_data{format} = $args{format} || 'show_variables';
+      $config_data{vars}   = { map { @$_ } @$rows };
    }
-   elsif ( ref $source && (ref $source) =~ m/DBI/i ) {
-      $config_data{type} = $args{type} || 'show_variables';
+   elsif ( my $dbh = $args{dbh} ) {
+      $config_data{format} = $args{format} || 'show_variables';
       my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
-      MKDEBUG && _d($source, $sql);
-      my $rows = $source->selectall_arrayref($sql);
+      MKDEBUG && _d($dbh, $sql);
+      my $rows = $dbh->selectall_arrayref($sql);
       $config_data{vars} = { map { @$_ } @$rows };
-      $config_data{mysql_version} = _get_version($source);
+      $config_data{mysql_version} = _get_version($dbh);
    }
    else {
-      die "Unknown or invalid source: $source";
+      die "Unknown config source";
    }
 
    return %config_data;
 }
 
-sub parse_config_from_file {
+sub _parse_config_output {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
+   my @required_args = qw(output TextResultSetParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
+   my ($output) = @args{@required_args};
+   MKDEBUG && _d("Parsing config output");
 
-   my $type = $args{type} || detect_source_type(%args);
-   if ( !$type ) {
-      die "Cannot auto-detect the type of MySQL config data in $source"
+   my $format = $args{format} || detect_config_output_format(%args);
+   if ( !$format ) {
+      die "Cannot auto-detect the MySQL config format";
    }
 
    my $vars;      # variables hashref
    my $dupes;     # duplicate vars hashref
    my $opt_files; # option files arrayref
-   if ( $type eq 'show_variables' ) {
+   if ( $format eq 'show_variables' ) {
       $vars = parse_show_variables(%args);
    }
-   elsif ( $type eq 'mysqld' ) {
+   elsif ( $format eq 'mysqld' ) {
       ($vars, $opt_files) = parse_mysqld(%args);
    }
-   elsif ( $type eq 'my_print_defaults' ) {
+   elsif ( $format eq 'my_print_defaults' ) {
       ($vars, $dupes) = parse_my_print_defaults(%args);
    }
-   elsif ( $type eq 'option_file' ) {
+   elsif ( $format eq 'option_file' ) {
       ($vars, $dupes) = parse_option_file(%args);
    }
    else {
-      die "Invalid type of MySQL config data in $source: $type"
+      die "Invalid MySQL config format: $format";
    }
 
-   die "Failed to parse MySQL config data from $source"
-      unless $vars && keys %$vars;
+   die "Failed to parse MySQL config" unless $vars && keys %$vars;
+
+   if ( $format ne 'show_variables' ) {
+      _mimic_show_variables(
+         %args,
+         format => $format,
+         vars   => $vars,
+      );
+   }
 
    return (
-      type           => $type,
+      format         => $format,
       vars           => $vars,
       option_files   => $opt_files,
       duplicate_vars => $dupes,
    );
 }
 
-sub detect_source_type {
+sub detect_config_output_format {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
+   my ($output) = @args{@required_args};
 
-   MKDEBUG && _d("Detecting type of output in", $source);
-   open my $fh, '<', $source or die "Cannot open $source: $OS_ERROR";
-   my $type;
-   while ( defined(my $line = <$fh>) ) {
-      MKDEBUG && _d($line);
-      if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
-           || $line =~ m/\*+ \d/
-           || $line =~ m/Variable_name:\s+\w+/
-           || $line =~ m/Variable_name\s+Value$/ )
-      {
-         MKDEBUG && _d('show variables config line');
-         $type = 'show_variables';
-         last;
-      }
-      elsif ( $line =~ m/^--\w+/ ) {
-         MKDEBUG && _d('my_print_defaults config line');
-         $type = 'my_print_defaults';
-         last;
-      }
-      elsif ( $line =~ m/^\s*\[[a-zA-Z]+\]\s*$/ ) {
-         MKDEBUG && _d('option file config line');
-         $type = 'option_file',
-         last;
-      }
-      elsif (    $line =~ m/Starts the MySQL database server/
-              || $line =~ m/Default options are read from /
-              || $line =~ m/^help\s+TRUE / )
-      {
-         MKDEBUG && _d('mysqld config line');
-         $type = 'mysqld';
-         last;
-      }
+   my $format;
+   if (    $output =~ m/\|\s+\w+\s+\|\s+.+?\|/
+        || $output =~ m/\*+ \d/
+        || $output =~ m/Variable_name:\s+\w+/
+        || $output =~ m/Variable_name\s+Value$/m )
+   {
+      MKDEBUG && _d('show variables format');
+      $format = 'show_variables';
    }
-   close $fh;
-   return $type;
+   elsif (    $output =~ m/Starts the MySQL database server/
+           || $output =~ m/Default options are read from /
+           || $output =~ m/^help\s+TRUE /m )
+   {
+      MKDEBUG && _d('mysqld format');
+      $format = 'mysqld';
+   }
+   elsif ( $output =~ m/^--\w+/m ) {
+      MKDEBUG && _d('my_print_defaults format');
+      $format = 'my_print_defaults';
+   }
+   elsif ( $output =~ m/^\s*\[[a-zA-Z]+\]\s*$/m ) {
+      MKDEBUG && _d('option file format');
+      $format = 'option_file',
+   }
+
+   return $format;
 }
 
 sub parse_show_variables {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
+   my @required_args = qw(output TextResultSetParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $trp) = @args{@required_args};
-   my $output         = _slurp_file($source);
-   return unless $output;
+   my ($output, $trp) = @args{@required_args};
 
    my %config = map {
       $_->{Variable_name} => $_->{Value}
@@ -204,14 +233,11 @@ sub parse_show_variables {
 # defaults file is explicitly given by --default-file.
 sub parse_mysqld {
    my ( %args ) = @_;
-   my @required_args = qw(source );
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    # First look for the list of option files like
    #   Default options are read from the following files in the given order:
@@ -255,14 +281,11 @@ sub parse_mysqld {
 # and a hashref of any duplicated variables.
 sub parse_my_print_defaults {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    # Parse the "--var=val" lines.
    my ($config, $dupes) = _parse_varvals(
@@ -276,18 +299,14 @@ sub parse_my_print_defaults {
 # variable=>values and a hashref of any duplicated variables.
 sub parse_option_file {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
-   die "Failed to parse the [mysqld] section from $source"
-      unless $mysqld_section;
+   die "Failed to parse the [mysqld] section" unless $mysqld_section;
 
    # Parse the "var=val" lines.
    my ($config, $dupes) = _parse_varvals(
@@ -364,15 +383,7 @@ sub _parse_varvals {
                $val = $num * $factor_for{lc $factor};
             }
             elsif ( $val =~ m/No default/ ) {
-               # mysqld --help --verbose lists "(No default value)" for vars
-               # without values, but this means two things.  One, for most
-               # vars it means there's no value, which we treat as a blank
-               # string because that's usually what SHOW VARIABLES will list
-               # and it safeguards against crashing on undef comparisons.
-               # Two, for certains vars (i.e. the ones matches in the regex
-               # below), it means that they're OFF (because otherwise they'd
-               # be ON if they had a value).
-               $val = $var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
+               $val = '';
             }
          }
 
@@ -393,9 +404,55 @@ sub _parse_varvals {
    return \%config, \%duplicates;
 }
 
+# Sub: _mimic_show_variables
+#   Make the variables' values mimic SHOW VARIABLES.  Different output formats
+#   list values differently.  To make comparisons easier, outputs are made to
+#   mimic SHOW VARIABLES.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   vars   - Hashref of variables-values
+#   format - Config output format (mysqld, option_file, etc.)
+sub _mimic_show_variables {
+   my ( %args ) = @_;
+   my @required_args = qw(vars format);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($vars, $format) = @args{@required_args};
+   
+   foreach my $var ( keys %$vars ) {
+      if ( $vars->{$var} eq '' ) {
+         if ( $format eq 'mysqld' ) {
+            # mysqld lists "(No default value)" for certain variables
+            # that are not set/configured.  _parse_varvals() turns this
+            # into a blank string.  For most vars this means there's no
+            # value and SHOW VARIABLES will similarly show no value.
+            # But for log*, skip* and ignore* vars, SHOW VARIABLES will
+            # show OFF.  But, log_error is an exception--it's practically
+            # always on.
+            if ( $var ne 'log_error' && $var =~ m/^(?:log|skip|ignore)/ ) {
+               $vars->{$var} = 'OFF';
+            }
+         }
+         else {
+            # Output formats other than mysqld (e.g. option file), if
+            # a variable is listed then it's enabled, like --skip-federated.
+            # SHOW VARIBLES will show ON for these.
+            $vars->{$var} = 'ON';
+         }
+      }
+   }
+
+   return;
+}
+
 sub _slurp_file {
    my ( $file ) = @_;
    die "I need a file argument" unless $file;
+   MKDEBUG && _d("Reading", $file);
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
@@ -421,37 +478,48 @@ sub has {
    return exists $self->{vars}->{$var};
 }
 
-# Returns the value for the given variable.
-sub get {
+# Return the value of the given variable.
+sub value_of {
    my ( $self, $var ) = @_;
    return unless $var;
    return $self->{vars}->{$var};
 }
 
-# Returns all variables-values.
-sub get_variables {
+# Return hashref of all variables.
+sub variables {
    my ( $self, %args ) = @_;
    return $self->{vars};
 }
 
-sub get_duplicate_variables {
+# Return hashref of duplicate variables.
+sub duplicate_variables {
    my ( $self ) = @_;
    return $self->{duplicate_vars};
 }
 
-sub get_option_files {
+# Return arrayref of option files.
+sub option_files {
    my ( $self ) = @_;
    return $self->{option_files};
 }
 
-sub get_mysql_version {
+# Return MySQL version.
+sub mysql_version {
    my ( $self ) = @_;
    return $self->{mysql_version};
 }
 
-sub get_type {
+# Return the config file format (mysqld, option file, etc.)
+sub format {
    my ( $self ) = @_;
-   return $self->{type};
+   return $self->{format};
+}
+
+# Return true if the config is active (i.e. the effective config
+# that MySQL is using; only true if config is from SHOW VARIABLES).
+sub is_active {
+   my ( $self ) = @_;
+   return $self->{dbh} ? 1 : 0;
 }
 
 sub _d {
