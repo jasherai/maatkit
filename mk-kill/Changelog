@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+   * Tool crashed if no connection opts (--host, etc.) were given (issue 1213).
+
 2011-02-09: version 0.9.9
 
    * Removed option --[no]only-oldest (issue 1221).

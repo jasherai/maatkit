@@ -4248,7 +4248,7 @@ Show help and exit.
 
 =item --host
 
-short form: -h; type: string
+short form: -h; type: string; default: localhost
 
 Connect to host.
 
