@@ -3646,7 +3646,13 @@ sub main {
       TABLE:
       while ( my $table = $next_tbl->() ) {
          MKDEBUG && _d('Got table', $table);
-         my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
+
+         # If get_create_table() fails, it will throw a warning and return
+         # undef.  So we can just move on to the next table.
+         my $ddl = $du->get_create_table($dbh, $q, $database, $table);
+         next TABLE unless $ddl;
+         $ddl = $ddl->[1];  # retval is an arrayref: [table|view, SHOW CREATE]
+
          my $engine   = $tp->get_engine($ddl) || next TABLE;
          my $tbl_info = {
             db     => $database,
@@ -3667,40 +3673,47 @@ sub main {
          }
          else {
             MKDEBUG && _d('Getting duplicate keys on', $database, $table);
-            $dk->get_duplicate_keys(
-               $keys,
-               clustered_key => $clustered_key,
-               tbl_info      => $tbl_info,
-               callback      => \&print_duplicate_key,
-               %tp_opts,
-               # get_duplicate_keys() ignores these args but passes them
-               # to the callback:
-                  dbh      => $dbh,
-                  is_fk    => 0,
-                  o        => $o,
-                  ks       => $ks,
-                  tp       => $tp,
-                  q        => $q,
-                  seen_tbl => \%seen_tbl,
-                  summary  => \%summary,
-            ) if $keys;
+            eval {
+               $dk->get_duplicate_keys(
+                  $keys,
+                  clustered_key => $clustered_key,
+                  tbl_info      => $tbl_info,
+                  callback      => \&print_duplicate_key,
+                  %tp_opts,
+                  # get_duplicate_keys() ignores these args but passes them
+                  # to the callback:
+                     dbh      => $dbh,
+                     is_fk    => 0,
+                     o        => $o,
+                     ks       => $ks,
+                     tp       => $tp,
+                     q        => $q,
+                     seen_tbl => \%seen_tbl,
+                     summary  => \%summary,
+               ) if $keys;
 
-            $dk->get_duplicate_fks(
-               $fks,
-               tbl_info => $tbl_info,
-               callback => \&print_duplicate_key,
-               %tp_opts,
-               # get_duplicate_fks() ignores these args but passes them
-               # to the callback:
-                  dbh   => $dbh,
-                  is_fk => 1,
-                  o     => $o,
-                  ks    => $ks,
-                  tp       => $tp,
-                  q        => $q,
-                  seen_tbl => \%seen_tbl,
-                  summary  => \%summary,
-            ) if $fks;
+               $dk->get_duplicate_fks(
+                  $fks,
+                  tbl_info => $tbl_info,
+                  callback => \&print_duplicate_key,
+                  %tp_opts,
+                  # get_duplicate_fks() ignores these args but passes them
+                  # to the callback:
+                     dbh   => $dbh,
+                     is_fk => 1,
+                     o     => $o,
+                     ks    => $ks,
+                     tp       => $tp,
+                     q        => $q,
+                     seen_tbl => \%seen_tbl,
+                     summary  => \%summary,
+               ) if $fks;
+            };
+            if ( $EVAL_ERROR ) {
+               warn "Error checking `$database`.`$table` for duplicate keys: "
+                  . $EVAL_ERROR;
+               next TABLE;
+            }
          }
 
          # Always count Total Keys so print_key_summary won't die
