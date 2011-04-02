@@ -3640,10 +3640,17 @@ sub main {
          unless $o->got('interval');
    }
 
-   # If parsing files, then don't wait.
+   if ( !-t STDIN ) {
+      MKDEBUG && _d("STDIN is piped");
+      @ARGV = ('-');
+   }
+
+   # Disable opts that don't make sense when reading proclist
+   # from a file (or STDIN).
    if ( @ARGV ) {
-      $o->set('run-time', 0);
-      $o->set('interval', 0);
+      $o->set('run-time',    0);
+      $o->set('interval',    0);
+      $o->set('ignore-self', 0);
    }
 
    # TODO: parse valid values from POD
@@ -3671,21 +3678,11 @@ sub main {
    }
 
    # ########################################################################
-   # Connect to MySQL if not reading files.
+   # Make input sub that will either get processlist from MySQL or a file.
    # ########################################################################
    my $dsn;
    my $dbh;
    my $kill_sth;
-   if ( !@ARGV ) {
-      $dsn      = $dp->parse_options($o);
-      $dbh      = get_cxn($dp, $dsn, 1); 
-      $kill_sth = $o->get('kill-query') ? $dbh->prepare('KILL QUERY ?')
-                :                         $dbh->prepare('KILL ?');
-   }
-
-   # ########################################################################
-   # Make input sub that will either get processlist from MySQL or a file.
-   # ########################################################################
    my $get_proclist;
    if ( @ARGV ) {
       MKDEBUG && _d('Getting processlist from files:', @ARGV);
@@ -3724,6 +3721,10 @@ sub main {
    }
    else {
       MKDEBUG && _d('Getting processlist from MySQL');
+      $dsn      = $dp->parse_options($o);
+      $dbh      = get_cxn($dp, $dsn, 1); 
+      $kill_sth = $o->get('kill-query') ? $dbh->prepare('KILL QUERY ?')
+                :                         $dbh->prepare('KILL ?');
       my $proc_sth = $dbh->prepare('SHOW FULL PROCESSLIST');
       $get_proclist = sub {
          $proc_sth->execute();
@@ -3750,8 +3751,8 @@ sub main {
    # Start working.
    # ########################################################################
    msg("$PROGRAM_NAME starting");
-   msg(@ARGV ? "Reading files @ARGV"
-                   : "Connected to host " . $dp->as_string($dsn));
+   msg($dbh ? "Connected to host " . $dp->as_string($dsn)
+            : "Reading files @ARGV");
 
    # Class-based match criteria.
    my $query_count    = $o->get('query-count');
@@ -3797,8 +3798,11 @@ sub main {
    my $start    = time();
    my $end      = $start + $run_time;  # When we should exit
    my $now      = $start;
-   msg("Run-time: " . ($run_time ? "$run_time seconds" : "forever")
-      . " at " . ($o->get('interval') || 0) . " second intervals");
+
+   if ( $dbh ) {
+      msg("Run-time: " . ($run_time ? "$run_time seconds" : "forever")
+         . " at " . ($o->get('interval') || 0) . " second intervals");
+   }
 
    while ( (!$run_time || $now < $end) && !-f $sentinel ) {
       msg('Checking processlist');
@@ -4046,10 +4050,10 @@ mk-kill - Kill MySQL queries that match certain criteria.
 
 Usage: mk-kill [OPTION]... [FILE...]
 
-mk-kill kills MySQL connections.  If FILE is not given, mk-kill executes SHOW
-PROCESSLIST on MySQL to get queries.  Otherwise, mk-kill will read queries from
-FILE, which should contain the output of SHOW PROCESSLIST.  If FILE is -, mk-kill
-reads from STDIN.
+mk-kill kills MySQL connections.  mk-kill connects to MySQL and gets queries
+from SHOW PROCESSLIST if no FILE is given.  Else, it reads queries from one
+or more FILE which containts the output of SHOW PROCESSLIST.  If FILE is -,
+mk-kill reads from STDIN.
 
 Kill queries running longer than 60s:
 
@@ -4066,6 +4070,10 @@ Check for sleeping processes and kill them all every 10s:
 Print all login processes:
 
   mk-kill --match-state login --print --victims all
+
+See which queries in the processlist right now would match:
+
+   mysql -e "SHOW PROCESSLIST" | mk-kill --busy-time 60 --print
 
 =head1 RISKS
 

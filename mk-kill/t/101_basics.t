@@ -23,11 +23,11 @@ if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 3;
+   plan tests => 4;
 }
 
 my $output;
-my $cnf='/tmp/12345/my.sandbox.cnf';
+my $cnf = '/tmp/12345/my.sandbox.cnf';
 my $cmd = "$trunk/mk-kill/mk-kill -F $cnf -h 127.1";
 
 # Shell out to a sleep(10) query and try to capture the query.
@@ -70,6 +70,16 @@ like(
    $output,
    qr/Checking processlist/,
    '--verbose'
+);
+
+# ############################################################################
+# Reading file (or STDIN) should require connection.
+# ############################################################################
+$output = `mysql --defaults-file=$cnf -e "SHOW PROCESSLIST" | $trunk/mk-kill/mk-kill -F $cnf --busy-time 1 --print --verbose`;
+like(
+   $output,
+   qr/Reading files -/,
+   "Read STDIN from pipe"
 );
 
 # #############################################################################
