@@ -6182,23 +6182,26 @@ sub checksum_chunks {
       my $chunk_stop_time = gettimeofday();
       MKDEBUG && _d('Finished chunk at', $chunk_stop_time);
 
-      if ( $final_o->get('sleep') && !$final_o->get('explain') ) {
-         MKDEBUG && _d('Sleeping', $final_o->get('sleep'));
-         sleep($final_o->get('sleep'));
-      }
-      elsif ( $final_o->get('sleep-coef') && !$final_o->get('explain') ) {
-         my $sleep_time
-            = ($chunk_stop_time - $chunk_start_time)
-            * $final_o->get('sleep-coef');
-         MKDEBUG && _d('Sleeping', $sleep_time);
-         if ( $sleep_time < 0 ) {
-            warn "Calculated invalid sleep time: "
-               . "$sleep_time = ($chunk_stop_time - $chunk_start_time) * "
-               . $final_o->get('sleep-coef')
-               . ". Sleep time set to 1 second instead.";
-            $sleep_time = 1;
+      # --sleep between chunks.  Don't sleep if this is the last/only chunk.
+      if ( $chunk_num < $num_chunks - 1 ) {
+         if ( $final_o->get('sleep') && !$final_o->get('explain') ) {
+            MKDEBUG && _d('Sleeping', $final_o->get('sleep'));
+            sleep($final_o->get('sleep'));
          }
-         sleep($sleep_time);
+         elsif ( $final_o->get('sleep-coef') && !$final_o->get('explain') ) {
+            my $sleep_time
+               = ($chunk_stop_time - $chunk_start_time)
+               * $final_o->get('sleep-coef');
+            MKDEBUG && _d('Sleeping', $sleep_time);
+            if ( $sleep_time < 0 ) {
+               warn "Calculated invalid sleep time: "
+                  . "$sleep_time = ($chunk_stop_time - $chunk_start_time) * "
+                  . $final_o->get('sleep-coef')
+                  . ". Sleep time set to 1 second instead.";
+               $sleep_time = 1;
+            }
+            sleep($sleep_time);
+         }
       }
    } # End foreach CHUNK
 

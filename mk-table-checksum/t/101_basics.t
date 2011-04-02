@@ -24,7 +24,7 @@ if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 11;
+   plan tests => 12;
 }
 
 my ($output, $output2);
@@ -104,8 +104,24 @@ $output = output(
 );
 like($output, qr/28c8edde3d61a0411511d3b1866f0636/, 'MD5 ACCUM' );
 
+
+# ############################################################################
+# --sleep
+# ############################################################################
+
+# Issue 1256: mk-tabe-checksum: if no rows are found in a chunk, don't perform the sleep
+my $t0 = time;
+output(
+   sub { mk_table_checksum::main("F=$cnf",
+      qw(--sleep 5 -t mysql.user --chunk-size 100)) },
+);
+ok(
+   time - $t0 < 1,
+   "--sleep doesn't sleep unless table is chunked"
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
-# $sb->wipe_clean($master_dbh);
+$sb->wipe_clean($master_dbh);
 exit;
