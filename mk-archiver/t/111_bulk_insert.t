@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 7;
+   plan tests => 9;
 }
 
 my $output;
@@ -57,6 +57,32 @@ is($output + 0, 105, 'Bulk insert works');
 $output = `mysql --defaults-file=$cnf -N -e "checksum table test.table_5_dest, test.table_5_copy"`;
 my ( $chks ) = $output =~ m/dest\s+(\d+)/;
 like($output, qr/copy\s+$chks/, 'copy checksum');
+
+
+# ############################################################################
+# Issue 1260: mk-archiver --bulk-insert data loss
+# ############################################################################
+$sb->load_file('master', 'mk-archiver/t/samples/bulk_regular_insert.sql');
+$output = output(
+   sub { mk_archiver::main(
+       '--where', "id < 8", qw(--limit 100000 --txn-size 1000),
+       qw(--why-quit --statistics --bulk-insert),
+      '--source', "D=bri,t=t,F=$cnf",
+      '--dest',   "t=t_arch") },
+);
+$rows = $dbh->selectall_arrayref('select id from bri.t order by id');
+is_deeply(
+   $rows,
+   [[8],[9],[10]],
+   "--bulk-insert left 3 rows (issue 1260)"
+);
+
+$rows = $dbh->selectall_arrayref('select id from bri.t_arch order by id');
+is_deeply(
+   $rows,
+   [[1],[2],[3],[4],[5],[6],[7]],
+   "--bulk-insert archived 7 rows (issue 1260)"
+);
 
 # #############################################################################
 # Done.
