@@ -17,7 +17,11 @@
 # ###########################################################################
 # MySQLConfigComparer package $Revision$
 # ###########################################################################
+
+# Package: MySQLConfigComparer
+# MySQLConfigComparer compares and diffs C<MySQLConfig> objects. 
 package MySQLConfigComparer;
+
 { # package scope
 use strict;
 use warnings FATAL => 'all';
@@ -41,58 +45,95 @@ my %alt_val_for = (
    FALSE => 0,
 );
 
-# These vars don't interest us so we ignore them.
-my %ignore_vars = (
-   date_format      => 1,
-   datetime_format  => 1,
-   ft_stopword_file => 1,
-   timestamp        => 1,
-   time_format      => 1,
-);
-
-# The vars should be compared with == instead of eq so that
-# 0 equals 0.0, etc.
-my %is_numeric = (
-   long_query_time => 1, 
-);
-
-# These vars can be specified like --log-error or --log-error=file in config
-# files.  If specified without a value, then they're "equal" to whatever
-# default value SHOW VARIABLES lists.
-my %value_is_optional = (
-   log_error => 1,
-   log_isam  => 1,
-); 
-
-# Like value_is_optional but SHOW VARIABlES does not list a default value,
-# it only lists ON if the variable was given in a config file without or
-# without a value (e.g. --log or --log=file).  So any value from the config
-# file that's true (i.e. not a blank string) equals ON from SHOW VARIABLES.
-my %any_value_is_true = (
-   log              => 1,
-   log_bin          => 1,
-   log_slow_queries => 1,
-);
-
-# The value of these vars are relative to some base-path.  In config files
-# just a filename can be given, but in SHOW VARS the full /base/path/filename
-# is shown.  So we have to qualify the config value with the correct base-path.
-my %base_path = (
-   character_sets_dir   => 'basedir',
-   datadir              => 'basedir',
-   general_log_file     => 'datadir',
-   language             => 'basedir',
-   log_error            => 'datadir',
-   pid_file             => 'datadir',
-   plugin_dir           => 'basedir',
-   slow_query_log_file  => 'datadir',
-   socket               => 'datadir',
-);
-
+# Sub: new
+#
+# Parameters:
+#   %args - Arguments
+#
+# Optional Arguments:
+#   ignore_variables            - Arrayref of variables to ignore
+#   numeric_variables           - Arrayref of variables to compare numerically
+#   optional_value_variables    - Arrayref of vars whose val is optional 
+#   any_value_is_true_variables - Arrayref of vars... see below
+#   base_path                   - Hashref of variable=>base_path
+#
+# Returns:
+#   MySQLConfigComparer object
 sub new {
    my ( $class, %args ) = @_;
+
+   # These vars don't interest us so we ignore them.
+   my %ignore_vars = (
+      date_format      => 1,
+      datetime_format  => 1,
+      ft_stopword_file => 1,
+      timestamp        => 1,
+      time_format      => 1,
+      ($args{ignore_variables}
+         ? map { $_ => 1 } @{$args{ignore_variables}}
+         : ()),
+   );
+
+   # The vars should be compared with == instead of eq so that
+   # 0 equals 0.0, etc.
+   my %is_numeric = (
+      long_query_time => 1, 
+      ($args{numeric_variables}
+         ? map { $_ => 1 } @{$args{numeric_variables}}
+         : ()),
+   );
+
+   # These vars can be specified like --log-error or --log-error=file in config
+   # files.  If specified without a value, then they're "equal" to whatever
+   # default value SHOW VARIABLES lists.
+   my %value_is_optional = (
+      log_error => 1,
+      log_isam  => 1,
+      ($args{optional_value_variables}
+         ? map { $_ => 1 } @{$args{optional_value_variables}}
+         : ()),
+   ); 
+
+   # Like value_is_optional but SHOW VARIABlES does not list a default value,
+   # it only lists ON if the variable was given in a config file without or
+   # without a value (e.g. --log or --log=file).  So any value from the config
+   # file that's true (i.e. not a blank string) equals ON from SHOW VARIABLES.
+   my %any_value_is_true = (
+      log              => 1,
+      log_bin          => 1,
+      log_slow_queries => 1,
+      ($args{any_value_is_true_variables}
+         ? map { $_ => 1 } @{$args{any_value_is_true_variables}}
+         : ()),
+   );
+
+   # The value of these vars are relative to some base path.  In config files
+   # just a filename can be given, but in SHOW VARS the full /base/path/filename
+   # is shown.  So we have to qualify the config value with the correct
+   # base path.
+   my %base_path = (
+      character_sets_dir   => 'basedir',
+      datadir              => 'basedir',
+      general_log_file     => 'datadir',
+      language             => 'basedir',
+      log_error            => 'datadir',
+      pid_file             => 'datadir',
+      plugin_dir           => 'basedir',
+      slow_query_log_file  => 'datadir',
+      socket               => 'datadir',
+      ($args{base_paths}
+         ? map { $_ => 1 } @{$args{base_paths}}
+         : ()),
+   );
+
    my $self = {
+      ignore_vars       => \%ignore_vars,
+      is_numeric        => \%is_numeric,
+      value_is_optional => \%value_is_optional,
+      any_value_is_true => \%any_value_is_true,
+      base_path         => \%base_path,
    };
+
    return bless $self, $class;
 }
 
@@ -128,6 +169,11 @@ sub diff {
       return;
    }
 
+   my $base_path         = $self->{base_path};
+   my $is_numeric        = $self->{is_numeric};
+   my $any_value_is_true = $self->{any_value_is_true};
+   my $value_is_optional = $self->{value_is_optional};
+
    # Get the vars that exist in all configs  minus the ones we want to ignore.
    my $config0     = $configs->[0];
    my $last_config = @$configs - 1;
@@ -141,7 +187,7 @@ sub diff {
       my $val0   = $self->_normalize_value(  # config0 value
          value        => $config0->value_of($var),
          is_directory => $is_dir,
-         base_path    => $config0->value_of($base_path{$var}) || "",
+         base_path    => $config0->value_of($base_path->{$var}) || "",
       );
 
       eval {
@@ -150,10 +196,10 @@ sub diff {
             my $valN = $self->_normalize_value(  # configN value
                value        => $configN->value_of($var),
                is_directory => $is_dir,
-               base_path    => $configN->value_of($base_path{$var}) || "",
+               base_path    => $configN->value_of($base_path->{$var}) || "",
             );
 
-            if ( $is_numeric{$var} ) {
+            if ( $is_numeric->{$var} ) {
                next CONFIG if $val0 == $valN;
             }
             else {
@@ -164,10 +210,10 @@ sub diff {
                # is because certain difference are actually equal in different
                # formats.
                if ( $config0->format() ne $configN->format() ) {
-                  if ( $any_value_is_true{$var} ) {
+                  if ( $any_value_is_true->{$var} ) {
                      next CONFIG if $val0 && $valN;
                   }
-                  if ( $value_is_optional{$var} ) {
+                  if ( $value_is_optional->{$var} ) {
                      next CONFIG if (!$val0 && $valN) || ($val0 && !$valN);
                   }
                }
@@ -253,7 +299,7 @@ sub _normalize_value {
          $val .= '/' unless $val =~ m/\/$/;
       }
       if ( $base_path && $val !~ m/^\// ) {
-         $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
+         $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base path
          $val =~ s/\/{2,}/\//g;               # make redundant // single /
       }
    }
@@ -263,10 +309,11 @@ sub _normalize_value {
 sub _get_shared_vars {
    my ( $self, %args ) = @_;
    my ($configs)   = @args{qw(configs)};
+   my $ignore_vars = $self->{ignore_vars};
    my $config0     = $configs->[0];
    my $last_config = @$configs - 1;
    my @vars
-      = grep { !$ignore_vars{$_} }
+      = grep { !$ignore_vars->{$_} }
       map {
          my $config = $_;
          my $vars   = $config->variables();

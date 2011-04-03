@@ -35,6 +35,7 @@
 # So if <has()> returns false, then the variable did not appear in the input.
 package MySQLConfig;
 
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -530,6 +531,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################

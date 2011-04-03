@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 16;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -340,6 +340,34 @@ is_deeply(
    },
    "3 configs with a diff"
 );
+
+# ############################################################################
+# Add to, override defaults.
+# ############################################################################
+$c1 = new MySQLConfig(
+   result_set => [['log_error', 'foo']],
+   format     => 'show_variables',
+);
+$c2 = new MySQLConfig(
+   result_set => [['log_error', 'bar']],
+   format     => 'show_variables',
+);
+
+{
+   my $cc = new MySQLConfigComparer(
+      ignore_variables => [qw(log_error)],
+   );
+   
+   $diff = $cc->diff(
+      configs => [$c1, $c2],
+   );
+
+   is_deeply(
+      $diff,
+      undef,
+      "Ignore variables"
+   ) or print Dumper($diff);
+}
 
 # #############################################################################
 # Done.
