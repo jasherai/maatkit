@@ -18,7 +18,7 @@
 # MySQLConfigComparer package $Revision$
 # ###########################################################################
 package MySQLConfigComparer;
-
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -90,7 +90,6 @@ sub new {
    return bless $self, $class;
 }
 
-
 # Sub: diff
 #   Diff the variable values of <MySQLConfig> objects.  Only the common
 #   set of variables (i.e. the vars that all configs have) are compared.
@@ -126,16 +125,12 @@ sub diff {
    # Get the vars that exist in all configs  minus the ones we want to ignore.
    my $config0     = $configs->[0];
    my $last_config = @$configs - 1;
-   my @vars = grep { !$ignore_vars{$_} } map {
-      my $config = $_;
-      my $vars   = $config->variables();
-      grep { $config0->has($_); } keys %$vars;
-   }  @$configs[1..$last_config];
+   my $vars        = $self->_get_shared_vars(%args);
 
    # Compare variables from first config (config0) to other configs (configN).
    my $diffs;
    VARIABLE:
-   foreach my $var ( @vars ) {
+   foreach my $var ( @$vars ) {
       my $is_dir = $var =~ m/dir$/ || $var eq 'language';
       my $val0   = $self->_normalize_value(  # config0 value
          value        => $config0->value_of($var),
@@ -190,6 +185,53 @@ sub diff {
    return $diffs;
 }
 
+# Sub: missing
+#   Return variables that aren't in all the given <MySQLConfig> objects.
+#
+# Parameters:
+#   %args - Arguments
+#
+# Required Arguments:
+#   configs - Arrayref of C<MySQLConfig> objects
+#
+# Returns:
+#   Hashref of missing variables like,
+#   (start code)
+#   {
+#     query_cache_size => [0, 1]
+#   }
+#   (end code)
+#   The arrayref vals correspond to the C<MySQLConfig> objects, so
+#   $missing->{var}->[N] is $configs->[N]; the values are boolean:
+#   1 means the C<MySQLConfig> obj has the variable, 0 means it doesn't.
+sub missing {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(configs);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($configs) = @args{@required_args};
+
+   if ( @$configs < 2 ) {
+      MKDEBUG && _d("Less than two MySQLConfig objects; nothing to compare");
+      return;
+   }
+
+   # Get a unique list of all vars from all configs.
+   my %vars = map { $_ => 1 } map { keys %{$_->variables()} } @$configs;
+   my $missing;
+   foreach my $var ( keys %vars ) {
+      # If the number of configs having the var is less than the number of
+      # configs, then one of the configs must be missing the variable.
+      my $n_configs_having_var = grep { $_->has($var) } @$configs;
+      if ( $n_configs_having_var < @$configs ) {
+         $missing->{$var} = [ map { $_->has($var) ? 1 : 0 } @$configs ];
+      }
+   }
+
+   return $missing;
+}
+
 sub _normalize_value {
    my ( $self, %args ) = @_;
    my ($val, $is_dir, $base_path) = @args{qw(value is_directory base_path)};
@@ -209,35 +251,19 @@ sub _normalize_value {
    return $val;
 }
 
-# TODO: this sub needs to be rewritten.  mk-config-diff doesn't use it yet.
-sub missing {
+sub _get_shared_vars {
    my ( $self, %args ) = @_;
-   my @required_args = qw(configs);
-   foreach my $arg( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my ($config_objs) = @args{@required_args};
-
-   my $missing = {};
-   return $missing if @$config_objs < 2;  # nothing to compare
-   MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
-
-   my @configs = map { $_->variables() } @$config_objs;
-
-   # Get all unique vars and how many times each exists.
-   my %vars;
-   map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
-
-   # If a var exists less than the number of configs then it is
-   # missing from at least one of the configs.
-   my $n_configs = scalar @configs;
-   foreach my $var ( keys %vars ) {
-      if ( $vars{$var} < $n_configs ) {
-         $missing->{$var} = [ map { exists $_->{$var} ? 0 : 1 } @configs ];
-      }
-   }
-
-   return $missing;
+   my ($configs)   = @args{qw(configs)};
+   my $config0     = $configs->[0];
+   my $last_config = @$configs - 1;
+   my @vars
+      = grep { !$ignore_vars{$_} }
+      map {
+         my $config = $_;
+         my $vars   = $config->variables();
+         grep { $config0->has($_); } keys %$vars;
+      }  @$configs[1..$last_config];
+   return \@vars;
 }
 
 sub _d {
@@ -248,6 +274,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################

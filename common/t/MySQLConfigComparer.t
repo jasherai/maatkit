@@ -152,7 +152,6 @@ is_deeply(
 # #############################################################################
 $c1 = new MySQLConfig(
    result_set => [['query_cache_size', 1024]],
-   TextResultSetParser => $trp,
 );
 $c2 = new MySQLConfig(
    result_set => [],
@@ -163,31 +162,29 @@ $missing = missing($c1, $c2);
 is_deeply(
    $missing,
    {
-      'query_cache_size' =>[qw(0 1)],
+      'query_cache_size' =>[qw(1 0)],
    },
    "Missing var, right"
-);
+) or print Dumper($missing);
 
 $c2 = new MySQLConfig(
    result_set => [['query_cache_size', 1024]],
-   TextResultSetParser => $trp,
 );
 $missing = missing($c1, $c2);
 is_deeply(
    $missing,
-   {}, 
+   undef,
    "No missing vars"
 );
 
 $c2 = new MySQLConfig(
    result_set => [['query_cache_size', 1024], ['foo', 1]],
-   TextResultSetParser => $trp,
 );
 $missing = missing($c1, $c2);
 is_deeply(
    $missing,
    {
-      'foo' => [qw(1 0)],
+      'foo' => [qw(0 1)],
    },
    "Missing var, left"
 );
