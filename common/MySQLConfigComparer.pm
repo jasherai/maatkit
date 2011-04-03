@@ -45,8 +45,9 @@ my %alt_val_for = (
 my %ignore_vars = (
    date_format      => 1,
    datetime_format  => 1,
-   time_format      => 1,
    ft_stopword_file => 1,
+   timestamp        => 1,
+   time_format      => 1,
 );
 
 # The vars should be compared with == instead of eq so that
