@@ -9,18 +9,12 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 14;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
 use MySQLConfig;
-use DSNParser;
-use Sandbox;
 use MaatkitTest;
-
-my $dp  = new DSNParser(opts=>$dsn_opts);
-my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -54,29 +48,26 @@ sub missing {
 }
 
 $c1 = new MySQLConfig(
-   source              => "$trunk/$sample/mysqldhelp001.txt",
+   file                => "$trunk/$sample/mysqldhelp001.txt",
    TextResultSetParser => $trp,
 );
 is_deeply(
    diff($c1, $c1),
-   {},
+   undef,
    "mysqld config does not differ with itself"
 );
 
 $c2 = new MySQLConfig(
-   source              => [['query_cache_size', 0]],
-   TextResultSetParser => $trp,
+   result_set => [['query_cache_size', 0]],
 );
 is_deeply(
    diff($c2, $c2),
-   {},
+   undef,
    "SHOW VARS config does not differ with itself"
 );
 
-
 $c2 = new MySQLConfig(
-   source              => [['query_cache_size', 1024]],
-   TextResultSetParser => $trp,
+   result_set => [['query_cache_size', 1024]],
 );
 is_deeply(
    diff($c1, $c2),
@@ -90,11 +81,11 @@ is_deeply(
 # Compare one config against another.
 # #############################################################################
 $c1 = new MySQLConfig(
-   source              => "$trunk/$sample/mysqldhelp001.txt",
+   file => "$trunk/$sample/mysqldhelp001.txt",
    TextResultSetParser => $trp,
 );
 $c2 = new MySQLConfig(
-   source              => "$trunk/$sample/mysqldhelp002.txt",
+   file => "$trunk/$sample/mysqldhelp002.txt",
    TextResultSetParser => $trp,
 );
 
@@ -117,6 +108,7 @@ is_deeply(
       innodb_flush_log_at_trx_commit => ['1','2'],
       innodb_flush_method  => ['','O_DIRECT'],
       innodb_log_file_size => ['5242880','67108864'],
+      innodb_log_group_home_dir => ['/tmp/12345/data', ''],
       key_buffer_size      => ['16777216','8388600'],
       language             => [
           '/home/daniel/mysql_binaries/mysql-5.0.82-linux-x86_64-glibc23/share/mysql/english/',
@@ -159,11 +151,11 @@ is_deeply(
 # Missing vars.
 # #############################################################################
 $c1 = new MySQLConfig(
-   source              => [['query_cache_size', 1024]],
+   result_set => [['query_cache_size', 1024]],
    TextResultSetParser => $trp,
 );
 $c2 = new MySQLConfig(
-   source              => [],
+   result_set => [],
    TextResultSetParser => $trp,
 );
 
@@ -177,7 +169,7 @@ is_deeply(
 );
 
 $c2 = new MySQLConfig(
-   source              => [['query_cache_size', 1024]],
+   result_set => [['query_cache_size', 1024]],
    TextResultSetParser => $trp,
 );
 $missing = missing($c1, $c2);
@@ -188,7 +180,7 @@ is_deeply(
 );
 
 $c2 = new MySQLConfig(
-   source              => [['query_cache_size', 1024], ['foo', 1]],
+   result_set => [['query_cache_size', 1024], ['foo', 1]],
    TextResultSetParser => $trp,
 );
 $missing = missing($c1, $c2);
@@ -205,32 +197,32 @@ is_deeply(
 # Special equality subs.
 # #############################################################################
 $c1 = new MySQLConfig(
-   source              => [['log_error', undef]],
-   TextResultSetParser => $trp,
+   result_set => [['log_error', undef]],
+   format     => 'optiona_file',
 );
 $c2 = new MySQLConfig(
-   source              => [['log_error', '/tmp/12345/data/mysqld.log']],
-   TextResultSetParser => $trp,
+   result_set => [['log_error', '/tmp/12345/data/mysqld.log']],
+   format     => 'show_variables',
 );
 $diff = diff($c1, $c2);
 is_deeply(
    $diff,
-   {},
+   undef,
    "log_error: undef, value"
 );
 
-$c2 = new MySQLConfig(
-   source              => [['log_error', undef]],
-   TextResultSetParser => $trp,
-);
 $c1 = new MySQLConfig(
-   source              => [['log_error', '/tmp/12345/data/mysqld.log']],
-   TextResultSetParser => $trp,
+   result_set => [['log_error', '/tmp/12345/data/mysqld.log']],
+   format     => 'show_variables',
+);
+$c2 = new MySQLConfig(
+   result_set => [['log_error', undef]],
+   format     => 'option_file',
 );
 $diff = diff($c1, $c2);
 is_deeply(
    $diff,
-   {},
+   undef,
    "log_error: value, undef"
 );
 
@@ -238,24 +230,22 @@ is_deeply(
 # Vars with default values.
 # ############################################################################
 $c1 = new MySQLConfig(
-   source              => [
+   result_set => [
       ['log',        ''],
       ['log_bin',    ''],
    ],
-   TextResultSetParser => $trp,
-   type                => 'option_file',
+   type => 'option_file',
 );
 $c2 = new MySQLConfig(
-   source              => [
+   result_set => [
       ['log',        '/opt/mysql/data/mysqld.log'],
       ['log_bin',    '/opt/mysql/data/mysql-bin' ],
    ],
-   TextResultSetParser => $trp,
-   type                => 'show_variables',
+   type => 'show_variables',
 );
 is_deeply(
    diff($c2, $c2),
-   {},
+   undef,
    "Variables with optional values"
 );
 
@@ -269,8 +259,7 @@ my $datadir = '/tmp/12345/data';
 # This simulates a my.cnf.  We just need vars with relative paths, so no need
 # to parse a real my.cnf with other vars that we don't need.
 $c1 = new MySQLConfig(
-   TextResultSetParser => $trp,
-   source              => [
+   result_set => [
       ['basedir',    $basedir             ],  # must have this
       ['datadir',    $datadir             ],  # must have this
       ['language',   './share/english'    ],
@@ -282,8 +271,7 @@ $c1 = new MySQLConfig(
 # paths.  But be sure to get real values because the whole point here is the
 # different way these vars are listed in my.cnf vs. SHOW VARS.
 $c2 = new MySQLConfig(
-   TextResultSetParser => $trp,
-   source              => [
+   result_set => [
       ['basedir',    $basedir                   ],  # must have this
       ['datadir',    $datadir                   ],  # must have this
       ['language',   "$basedir/share/english"   ],
@@ -294,9 +282,51 @@ $c2 = new MySQLConfig(
 $diff = diff($c1, $c2);
 is_deeply(
    $diff,
-   {},
+   undef,
    "Variables with relative paths"
 ) or print Dumper($diff);
+
+
+# ############################################################################
+# Compare 3 configs.
+# ############################################################################
+$c1 = new MySQLConfig(
+   result_set => [['log_error', '/tmp/12345/data/mysqld.log']],
+   format     => 'show_variables',
+);
+$c2 = new MySQLConfig(
+   result_set => [['log_error', undef]],
+   format     => 'option_file',
+);
+my $c3 = new MySQLConfig(
+   result_set => [['log_error', '/tmp/12345/data/mysqld.log']],
+   format     => 'show_variables',
+);
+
+$diff = diff($c1, $c2, $c3);
+is_deeply(
+   $diff,
+   undef,
+   "Compare 3 configs"
+);
+
+$c3 = new MySQLConfig(
+   result_set => [['log_error', '/tmp/12345/data/mysql-error.log']],
+   format     => 'show_variables',
+);
+
+$diff = diff($c1, $c2, $c3);
+is_deeply(
+   $diff,
+   {
+      log_error => [
+         '/tmp/12345/data/mysqld.log',
+         undef,
+         '/tmp/12345/data/mysql-error.log',
+      ],
+   },
+   "3 configs with a diff"
+);
 
 # #############################################################################
 # Done.
