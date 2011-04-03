@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 15;
 
 use TextResultSetParser();
 use MySQLConfigComparer;
@@ -191,7 +191,7 @@ is_deeply(
 
 
 # #############################################################################
-# Special equality subs.
+# Some tricky vars.
 # #############################################################################
 $c1 = new MySQLConfig(
    result_set => [['log_error', undef]],
@@ -221,6 +221,22 @@ is_deeply(
    $diff,
    undef,
    "log_error: value, undef"
+);
+
+$c1 = new MySQLConfig(
+   result_set => [[qw(log_bin mysql-bin)]],
+   format     => 'option_file',
+);
+$c2 = new MySQLConfig(
+   result_set => [[qw(log_bin ON)]],
+   format     => 'show_variables',
+);
+
+$diff = diff($c1, $c2);
+is_deeply(
+   $diff,
+   undef,
+   "Any value is true (e.g. log-bin)"
 );
 
 # ############################################################################

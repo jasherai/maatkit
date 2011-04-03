@@ -56,18 +56,23 @@ my %is_numeric = (
    long_query_time => 1, 
 );
 
-# These vars can be specified like --log or --log=value in config files.
-# If specified without a value, then they're "equal" to whatever default
-# value SHOW VARIABLES lists.
+# These vars can be specified like --log-error or --log-error=file in config
+# files.  If specified without a value, then they're "equal" to whatever
+# default value SHOW VARIABLES lists.
 my %value_is_optional = (
-   log                  => 1,
-   log_bin              => 1,
-   log_bin_index        => 1,
-   log_error            => 1,
-   log_isam             => 1,
-   log_slow_queries     => 1,
-   slow_query_log_file  => 1,
+   log_error => 1,
+   log_isam  => 1,
 ); 
+
+# Like value_is_optional but SHOW VARIABlES does not list a default value,
+# it only lists ON if the variable was given in a config file without or
+# without a value (e.g. --log or --log=file).  So any value from the config
+# file that's true (i.e. not a blank string) equals ON from SHOW VARIABLES.
+my %any_value_is_true = (
+   log              => 1,
+   log_bin          => 1,
+   log_slow_queries => 1,
+);
 
 # The value of these vars are relative to some base-path.  In config files
 # just a filename can be given, but in SHOW VARS the full /base/path/filename
@@ -159,6 +164,9 @@ sub diff {
                # is because certain difference are actually equal in different
                # formats.
                if ( $config0->format() ne $configN->format() ) {
+                  if ( $any_value_is_true{$var} ) {
+                     next CONFIG if $val0 && $valN;
+                  }
                   if ( $value_is_optional{$var} ) {
                      next CONFIG if (!$val0 && $valN) || ($val0 && !$valN);
                   }
