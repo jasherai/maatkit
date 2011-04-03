@@ -1046,7 +1046,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 6785
+# DSNParser package 7388
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -1246,7 +1246,7 @@ sub get_dbh {
       RaiseError         => 1,
       PrintError         => 0,
       ShowErrorStatement => 1,
-      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/i ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
@@ -1734,23 +1734,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 7368
+# MySQLConfig package 7397
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
 #   trunk/common/t/MySQLConfig.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
-package MySQLConfig;
 
+package MySQLConfig;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -1766,12 +1762,27 @@ my %can_be_duplicate = (
 
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg arugment" unless $args{$arg};
+   my @requires_one_of = qw(file output result_set dbh);
+   my $required_arg    = grep { $args{$_} } @requires_one_of;
+   if ( !$required_arg ) {
+      die "I need a " . join(', ', @requires_one_of[0..$#requires_one_of-1])
+         . " or " . $requires_one_of[-1] . " argument";
+   }
+   if ( $required_arg > 1 ) {
+      die "Specify only one "
+         . join(', ', @requires_one_of[0..$#requires_one_of-1])
+         . " or " . $requires_one_of[-1] . " argument";
+   }
+   if ( $args{file} || $args{output} ) {
+      die "I need a TextResultSetParser argument"
+         unless $args{TextResultSetParser};
    }
 
-   my %config_data = parse_config(%args);
+   if ( $args{file} ) {
+      $args{output} = _slurp_file($args{file});
+   }
+
+   my %config_data = _parse_config(%args);
 
    my $self = {
       %args,
@@ -1781,135 +1792,126 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_config {
+sub _parse_config {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg arugment" unless $args{$arg};
-   }
-   my ($source) = @args{@required_args};
 
    my %config_data;
-   if ( -f $source ) {
-      %config_data = parse_config_from_file(%args);
+   if ( $args{output} ) {
+      %config_data = _parse_config_output(%args);
    }
-   elsif ( ref $source && ref $source eq 'ARRAY' ) {
-      $config_data{type} = 'show_variables';
-      $config_data{vars} = { map { @$_ } @$source };
+   elsif ( my $rows = $args{result_set} ) {
+      $config_data{format} = $args{format} || 'show_variables';
+      $config_data{vars}   = { map { @$_ } @$rows };
    }
-   elsif ( ref $source && (ref $source) =~ m/DBI/i ) {
-      $config_data{type} = 'show_variables';
+   elsif ( my $dbh = $args{dbh} ) {
+      $config_data{format} = $args{format} || 'show_variables';
       my $sql = "SHOW /*!40103 GLOBAL*/ VARIABLES";
-      MKDEBUG && _d($source, $sql);
-      my $rows = $source->selectall_arrayref($sql);
+      MKDEBUG && _d($dbh, $sql);
+      my $rows = $dbh->selectall_arrayref($sql);
       $config_data{vars} = { map { @$_ } @$rows };
-      $config_data{mysql_version} = _get_version($source);
+      $config_data{mysql_version} = _get_version($dbh);
    }
    else {
-      die "Unknown or invalid source: $source";
+      die "Unknown config source";
    }
 
    return %config_data;
 }
 
-sub parse_config_from_file {
+sub _parse_config_output {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
+   my @required_args = qw(output TextResultSetParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
+   my ($output) = @args{@required_args};
+   MKDEBUG && _d("Parsing config output");
 
-   my $type = detect_source_type(%args);
-   if ( !$type ) {
-      die "Cannot auto-detect the type of MySQL config data in $source"
+   my $format = $args{format} || detect_config_output_format(%args);
+   if ( !$format ) {
+      die "Cannot auto-detect the MySQL config format";
    }
-   $args{type} = $type;  # needed in _parse_varvals()
 
    my $vars;      # variables hashref
    my $dupes;     # duplicate vars hashref
    my $opt_files; # option files arrayref
-   if ( $type eq 'show_variables' ) {
+   if ( $format eq 'show_variables' ) {
       $vars = parse_show_variables(%args);
    }
-   elsif ( $type eq 'mysqld' ) {
+   elsif ( $format eq 'mysqld' ) {
       ($vars, $opt_files) = parse_mysqld(%args);
    }
-   elsif ( $type eq 'my_print_defaults' ) {
+   elsif ( $format eq 'my_print_defaults' ) {
       ($vars, $dupes) = parse_my_print_defaults(%args);
    }
-   elsif ( $type eq 'option_file' ) {
+   elsif ( $format eq 'option_file' ) {
       ($vars, $dupes) = parse_option_file(%args);
    }
    else {
-      die "Invalid type of MySQL config data in $source: $type"
+      die "Invalid MySQL config format: $format";
    }
 
-   die "Failed to parse MySQL config data from $source"
-      unless $vars && keys %$vars;
+   die "Failed to parse MySQL config" unless $vars && keys %$vars;
+
+   if ( $format ne 'show_variables' ) {
+      _mimic_show_variables(
+         %args,
+         format => $format,
+         vars   => $vars,
+      );
+   }
 
    return (
-      type           => $type,
+      format         => $format,
       vars           => $vars,
       option_files   => $opt_files,
       duplicate_vars => $dupes,
    );
 }
 
-sub detect_source_type {
+sub detect_config_output_format {
    my ( %args ) = @_;
-   my @required_args = qw(source);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source) = @args{@required_args};
+   my ($output) = @args{@required_args};
 
-   MKDEBUG && _d("Detecting type of output in", $source);
-   open my $fh, '<', $source or die "Cannot open $source: $OS_ERROR";
-   my $type;
-   while ( defined(my $line = <$fh>) ) {
-      MKDEBUG && _d($line);
-      if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
-           || $line =~ m/\*+ \d/
-           || $line =~ m/Variable_name:\s+\w+/
-           || $line =~ m/Variable_name\s+Value$/ )
-      {
-         MKDEBUG && _d('show variables config line');
-         $type = 'show_variables';
-         last;
-      }
-      elsif ( $line =~ m/^--\w+/ ) {
-         MKDEBUG && _d('my_print_defaults config line');
-         $type = 'my_print_defaults';
-         last;
-      }
-      elsif ( $line =~ m/^\s*\[[a-zA-Z]+\]\s*$/ ) {
-         MKDEBUG && _d('option file config line');
-         $type = 'option_file',
-         last;
-      }
-      elsif (    $line =~ m/Starts the MySQL database server/
-              || $line =~ m/Default options are read from /
-              || $line =~ m/^help\s+TRUE / )
-      {
-         MKDEBUG && _d('mysqld config line');
-         $type = 'mysqld';
-         last;
-      }
+   my $format;
+   if (    $output =~ m/\|\s+\w+\s+\|\s+.+?\|/
+        || $output =~ m/\*+ \d/
+        || $output =~ m/Variable_name:\s+\w+/
+        || $output =~ m/Variable_name\s+Value$/m )
+   {
+      MKDEBUG && _d('show variables format');
+      $format = 'show_variables';
    }
-   close $fh;
-   return $type;
+   elsif (    $output =~ m/Starts the MySQL database server/
+           || $output =~ m/Default options are read from /
+           || $output =~ m/^help\s+TRUE /m )
+   {
+      MKDEBUG && _d('mysqld format');
+      $format = 'mysqld';
+   }
+   elsif ( $output =~ m/^--\w+/m ) {
+      MKDEBUG && _d('my_print_defaults format');
+      $format = 'my_print_defaults';
+   }
+   elsif ( $output =~ m/^\s*\[[a-zA-Z]+\]\s*$/m ) {
+      MKDEBUG && _d('option file format');
+      $format = 'option_file',
+   }
+
+   return $format;
 }
 
 sub parse_show_variables {
    my ( %args ) = @_;
-   my @required_args = qw(source TextResultSetParser);
+   my @required_args = qw(output TextResultSetParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $trp) = @args{@required_args};
-   my $output         = _slurp_file($source);
-   return unless $output;
+   my ($output, $trp) = @args{@required_args};
 
    my %config = map {
       $_->{Variable_name} => $_->{Value}
@@ -1920,14 +1922,11 @@ sub parse_show_variables {
 
 sub parse_mysqld {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    my @opt_files;
    if ( $output =~ m/^Default options are read.+\n/mg ) {
@@ -1948,7 +1947,6 @@ sub parse_mysqld {
    my $varvals = substr($output, (pos $output) + 1, length $output);
 
    my ($config, undef) = _parse_varvals(
-      $type,
       $varvals =~ m/\G^(\S+)(.*)\n/mg
    );
 
@@ -1957,17 +1955,13 @@ sub parse_mysqld {
 
 sub parse_my_print_defaults {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    my ($config, $dupes) = _parse_varvals(
-      $type,
       map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
    );
 
@@ -1976,21 +1970,16 @@ sub parse_my_print_defaults {
 
 sub parse_option_file {
    my ( %args ) = @_;
-   my @required_args = qw(source type);
+   my @required_args = qw(output);
    foreach my $arg ( @required_args ) {
       die "I need a $arg arugment" unless $args{$arg};
    }
-   my ($source, $type) = @args{@required_args};
-
-   my $output = _slurp_file($source);
-   return unless $output;
+   my ($output) = @args{@required_args};
 
    my ($mysqld_section) = $output =~ m/\[mysqld\](.+?)(?:^\s*\[\w+\]|\Z)/xms;
-   die "Failed to parse the [mysqld] section from $source"
-      unless $mysqld_section;
+   die "Failed to parse the [mysqld] section" unless $mysqld_section;
 
    my ($config, $dupes) = _parse_varvals(
-      $type,
       map  { $_ =~ m/^([^=]+)(?:=(.*))?$/ }
       grep { $_ !~ m/^\s*#/ }  # no # comment lines
       split("\n", $mysqld_section)
@@ -2000,70 +1989,96 @@ sub parse_option_file {
 }
 
 sub _parse_varvals {
-   my ( $type, @varvals ) = @_;
-   die "I need a type argument" unless $type;
+   my ( @varvals ) = @_;
 
    my %config;
 
    my $duplicate_var = 0;
    my %duplicates;
 
-   my $var      = 1;
-   my $last_var = undef;
+   my $var;  # current variable (e.g. datadir)
+   my $val;  # value for current variable
+   ITEM:
    foreach my $item ( @varvals ) {
       if ( $item ) {
-         $item =~ s/^\s+//;  # strip leading whitespace
-         $item =~ s/\s+$//;  # strip trailing whitespace
+         $item =~ s/^\s+//;
+         $item =~ s/\s+$//;
       }
 
-      if ( $var ) {
-         $item =~ s/-/_/g;
+      if ( !$var ) {
+         $var = $item;
 
-         if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
-            MKDEBUG && _d("Duplicate var:", $item);
-            $duplicate_var = 1;
+         $var =~ s/-/_/g;
+
+         if ( exists $config{$var} && !$can_be_duplicate{$var} ) {
+            MKDEBUG && _d("Duplicate var:", $var);
+            $duplicate_var = 1;  # flag on, save all the var's values
          }
-
-         $var      = 0;  # next item should be the val for this var
-         $last_var = $item;
       }
-      else { # value
-         if ( $item ) {
-            if ( my ($num, $factor) = $item =~ m/(\d+)([KMGT])b?$/i ) {
+      else {
+         my $val = $item;
+         MKDEBUG && _d("Var:", $var, "val:", $val);
+
+         if ( !defined $val ) {
+            $val = '';
+         }
+         else {
+            if ( my ($num, $factor) = $val =~ m/(\d+)([KMGT])b?$/i ) {
                my %factor_for = (
                   k => 1_024,
                   m => 1_048_576,
                   g => 1_073_741_824,
                   t => 1_099_511_627_776,
                );
-               $item = $num * $factor_for{lc $factor};
+               $val = $num * $factor_for{lc $factor};
             }
-            elsif ( $item =~ m/No default/ ) {
-               $item = $last_var =~ m/^(?:log|skip|ignore)/ ? 'OFF' : '';
+            elsif ( $val =~ m/No default/ ) {
+               $val = '';
             }
          }
-
-         if ( !defined $item ) {
-            $item = $type ne 'mysqld' ? 'ON' : '';
-         } 
 
          if ( $duplicate_var ) {
-            push @{$duplicates{$last_var}}, $config{$last_var};
-            $duplicate_var = 0;
+            push @{$duplicates{$var}}, $config{$var};
+            $duplicate_var = 0;  # flag off for next var
          }
 
-         $config{$last_var} = $item;
+         $config{$var} = $val;
 
-         $var = 1;  # next item should be a var
+         $var = undef;  # next item should be a var
       }
    }
 
    return \%config, \%duplicates;
 }
 
+sub _mimic_show_variables {
+   my ( %args ) = @_;
+   my @required_args = qw(vars format);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg arugment" unless $args{$arg};
+   }
+   my ($vars, $format) = @args{@required_args};
+   
+   foreach my $var ( keys %$vars ) {
+      if ( $vars->{$var} eq '' ) {
+         if ( $format eq 'mysqld' ) {
+            if ( $var ne 'log_error' && $var =~ m/^(?:log|skip|ignore)/ ) {
+               $vars->{$var} = 'OFF';
+            }
+         }
+         else {
+            $vars->{$var} = 'ON';
+         }
+      }
+   }
+
+   return;
+}
+
 sub _slurp_file {
    my ( $file ) = @_;
    die "I need a file argument" unless $file;
+   MKDEBUG && _d("Reading", $file);
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
@@ -2085,35 +2100,40 @@ sub has {
    return exists $self->{vars}->{$var};
 }
 
-sub get {
+sub value_of {
    my ( $self, $var ) = @_;
    return unless $var;
    return $self->{vars}->{$var};
 }
 
-sub get_variables {
+sub variables {
    my ( $self, %args ) = @_;
    return $self->{vars};
 }
 
-sub get_duplicate_variables {
+sub duplicate_variables {
    my ( $self ) = @_;
    return $self->{duplicate_vars};
 }
 
-sub get_option_files {
+sub option_files {
    my ( $self ) = @_;
    return $self->{option_files};
 }
 
-sub get_mysql_version {
+sub mysql_version {
    my ( $self ) = @_;
    return $self->{mysql_version};
 }
 
-sub get_type {
+sub format {
    my ( $self ) = @_;
-   return $self->{type};
+   return $self->{format};
+}
+
+sub is_active {
+   my ( $self ) = @_;
+   return $self->{dbh} ? 1 : 0;
 }
 
 sub _d {
@@ -2131,7 +2151,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 7372
+# MySQLConfigComparer package 7399
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
@@ -2139,7 +2159,7 @@ sub _d {
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLConfigComparer;
-
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -2160,38 +2180,36 @@ my %alt_val_for = (
 );
 
 my %ignore_vars = (
-   date_format     => 1,
-   datetime_format => 1,
-   time_format     => 1,
+   date_format      => 1,
+   datetime_format  => 1,
+   time_format      => 1,
+   ft_stopword_file => 1,
 );
 
-my %eq_for = (
-   ft_stopword_file          => sub { return _veq(@_, '(built-in)', 0); },
-
-   log_bin                   => sub { return _eqifon(@_);               },
-   log_slow_queries          => sub { return _eqifon(@_);               },
-
-   general_log_file          => sub { return _optvaleq(@_);             },
-   innodb_data_file_path     => sub { return _optvaleq(@_);             },
-   innodb_log_group_home_dir => sub { return _optvaleq(@_);             },
-   log_error                 => sub { return _optvaleq(@_);             },
-   slow_query_log_file       => sub { return _optvaleq(@_);             },
-   tmpdir                    => sub { return _optvaleq(@_);             },
-   binlog_format             => sub { return _optvaleq(@_);             },
-
-   long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
+my %is_numeric = (
+   long_query_time => 1, 
 );
 
-my %relative_path = (
-   character_sets_dir  => 'basedir',
-   datadir             => 'basedir',
-   general_log_file    => 'datadir',
-   language            => 'basedir',
-   log_error           => 'datadir',
-   pid_file            => 'datadir',
-   plugin_dir          => 'basedir',
-   slow_query_log_file => 'datadir',
-   socket              => 'datadir',
+my %value_is_optional = (
+   log                  => 1,
+   log_bin              => 1,
+   log_bin_index        => 1,
+   log_error            => 1,
+   log_isam             => 1,
+   log_slow_queries     => 1,
+   slow_query_log_file  => 1,
+); 
+
+my %base_path = (
+   character_sets_dir   => 'basedir',
+   datadir              => 'basedir',
+   general_log_file     => 'datadir',
+   language             => 'basedir',
+   log_error            => 'datadir',
+   pid_file             => 'datadir',
+   plugin_dir           => 'basedir',
+   slow_query_log_file  => 'datadir',
+   socket               => 'datadir',
 );
 
 sub new {
@@ -2207,70 +2225,63 @@ sub diff {
    foreach my $arg( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($config_objs) = @args{@required_args};
+   my ($configs) = @args{@required_args};
 
-   my $diffs = {};
-   return $diffs if @$config_objs < 2;  # nothing to compare
-   MKDEBUG && _d('diff configs:', Dumper($config_objs));
+   if ( @$configs < 2 ) {
+      MKDEBUG && _d("Less than two MySQLConfig objects; nothing to compare");
+      return;
+   }
 
-   my $vars     = [ map { $_->get_variables() }     @$config_objs ];
-   my $versions = [ map { $_->get_mysql_version() } @$config_objs ];
+   my $config0     = $configs->[0];
+   my $last_config = @$configs - 1;
+   my $vars        = $self->_get_shared_vars(%args);
 
-   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($vars);
-
-   my %vals = map {
-      my $var = $_;
-
-      my $is_dir   = $var =~ m/dir$/ || $var eq 'language';
-      my $rel_path = $relative_path{$var};
-
-      my $vals = [
-         map {
-            my $config = $_;
-            my $val    = defined $config->{$var} ? $config->{$var} : '';
-            $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
-
-            if ( $val ) {
-               if ( $is_dir ) {
-                  $val .= '/' unless $val =~ m/\/$/;
-               }
-               if ( $rel_path && $val !~ m/^\// ) {
-                  my $base_path = $config->{ $relative_path{$var} } || "";
-                  $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
-                  $val =~ s/\/{2,}/\//g;  # make redundant // single /
-               }
-            }
-
-            $val;
-         } @$vars
-      ];
-      $var => $vals;
-   } @vars;
-
-   VAR:
-   foreach my $var ( sort keys %vals ) {
-      my $vals     = $vals{$var};
-      my $last_val = scalar @$vals - 1;
+   my $diffs;
+   VARIABLE:
+   foreach my $var ( @$vars ) {
+      my $is_dir = $var =~ m/dir$/ || $var eq 'language';
+      my $val0   = $self->_normalize_value(  # config0 value
+         value        => $config0->value_of($var),
+         is_directory => $is_dir,
+         base_path    => $config0->value_of($base_path{$var}) || "",
+      );
 
       eval {
-         VAL:
-         for my $i ( 1..$last_val ) {
-            if ( $vals->[0] ne $vals->[$i] ) {
-               if (    !$eq_for{$var}
-                    || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
-                  $diffs->{$var} = [
-                     map { $_->{$var} } @$vars  # original vals
-                  ];
-                  last VAL;
+         CONFIG:
+         foreach my $configN ( @$configs[1..$last_config] ) {
+            my $valN = $self->_normalize_value(  # configN value
+               value        => $configN->value_of($var),
+               is_directory => $is_dir,
+               base_path    => $configN->value_of($base_path{$var}) || "",
+            );
+
+            if ( $is_numeric{$var} ) {
+               next CONFIG if $val0 == $valN;
+            }
+            else {
+               next CONFIG if $val0 eq $valN;
+
+               if ( $config0->format() ne $configN->format() ) {
+                  if ( $value_is_optional{$var} ) {
+                     next CONFIG if (!$val0 && $valN) || ($val0 && !$valN);
+                  }
                }
             }
-         } # VAL
+
+            MKDEBUG && _d("Different", $var, "values:", $val0, $valN);
+            $diffs->{$var} = [ map { $_->value_of($var) } @$configs ];
+            last CONFIG;
+         }  # CONFIG
       };
       if ( $EVAL_ERROR ) {
-         my $vals = join(', ', map { defined $_ ? $_ : 'undef' } @$vals);
+         my $vals = join(', ',
+            map {
+               my $val = $_->value_of($var);
+               defined $val ? $val : 'undef'
+            } @$configs);
          warn "Comparing $var values ($vals) caused an error: $EVAL_ERROR";
       }
-   } # VAR
+   }  # VARIABLE
 
    return $diffs;
 }
@@ -2281,66 +2292,57 @@ sub missing {
    foreach my $arg( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($config_objs) = @args{@required_args};
+   my ($configs) = @args{@required_args};
 
-   my $missing = {};
-   return $missing if @$config_objs < 2;  # nothing to compare
-   MKDEBUG && _d('missing configs:', Dumper(\@$config_objs));
+   if ( @$configs < 2 ) {
+      MKDEBUG && _d("Less than two MySQLConfig objects; nothing to compare");
+      return;
+   }
 
-   my @configs = map { $_->get_variables() } @$config_objs;
-
-   my %vars;
-   map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
-
-   my $n_configs = scalar @configs;
+   my %vars = map { $_ => 1 } map { keys %{$_->variables()} } @$configs;
+   my $missing;
    foreach my $var ( keys %vars ) {
-      if ( $vars{$var} < $n_configs ) {
-         $missing->{$var} = [ map { exists $_->{$var} ? 0 : 1 } @configs ];
+      my $n_configs_having_var = grep { $_->has($var) } @$configs;
+      if ( $n_configs_having_var < @$configs ) {
+         $missing->{$var} = [ map { $_->has($var) ? 1 : 0 } @$configs ];
       }
    }
 
    return $missing;
 }
 
-sub _veq { 
-   my ( $x, $y, $versions, $val1, $val2 ) = @_;
-   return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
-   return 0;
-}
+sub _normalize_value {
+   my ( $self, %args ) = @_;
+   my ($val, $is_dir, $base_path) = @args{qw(value is_directory base_path)};
 
-sub _eqdatadir {
-   my ( $x, $y, $versions ) = @_;
-   if ( ($versions->[0] || '') gt '5.1.0' && (($y || '') eq '.') ) {
-      MKDEBUG && _d("MySQL 5.1 datadir conf val bug:", $x, $y);
-      return 1;
+   $val = defined $val ? $val : '';
+   $val = $alt_val_for{$val} if exists $alt_val_for{$val};
+
+   if ( $val ) {
+      if ( $is_dir ) {
+         $val .= '/' unless $val =~ m/\/$/;
+      }
+      if ( $base_path && $val !~ m/^\// ) {
+         $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
+         $val =~ s/\/{2,}/\//g;               # make redundant // single /
+      }
    }
-   return $x eq $y;
+   return $val;
 }
 
-sub _eqifon { 
-   my ( $x, $y ) = @_;
-   return 1 if ( ($x && $x eq '1' ) && $y );
-   return 1 if ( ($y && $y eq '1' ) && $x );
-   return 0;
-}
-
-sub _optvaleq {
-   my ( $x, $y ) = @_;  
-   if (    (!$x &&  $y)   # x=, y=default val
-        || ( $x && !$y) ) # x=default val, y=
-   {
-      return 1;
-   }
-   
-   return $x eq $y ? 1 : 0;
-}
-
-sub key_intersect {
-   my ( $self, $hashes ) = @_;
-   my %keys  = map { $_ => 1 } keys %{$hashes->[0]};
-   my $n_hashes = (scalar @$hashes) - 1;
-   my @isect = grep { $keys{$_} } map { keys %{$hashes->[$_]} } 1..$n_hashes;
-   return @isect;
+sub _get_shared_vars {
+   my ( $self, %args ) = @_;
+   my ($configs)   = @args{qw(configs)};
+   my $config0     = $configs->[0];
+   my $last_config = @$configs - 1;
+   my @vars
+      = grep { !$ignore_vars{$_} }
+      map {
+         my $config = $_;
+         my $vars   = $config->variables();
+         grep { $config0->has($_); } keys %$vars;
+      }  @$configs[1..$last_config];
+   return \@vars;
 }
 
 sub _d {
@@ -2351,6 +2353,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################
@@ -2771,7 +2774,7 @@ sub main {
       if ( -f $config_src ) {
          MKDEBUG && _d('Config source', $config_src, 'is a file');
          push @configs, new MySQLConfig(
-            source => $config_src,
+            file => $config_src,
             %common_modules,
          );
          push @config_names, $config_src;  # filename
@@ -2784,7 +2787,7 @@ sub main {
          $last_dsn = $dsn;
 
          push @configs, new MySQLConfig(
-            source => $dbh,
+            dbh => $dbh,
             %common_modules,
          );
          my $config_name = ($dsn->{h} || $dsn->{S} || $dsn->{F})
@@ -2841,9 +2844,7 @@ sub main {
          }
          $report->set_title(
             "$n_diffs config difference" . ($n_diffs > 1 ? 's' : ''));
-         print $report->get_report(
-            truncate_callback => $truncate_callback,
-         );
+         print $report->get_report();
       }
       exit 1;
    }
@@ -2885,9 +2886,9 @@ mk-config-diff - Diff MySQL configuration files and server variables.
 
 Usage: mk-config-diff [OPTION...] CONFIG CONFIG [CONFIG...]
 
-mk-config-diff diffs MySQL configuration files and server variables.  CONFIG can
-be either a filename or a DSN.  At least two CONFIG sources must be given.  Like
-standard Unix diff, there is no output if there are no differences.
+mk-config-diff diffs MySQL configuration files and server variables.
+CONFIG can be a filename or a DSN.  At least two CONFIG sources must be given.
+Like standard Unix diff, there is no output if there are no differences.
 
 Diff host1 config from SHOW VARIABLES against host2:
 
@@ -2922,10 +2923,25 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-config-diff diffs MySQL configs.  The CONFIG sources specified on the
-command line can be either DSNs or files containing the output of
-C<mysqld --help --verbose>, C<my_print_defaults>, C<SHOW VARIABLES> or
+mk-config-diff diffs MySQL configurations by examining the values of server
+system variables from two or more CONFIG sources specified on the command
+line.  A CONFIG source can be a DSN or a filename containing the output of
+C<mysqld --help --verbose>, C<my_print_defaults>, C<SHOW VARIABLES>, or
 an option file (e.g. my.cnf).
+
+For each DSN CONFIG, mk-config-diff connects to MySQL and gets variables
+and values by executing C<SHOW /*!40103 GLOBAL*/ VARIABLES>.  This is
+an "active config" because it shows what server values MySQL is
+actively (currently) running with.
+
+Only variables that all CONFIG sources have are compared because if a
+variable is not present then we cannot know or safely guess its value.
+For example, if you compare an option file (e.g. my.cnf) to an active config
+(i.e. SHOW VARIABLES from a DSN CONFIG), the option file will probably
+only have a few variables, whereas the active config has every variable.
+Only values of the variables present in both configs are compared.
+
+Option file and DSN configs provide the best results.
 
 =head1 OUTPUT
 
@@ -2953,8 +2969,6 @@ Please report these warnings so the comparison functions can be improved.
 mk-config-diff exits with a zero exit status when there are no differences, and
 1 if there are.
 
-=head2 WARNINGS
-
 =head1 OPTIONS
 
 This tool accepts additional command-line arguments.  Refer to the
@@ -2981,7 +2995,8 @@ connecting to MySQL.
 type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
-first option on the command line.
+first option on the command line.  (This option does not specify a CONFIG;
+it's equivalent to C<--defaults-file>.)
 
 =item --daemonize
 
