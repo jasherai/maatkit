@@ -1734,7 +1734,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 7397
+# MySQLConfig package 7403
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfig.pm
@@ -1744,6 +1744,7 @@ sub _d {
 
 package MySQLConfig;
 
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -2144,6 +2145,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################
@@ -2151,14 +2153,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 7399
+# MySQLConfigComparer package 7403
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/MySQLConfigComparer.pm
 #   trunk/common/t/MySQLConfigComparer.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package MySQLConfigComparer;
+
 { # package scope
 use strict;
 use warnings FATAL => 'all';
@@ -2179,43 +2183,67 @@ my %alt_val_for = (
    FALSE => 0,
 );
 
-my %ignore_vars = (
-   date_format      => 1,
-   datetime_format  => 1,
-   time_format      => 1,
-   ft_stopword_file => 1,
-);
-
-my %is_numeric = (
-   long_query_time => 1, 
-);
-
-my %value_is_optional = (
-   log                  => 1,
-   log_bin              => 1,
-   log_bin_index        => 1,
-   log_error            => 1,
-   log_isam             => 1,
-   log_slow_queries     => 1,
-   slow_query_log_file  => 1,
-); 
-
-my %base_path = (
-   character_sets_dir   => 'basedir',
-   datadir              => 'basedir',
-   general_log_file     => 'datadir',
-   language             => 'basedir',
-   log_error            => 'datadir',
-   pid_file             => 'datadir',
-   plugin_dir           => 'basedir',
-   slow_query_log_file  => 'datadir',
-   socket               => 'datadir',
-);
-
 sub new {
    my ( $class, %args ) = @_;
+
+   my %ignore_vars = (
+      date_format      => 1,
+      datetime_format  => 1,
+      ft_stopword_file => 1,
+      timestamp        => 1,
+      time_format      => 1,
+      ($args{ignore_variables}
+         ? map { $_ => 1 } @{$args{ignore_variables}}
+         : ()),
+   );
+
+   my %is_numeric = (
+      long_query_time => 1, 
+      ($args{numeric_variables}
+         ? map { $_ => 1 } @{$args{numeric_variables}}
+         : ()),
+   );
+
+   my %value_is_optional = (
+      log_error => 1,
+      log_isam  => 1,
+      ($args{optional_value_variables}
+         ? map { $_ => 1 } @{$args{optional_value_variables}}
+         : ()),
+   ); 
+
+   my %any_value_is_true = (
+      log              => 1,
+      log_bin          => 1,
+      log_slow_queries => 1,
+      ($args{any_value_is_true_variables}
+         ? map { $_ => 1 } @{$args{any_value_is_true_variables}}
+         : ()),
+   );
+
+   my %base_path = (
+      character_sets_dir   => 'basedir',
+      datadir              => 'basedir',
+      general_log_file     => 'datadir',
+      language             => 'basedir',
+      log_error            => 'datadir',
+      pid_file             => 'datadir',
+      plugin_dir           => 'basedir',
+      slow_query_log_file  => 'datadir',
+      socket               => 'datadir',
+      ($args{base_paths}
+         ? map { $_ => 1 } @{$args{base_paths}}
+         : ()),
+   );
+
    my $self = {
+      ignore_vars       => \%ignore_vars,
+      is_numeric        => \%is_numeric,
+      value_is_optional => \%value_is_optional,
+      any_value_is_true => \%any_value_is_true,
+      base_path         => \%base_path,
    };
+
    return bless $self, $class;
 }
 
@@ -2232,6 +2260,11 @@ sub diff {
       return;
    }
 
+   my $base_path         = $self->{base_path};
+   my $is_numeric        = $self->{is_numeric};
+   my $any_value_is_true = $self->{any_value_is_true};
+   my $value_is_optional = $self->{value_is_optional};
+
    my $config0     = $configs->[0];
    my $last_config = @$configs - 1;
    my $vars        = $self->_get_shared_vars(%args);
@@ -2243,7 +2276,7 @@ sub diff {
       my $val0   = $self->_normalize_value(  # config0 value
          value        => $config0->value_of($var),
          is_directory => $is_dir,
-         base_path    => $config0->value_of($base_path{$var}) || "",
+         base_path    => $config0->value_of($base_path->{$var}) || "",
       );
 
       eval {
@@ -2252,17 +2285,20 @@ sub diff {
             my $valN = $self->_normalize_value(  # configN value
                value        => $configN->value_of($var),
                is_directory => $is_dir,
-               base_path    => $configN->value_of($base_path{$var}) || "",
+               base_path    => $configN->value_of($base_path->{$var}) || "",
             );
 
-            if ( $is_numeric{$var} ) {
+            if ( $is_numeric->{$var} ) {
                next CONFIG if $val0 == $valN;
             }
             else {
                next CONFIG if $val0 eq $valN;
 
                if ( $config0->format() ne $configN->format() ) {
-                  if ( $value_is_optional{$var} ) {
+                  if ( $any_value_is_true->{$var} ) {
+                     next CONFIG if $val0 && $valN;
+                  }
+                  if ( $value_is_optional->{$var} ) {
                      next CONFIG if (!$val0 && $valN) || ($val0 && !$valN);
                   }
                }
@@ -2323,7 +2359,7 @@ sub _normalize_value {
          $val .= '/' unless $val =~ m/\/$/;
       }
       if ( $base_path && $val !~ m/^\// ) {
-         $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base-path
+         $val =~ s/^\.?(.+)/$base_path\/$1/;  # prepend base path
          $val =~ s/\/{2,}/\//g;               # make redundant // single /
       }
    }
@@ -2333,10 +2369,11 @@ sub _normalize_value {
 sub _get_shared_vars {
    my ( $self, %args ) = @_;
    my ($configs)   = @args{qw(configs)};
+   my $ignore_vars = $self->{ignore_vars};
    my $config0     = $configs->[0];
    my $last_config = @$configs - 1;
    my @vars
-      = grep { !$ignore_vars{$_} }
+      = grep { !$ignore_vars->{$_} }
       map {
          my $config = $_;
          my $vars   = $config->variables();
@@ -2755,7 +2792,9 @@ sub main {
    # Make common modules.
    # #########################################################################
    my $trp         = new TextResultSetParser();
-   my $config_cmp  = new MySQLConfigComparer();
+   my $config_cmp  = new MySQLConfigComparer(
+      ignore_variables => $o->get('ignore-variables'),
+   );
    my %common_modules = (
       DSNParser           => $dp,
       OptionParser        => $o,
@@ -2835,8 +2874,10 @@ sub main {
       # };
    }
 
+   MKDEBUG && _d("Comparing", scalar @configs, "configs");
    my $diffs   = $config_cmp->diff(configs=>\@configs);
    my $n_diffs = scalar keys %$diffs;
+   MKDEBUG && _d($n_diffs, "differences found:", Dumper($diffs));
    if ( $n_diffs ) {
       if ( $o->get('report') ) {
          foreach my $var ( sort keys %$diffs ) {
@@ -2846,7 +2887,7 @@ sub main {
             "$n_diffs config difference" . ($n_diffs > 1 ? 's' : ''));
          print $report->get_report();
       }
-      exit 1;
+      return 1;
    }
 
    # No differences.
@@ -2949,10 +2990,10 @@ There is no output when there are no differences.  When there are differences,
 mk-config-diff prints a report to STDOUT that looks similar to the following:
 
   2 config differences
-  Variable                  /tmp/12345/my.sandbox.cnf /tmp/12346/my.sandbox.cnf
-  ========================= ========================= =========================
-  datadir                   /tmp/12345/data           /tmp/12346/data
-  port                      12345                     12346
+  Variable                  my.master.cnf   my.slave.cnf
+  ========================= =============== ===============
+  datadir                   /tmp/12345/data /tmp/12346/data
+  port                      12345           12346
 
 Comparing MySQL variables is difficult because there are many variations and
 subtleties across the many versions and distributions of MySQL.  When a
@@ -3019,6 +3060,12 @@ Show help and exit.
 short form: -h; type: string
 
 Connect to host.
+
+=item --ignore-variables
+
+type: array
+
+Ignore, do not compare, these variables.
 
 =item --password
 
