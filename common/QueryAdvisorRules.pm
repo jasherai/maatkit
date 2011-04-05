@@ -69,7 +69,7 @@ sub get_rules {
          my $cols  = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
+            return 0 if $col->{tbl} && $col->{name} eq '*' &&  $col->{alias};
          }
          return;
       },

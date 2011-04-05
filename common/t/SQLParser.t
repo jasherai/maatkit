@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 113;
+use Test::More tests => 118;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -905,6 +905,29 @@ test_from(
    ],
 );
 
+# The parser needs to match the join condition verb ON or USING
+# but these table names have those words embedded in the full
+# table name.
+test_from(
+   "db.version",
+   [ { db=>'db', name=>'version', } ],
+);
+
+test_from(
+   "db.like_using_odd_table_names",
+   [ { db=>'db', name=>'like_using_odd_table_names', } ],
+);
+
+test_from(
+   "db.`on`",  # don't name your table this :-(
+   [ { db=>'db', name=>'on', } ],
+);
+
+test_from(
+   "db.`using`",  # or this
+   [ { db=>'db', name=>'using', } ],
+);
+
 # #############################################################################
 # parse_table_reference()
 # #############################################################################
@@ -1580,6 +1603,17 @@ my @cases = (
             columns => 'NOW()',
          },
          columns => [ { name => 'NOW()' } ],
+         unknown => undef,
+      },
+   },
+   {  name   => 'SELECT var',
+      query  => 'select @@version_comment',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns => '@@version_comment',
+         },
+         columns => [ { name => '@@version_comment' } ],
          unknown => undef,
       },
    },

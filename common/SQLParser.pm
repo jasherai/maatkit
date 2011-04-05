@@ -50,8 +50,12 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 # Basic identifers for database, table, column and function names.
-my $quoted_ident   = qr/`[^`]+`/;             # `db`.`col`
-my $unquoted_ident = qr/\w+(?:\([^\)]*\))?/;  # db.col or NOW()
+my $quoted_ident   = qr/`[^`]+`/;
+my $unquoted_ident = qr/
+   \@{0,2}         # optional @ or @@ for variables
+   \w+             # the ident name
+   (?:\([^\)]*\))? # optional function params
+/x;
 
 my $ident_alias = qr/
   \s+                                 # space before alias
@@ -504,7 +508,7 @@ sub parse_from {
       $thing =~ s/\s+$//;
       MKDEBUG && _d('Table thing:', $thing);
 
-      if ( $thing =~ m/(?:ON|USING)/i ) {
+      if ( $thing =~ m/\s+(?:ON|USING)\s+/i ) {
          MKDEBUG && _d("JOIN condition");
          # This join condition follows a JOIN (comma joins don't have
          # conditions).  It includes a table ref, ON|USING, and then
