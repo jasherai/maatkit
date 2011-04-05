@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6785
+# DSNParser package 7388
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -225,7 +225,7 @@ sub get_dbh {
       RaiseError         => 1,
       PrintError         => 0,
       ShowErrorStatement => 1,
-      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/i ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
@@ -5720,7 +5720,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 7128
+# ReportFormatter package 7359
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -5868,11 +5868,11 @@ sub add_line {
 }
 
 sub get_report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
 
    $self->_calculate_column_widths();
    $self->_truncate_headers() if $self->{truncate_headers};
-   $self->_truncate_line_values();
+   $self->_truncate_line_values(%args);
 
    my @col_fmts = $self->_make_column_formats();
    my $fmt      = ($self->{line_prefix} || '')
@@ -5991,7 +5991,7 @@ sub _truncate_headers {
 }
 
 sub _truncate_line_values {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $n_vals = $self->{n_cols} - 1;
    foreach my $vals ( @{$self->{lines}} ) {
       for my $i ( 0..$n_vals ) {
@@ -6005,7 +6005,7 @@ sub _truncate_line_values {
                   . $col->{name});
             }
 
-            my $callback  = $self->{truncate_callback};
+            my $callback    = $args{truncate_callback};
             my $print_width = $col->{print_width};
             $val = $callback ? $callback->($col, $val, $print_width)
                  :             $self->truncate_value($col, $val, $print_width);
@@ -7415,13 +7415,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 6262
+# QueryParser package 7379
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryParser.pm
 #   trunk/common/t/QueryParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package QueryParser;
 
 use strict;

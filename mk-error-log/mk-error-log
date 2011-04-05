@@ -1046,7 +1046,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 7128
+# ReportFormatter package 7359
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -1194,11 +1194,11 @@ sub add_line {
 }
 
 sub get_report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
 
    $self->_calculate_column_widths();
    $self->_truncate_headers() if $self->{truncate_headers};
-   $self->_truncate_line_values();
+   $self->_truncate_line_values(%args);
 
    my @col_fmts = $self->_make_column_formats();
    my $fmt      = ($self->{line_prefix} || '')
@@ -1317,7 +1317,7 @@ sub _truncate_headers {
 }
 
 sub _truncate_line_values {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $n_vals = $self->{n_cols} - 1;
    foreach my $vals ( @{$self->{lines}} ) {
       for my $i ( 0..$n_vals ) {
@@ -1331,7 +1331,7 @@ sub _truncate_line_values {
                   . $col->{name});
             }
 
-            my $callback  = $self->{truncate_callback};
+            my $callback    = $args{truncate_callback};
             my $print_width = $col->{print_width};
             $val = $callback ? $callback->($col, $val, $print_width)
                  :             $self->truncate_value($col, $val, $print_width);

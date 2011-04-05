@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 6785
+# DSNParser package 7388
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/DSNParser.pm
@@ -225,7 +225,7 @@ sub get_dbh {
       RaiseError         => 1,
       PrintError         => 0,
       ShowErrorStatement => 1,
-      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/i ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
@@ -1831,13 +1831,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 6262
+# QueryParser package 7379
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryParser.pm
 #   trunk/common/t/QueryParser.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
+
 package QueryParser;
 
 use strict;
@@ -3264,7 +3265,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 7086
+# QueryAdvisorRules package 7405
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/QueryAdvisorRules.pm
@@ -3316,7 +3317,7 @@ sub get_rules {
          my $cols  = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
+            return 0 if $col->{tbl} && $col->{name} eq '*' &&  $col->{alias};
          }
          return;
       },
@@ -4020,7 +4021,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 7242
+# SQLParser package 7405
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SQLParser.pm
@@ -4030,6 +4031,7 @@ sub _d {
 
 package SQLParser;
 
+{ # package scope
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -4039,6 +4041,29 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
+
+my $quoted_ident   = qr/`[^`]+`/;
+my $unquoted_ident = qr/
+   \@{0,2}         # optional @ or @@ for variables
+   \w+             # the ident name
+   (?:\([^\)]*\))? # optional function params
+/x;
+
+my $ident_alias = qr/
+  \s+                                 # space before alias
+  (?:(AS)\s+)?                        # optional AS keyword
+  ((?>$quoted_ident|$unquoted_ident)) # alais
+/xi;
+
+my $table_ident = qr/(?:
+   ((?:(?>$quoted_ident|$unquoted_ident)\.?){1,2}) # table
+   (?:$ident_alias)?                               # optional alias
+)/xo;
+
+my $column_ident = qr/(?:
+   ((?:(?>$quoted_ident|$unquoted_ident|\*)\.?){1,3}) # column
+   (?:$ident_alias)?                                  # optional alias
+)/xo;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -4065,14 +4090,14 @@ sub parse {
    if ( $query =~ s/^(\w+)\s+// ) {
       $type = lc $1;
       MKDEBUG && _d('Query type:', $type);
-      if ( $type !~ m/$allowed_types/i ) {
-         return;
-      }
+      die "Cannot parse " . uc($type) . " queries"
+         unless $type =~ m/$allowed_types/i;
    }
    else {
-      MKDEBUG && _d('No first word/type');
-      return;
+      die "Query does not begin with a word";  # shouldn't happen
    }
+
+   $query = $self->normalize_keyword_spaces($query);
 
    my @subqueries;
    if ( $query =~ m/(\(SELECT )/i ) {
@@ -4119,12 +4144,12 @@ sub _parse_clauses {
 
       if ( $clause eq 'select' ) {
          MKDEBUG && _d('Parsing subquery clauses');
+         $struct->{select}->{type} = 'select';
          $self->_parse_clauses($struct->{select});
       }
    }
    return;
 }
-
 
 sub clean_query {
    my ( $self, $query ) = @_;
@@ -4135,6 +4160,12 @@ sub clean_query {
    $query =~ s!/\*.*?\*/!!g;   # /* comments */
    $query =~ s/^\s+//;         # leading spaces
    $query =~ s/\s+$//;         # trailing spaces
+
+   return $query;
+}
+
+sub normalize_keyword_spaces {
+   my ( $self, $query ) = @_;
 
    $query =~ s/\b(VALUE(?:S)?)\(/$1 (/i;
    $query =~ s/\bON\(/on (/gi;
@@ -4192,6 +4223,15 @@ sub parse_insert {
    my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
    1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
+   if ( $query =~ m/ON DUPLICATE KEY UPDATE (.+)/i ) {
+      my $values = $1;
+      die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
+      $struct->{clauses}->{on_duplicate} = $values;
+      MKDEBUG && _d('Clause: on duplicate key update', $values);
+
+      $query =~ s/\s+ON DUPLICATE KEY UPDATE.+//;
+   }
+
    if ( my @into = ($query =~ m/
             (?:INTO\s+)?            # INTO, optional
             (.+?)\s+                # table ref
@@ -4214,17 +4254,10 @@ sub parse_insert {
       die "INSERT/REPLACE without clause after table: $query"
          unless $next_clause;
       $next_clause = 'values' if $next_clause eq 'value';
-      my ($values, $on) = ($query =~ m/\G(.+?)(ON|\Z)/gci);
+      my ($values) = ($query =~ m/\G(.+)/gci);
       die "INSERT/REPLACE without values: $query" unless $values;
       $struct->{clauses}->{$next_clause} = $values;
       MKDEBUG && _d('Clause:', $next_clause, $values);
-
-      if ( $on ) {
-         ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
-         die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
-         $struct->{clauses}->{on_duplicate} = $values;
-         MKDEBUG && _d('Clause: on duplicate key update', $values);
-      }
    }
 
    ($struct->{unknown}) = ($query =~ m/\G(.+)/);
@@ -4283,137 +4316,88 @@ sub parse_update {
 sub parse_from {
    my ( $self, $from ) = @_;
    return unless $from;
-   MKDEBUG && _d('FROM clause:', $from);
+   MKDEBUG && _d('Parsing FROM', $from);
 
+   my $comma_join = qr/(?>\s*,\s*)/;
+   my $ansi_join  = qr/(?>
+     \s+
+     (?:(?:INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL)\s+)*
+     JOIN
+     \s+
+   )/xi;
 
-   my @tbls;  # All parsed tables.
-   my $tbl;   # This gets pushed to @tbls when it's set.  It may not be
+   my @tbls;     # all table refs, a hashref for each
+   my $tbl_ref;  # current table ref hashref
+   my $join;     # join info hahsref for current table ref
+   foreach my $thing ( split /($comma_join|$ansi_join)/io, $from ) {
+      die "Error parsing FROM clause" unless $thing;
 
-   my $pending_tbl;         
-   my $state  = undef;  
-   my $join   = '';  # JOIN syntax words, without JOIN; becomes type
-   my $joinno = 0;   # join number for debugging
-   my $redo   = 0;   # save $pending_tbl, redo loop for new JOIN
+      $thing =~ s/^\s+//;
+      $thing =~ s/\s+$//;
+      MKDEBUG && _d('Table thing:', $thing);
 
-   my $join_back  = 0;
-   my $last_thing = '';
+      if ( $thing =~ m/\s+(?:ON|USING)\s+/i ) {
+         MKDEBUG && _d("JOIN condition");
+         my ($tbl_ref_txt, $join_condition_verb, $join_condition_value)
+            = $thing =~ m/^(.+?)\s+(ON|USING)\s+(.+)/i;
 
-   my $join_delim
-      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN|ON|USING/i;
-   my $next_tbl
-      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN/i;
+         $tbl_ref = $self->parse_table_reference($tbl_ref_txt);
 
-   foreach my $thing ( split(/\s*($join_delim)\s+/io, $from) ) {
-      next unless $thing;
-      MKDEBUG && _d('Table thing:', $thing, 'state:', $state); 
+         $join->{condition} = lc $join_condition_verb;
+         if ( $join->{condition} eq 'on' ) {
+            my $where      = $self->parse_where($join_condition_value);
+            $join->{where} = $where; 
+         }
+         else { # USING
+            $join_condition_value =~ s/^\s*\(//;
+            $join_condition_value =~ s/\)\s*$//;
+            $join->{columns} = $self->parse_csv($join_condition_value);
+         }
+      }
+      elsif ( $thing =~ m/(?:,|JOIN)/i ) {
+         if ( $join ) {
+            $tbl_ref->{join} = $join;
+         }
+         push @tbls, $tbl_ref;
+         MKDEBUG && _d("Complete table reference:", Dumper($tbl_ref));
 
-      if ( !$state && $thing !~ m/$join_delim/i ) {
-         MKDEBUG && _d('Table factor');
-         $tbl = { $self->parse_table_reference($thing) };
+         $tbl_ref = undef;
+         $join    = {};
 
-         $join_back = 1 if ($last_thing || '') eq ',';
+         $join->{to} = $tbls[-1]->{name};
+         if ( $thing eq ',' ) {
+            $join->{type} = 'inner';
+            $join->{ansi} = 0;
+         }
+         else { # ansi join
+            my $type = $thing =~ m/^(.+?)\s+JOIN$/i ? lc $1 : 'inner';
+            $join->{type} = $type;
+            $join->{ansi} = 1;
+         }
       }
       else {
-         if ( !$state ) {
-            $joinno++;
-            MKDEBUG && _d('JOIN', $joinno, 'start');
-            $join .= ' ' . lc $thing;
-            if ( $join =~ m/join$/ ) {
-               $join =~ s/ join$//;
-               $join =~ s/^\s+//;
-               MKDEBUG && _d('JOIN', $joinno, 'type:', $join);
-               my $last_tbl = $tbls[-1];
-               die "Invalid syntax: $from\n"
-                  . "JOIN without preceding table reference" unless $last_tbl;
-               $pending_tbl->{join} = {
-                  to   => $last_tbl->{name},
-                  type => $join || 'inner',
-                  ansi => 1,
-               };
-               $join    = '';
-               $state   = 'join tbl';
-            }
-         }
-         elsif ( $state eq 'join tbl' ) {
-            my %tbl_ref = $self->parse_table_reference($thing);
-            @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
-            $state = 'join condition';
-         }
-         elsif ( $state eq 'join condition' ) {
-            if ( $thing =~ m/$next_tbl/io ) {
-               MKDEBUG && _d('JOIN', $joinno, 'end');
-               $tbl  = $pending_tbl;
-               $redo = 1;  # save $pending_tbl then redo this new JOIN
-            }
-            elsif ( $thing =~ m/ON|USING/i ) {
-               MKDEBUG && _d('JOIN', $joinno, 'codition');
-               $pending_tbl->{join}->{condition} = lc $thing;
-            }
-            else {
-               MKDEBUG && _d('JOIN', $joinno, 'predicate');
-               if ( $pending_tbl->{join}->{condition} eq 'on' ) {
-                  $pending_tbl->{join}->{where} = $self->parse_where($thing);
-               }
-               else {
-                  $thing =~ s/^\s*\(//;
-                  $thing =~ s/\)\s*$//;
-                  $pending_tbl->{join}->{columns} = $self->parse_csv($thing);
-               }
-            }
-         }
-         else {
-            die "Unknown state '$state' parsing JOIN syntax: $from";
-         }
-      }
-
-      $last_thing = $thing;
-
-      if ( $tbl ) {
-         if ( $join_back ) {
-            my $prev_tbl = $tbls[-1];
-            if ( $tbl->{join} ) {
-               die "Cannot implicitly join $tbl->{name} to $prev_tbl->{name} "
-                  . "because it is already joined to $tbl->{join}->{to}";
-            }
-            $tbl->{join} = {
-               to   => $prev_tbl->{name},
-               type => 'inner',
-               ansi => 0,
-            }
-         }
-
-         push @tbls, $tbl;  # save table
-
-         $tbl         = undef;
-         $state       = undef;
-         $pending_tbl = undef;
-         $join        = '';
-         $join_back   = 0;
-      }
-      else {
-         MKDEBUG && _d('Table pending:', Dumper($pending_tbl));
-      }
-      if ( $redo ) {
-         MKDEBUG && _d("Redoing this thing");
-         $redo = 0;
-         redo;
+         $tbl_ref = $self->parse_table_reference($thing);
+         MKDEBUG && _d('Table reference:', Dumper($tbl_ref));
       }
    }
 
-   if ( $pending_tbl ) {
-      push @tbls, $pending_tbl;
+   if ( $tbl_ref ) {
+      if ( $join ) {
+         $tbl_ref->{join} = $join;
+      }
+      push @tbls, $tbl_ref;
+      MKDEBUG && _d("Complete table reference:", Dumper($tbl_ref));
    }
 
-   MKDEBUG && _d('Parsed tables:', Dumper(\@tbls));
    return \@tbls;
 }
 
 sub parse_table_reference {
    my ( $self, $tbl_ref ) = @_;
+   return unless $tbl_ref;
+   MKDEBUG && _d('Parsing table reference:', $tbl_ref);
    my %tbl;
-   MKDEBUG && _d('Table reference:', $tbl_ref);
 
-   my $index_hint;
    if ( $tbl_ref =~ s/
          \s+(
             (?:FORCE|USE|INGORE)\s
@@ -4421,35 +4405,23 @@ sub parse_table_reference {
             \s*\([^\)]+\)\s*
          )//xi)
    {
-      MKDEBUG && _d('Index hint:', $1);
       $tbl{index_hint} = $1;
+      MKDEBUG && _d('Index hint:', $tbl{index_hint});
    }
 
-   my $tbl_ident = qr/
-      (?:`[^`]+`|[\w*]+)       # `something`, or something
-      (?:                      # optionally followed by either
-         \.(?:`[^`]+`|[\w*]+)  #   .`something` or .something, or
-         |\([^\)]*\)           #   (function stuff)  (e.g. NOW())
-      )?             
-   /x;
-
-   my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
-   MKDEBUG && _d('Table ref words:', @words);
-
-   my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
-   $tbl{db}   = $db if $db;
-   $tbl{name} = $tbl;
-
-   if ( $words[2] ) {
-      die "Bad table ref: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
-      $tbl{alias}          = $words[2];
-      $tbl{explicit_alias} = 1;
+   if ( $tbl_ref =~ m/$table_ident/ ) {
+      my ($db_tbl, $as, $alias) = ($1, $2, $3); # XXX
+      my $ident_struct = $self->parse_identifier('table', $db_tbl);
+      $alias =~ s/`//g if $alias;
+      @tbl{keys %$ident_struct} = values %$ident_struct;
+      $tbl{explicit_alias} = 1 if $as;
+      $tbl{alias}          = $alias if $alias;
    }
-   elsif ( $words[1] ) {
-      $tbl{alias} = $words[1];
+   else {
+      die "Table ident match failed";  # shouldn't happen
    }
 
-   return %tbl;
+   return \%tbl;
 }
 {
    no warnings;  # Why? See same line above.
@@ -4460,7 +4432,7 @@ sub parse_table_reference {
 sub parse_where {
    my ( $self, $where ) = @_;
    return unless $where;
-   MKDEBUG && _d("Parsing WHERE clause:", $where);
+   MKDEBUG && _d("Parsing WHERE", $where);
 
    my $op = qr/
       (?:\b|\s)
@@ -4583,7 +4555,7 @@ sub parse_having {
 sub parse_group_by {
    my ( $self, $group_by ) = @_;
    return unless $group_by;
-   MKDEBUG && _d('Parse GROUP BY', $group_by);
+   MKDEBUG && _d('Parsing GROUP BY', $group_by);
 
    my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
 
@@ -4597,7 +4569,7 @@ sub parse_group_by {
 sub parse_order_by {
    my ( $self, $order_by ) = @_;
    return unless $order_by;
-   MKDEBUG && _d('Parse ORDER BY', $order_by);
+   MKDEBUG && _d('Parsing ORDER BY', $order_by);
    my $idents = $self->parse_identifiers( $self->parse_csv($order_by) );
    return $idents;
 }
@@ -4651,8 +4623,8 @@ sub parse_set {
          column => $col,
          value  => $val,
       };
-      $set_struct->{table}    = $tbl if $tbl;
-      $set_struct->{database} = $db  if $db;
+      $set_struct->{tbl} = $tbl if $tbl;
+      $set_struct->{db}  = $db  if $db;
       MKDEBUG && _d("SET:", Dumper($set_struct));
       push @set, $set_struct;
    }
@@ -4672,10 +4644,27 @@ sub parse_csv {
 
 sub parse_columns {
    my ( $self, $cols ) = @_;
-   my @cols = map {
-      my %ref = $self->parse_table_reference($_);
-      \%ref;
-   } @{ $self->parse_csv($cols) };
+   MKDEBUG && _d('Parsing columns list:', $cols);
+
+   my @cols;
+   pos $cols = 0;
+   while (pos $cols < length $cols) {
+      if ($cols =~ m/\G\s*$column_ident\s*(?>,|\Z)/gcxo) {
+         my ($db_tbl_col, $as, $alias) = ($1, $2, $3); # XXX
+         my $ident_struct = $self->parse_identifier('column', $db_tbl_col);
+         $alias =~ s/`//g if $alias;
+         my $col_struct = {
+            %$ident_struct,
+            ($as    ? (explicit_alias => 1)      : ()),
+            ($alias ? (alias          => $alias) : ()),
+         };
+         push @cols, $col_struct;
+      }
+      else {
+         die "Column ident match failed";  # shouldn't happen
+      }
+   }
+
    return \@cols;
 }
 
@@ -4762,7 +4751,7 @@ sub remove_subqueries {
 sub parse_identifiers {
    my ( $self, $idents ) = @_;
    return unless $idents;
-   MKDEBUG && _d("Parse identifiers");
+   MKDEBUG && _d("Parsing identifiers");
 
    my @ident_parts;
    foreach my $ident ( @$idents ) {
@@ -4795,6 +4784,33 @@ sub parse_identifiers {
    return \@ident_parts;
 }
 
+sub parse_identifier {
+   my ( $self, $type, $ident ) = @_;
+   return unless $type && $ident;
+   MKDEBUG && _d("Parsing", $type, "identifier:", $ident);
+
+   my %ident_struct;
+   my @ident_parts = map { s/`//g; $_; } split /[.]/, $ident;
+   if ( @ident_parts == 3 ) {
+      @ident_struct{qw(db tbl name)} = @ident_parts;
+   }
+   elsif ( @ident_parts == 2 ) {
+      my @parts_for_type = $type eq 'column' ? qw(tbl name)
+                         : $type eq 'table'  ? qw(db  name)
+                         : die "Invalid identifier type: $type";
+      @ident_struct{@parts_for_type} = @ident_parts;
+   }
+   elsif ( @ident_parts == 1 ) {
+      @ident_struct{qw(name)} = @ident_parts;
+   }
+   else {
+      die "Invalid number of parts in $type reference: $ident";
+   }
+
+   MKDEBUG && _d($type, "identifier struct:", Dumper(\%ident_struct));
+   return \%ident_struct;
+}
+
 sub split_unquote {
    my ( $self, $db_tbl, $default_db ) = @_;
    $db_tbl =~ s/`//g;
@@ -4814,6 +4830,7 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+} # package scope
 1;
 
 # ###########################################################################
@@ -5522,7 +5539,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 7128
+# ReportFormatter package 7359
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/ReportFormatter.pm
@@ -5670,11 +5687,11 @@ sub add_line {
 }
 
 sub get_report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
 
    $self->_calculate_column_widths();
    $self->_truncate_headers() if $self->{truncate_headers};
-   $self->_truncate_line_values();
+   $self->_truncate_line_values(%args);
 
    my @col_fmts = $self->_make_column_formats();
    my $fmt      = ($self->{line_prefix} || '')
@@ -5793,7 +5810,7 @@ sub _truncate_headers {
 }
 
 sub _truncate_line_values {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $n_vals = $self->{n_cols} - 1;
    foreach my $vals ( @{$self->{lines}} ) {
       for my $i ( 0..$n_vals ) {
@@ -5807,7 +5824,7 @@ sub _truncate_line_values {
                   . $col->{name});
             }
 
-            my $callback  = $self->{truncate_callback};
+            my $callback    = $args{truncate_callback};
             my $print_width = $col->{print_width};
             $val = $callback ? $callback->($col, $val, $print_width)
                  :             $self->truncate_value($col, $val, $print_width);
