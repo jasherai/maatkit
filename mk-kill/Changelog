@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+2011-04-04: version 0.9.10
+
    * Tool crashed if no connection opts (--host, etc.) were given (issue 1213).
    * Renamed option --heartbeat to --verobse (issue 1215).
    * Implicitly piped STDIN was not read (issue 1214).

@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2011-04-04: version 0.9.28
+
    * Minimum 2-column query review history table did not work (issue 1265).
 
 2011-03-12: version 0.9.27
