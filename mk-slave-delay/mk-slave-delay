@@ -2369,8 +2369,8 @@ mk-slave-delay is generally very low-risk.  It simply starts and stops the
 replication SQL thread.  This might cause monitoring systems to think the slave
 is having trouble.
 
-At the time of this release, mk-slave-delay does not reconnect to the server
-if the connection is lost.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
