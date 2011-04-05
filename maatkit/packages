@@ -1,4 +1,5 @@
 mk-archiver
+mk-config-diff
 mk-deadlock-logger
 mk-duplicate-key-checker
 mk-error-log
